@@ -118,17 +118,24 @@ export function portfolioAccountSize(assetSlotCapacity: number): number {
   return PORTFOLIO_HEADER_SIZE + assetSlotCapacity * 2 * SOURCE_DOMAIN_SIZE;
 }
 
+// PDA seed prefixes. Encoded with TextEncoder (a global in both Node and the
+// browser) rather than `Buffer.from`, because these are module-level constants:
+// `Buffer` is a Node global that browsers lack, so a `Buffer.from` here throws
+// "Buffer is not defined" the instant a browser bundle imports this module —
+// before any app-level polyfill can run. `findProgramAddressSync` accepts
+// `Uint8Array` seeds, so this is a drop-in.
+
 /** Vault PDA seed prefix — matches Rust `state::VAULT_SEED`. */
-export const VAULT_SEED = Buffer.from("vault");
+export const VAULT_SEED = new TextEncoder().encode("vault");
 
 /** House Vault PDA seed prefix — matches Rust `state::HOUSE_SEED`. */
-export const HOUSE_SEED = Buffer.from("house");
+export const HOUSE_SEED = new TextEncoder().encode("house");
 
 /** Trading-delegate PDA seed prefix — matches Rust `state::DELEGATE_SEED`. */
-export const DELEGATE_SEED = Buffer.from("delegate");
+export const DELEGATE_SEED = new TextEncoder().encode("delegate");
 
 /** User-portfolio PDA seed prefix — matches Rust `state::PORTFOLIO_SEED`. */
-export const PORTFOLIO_SEED = Buffer.from("portfolio");
+export const PORTFOLIO_SEED = new TextEncoder().encode("portfolio");
 
 /** DelegateAccount size: discriminator(8) + portfolio(32) + delegate(32). */
 export const DELEGATE_ACCOUNT_SIZE = 72;

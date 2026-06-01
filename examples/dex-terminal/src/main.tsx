@@ -1,3 +1,6 @@
+// Buffer polyfill — must run before any Solana dependency is evaluated.
+import "./polyfills";
+
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import {
