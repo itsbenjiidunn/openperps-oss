@@ -8,6 +8,19 @@ This example shows how to integrate OpenPerps through `@openperps/sdk`.
 - embed a trade widget
 - embed a position widget
 
+## Run
+
+```bash
+npm install
+npm run dev      # or: npm run build
+```
+
+Open the printed URL, connect a devnet wallet, and you get the chart, a
+Long/Short widget, and your position, all from `@openperps/react` against one
+market config. [`src/App.tsx`](src/App.tsx) is the whole integration. A trade
+needs an initialized, funded portfolio; claim devnet USDC and open one at
+[openperps.fun](https://openperps.fun) first.
+
 ## Boundaries
 
 This example is devnet-default. It is not production-approved.
