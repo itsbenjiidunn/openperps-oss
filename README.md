@@ -3,15 +3,28 @@
 The open-source perp layer for Solana apps. Add long/short markets to any token,
 from any trading surface.
 
-OpenPerps is not another retail perp DEX. It is the infrastructure a Solana app
-embeds to offer perpetual futures on the tokens it already shows: a launchpad, a
-DEX terminal, a swap UI, a Telegram bot, a wallet, or an analytics dashboard.
-One SDK, one keeper, one risk engine, reused across all of them.
+OpenPerps is the infrastructure a Solana app embeds to offer perpetual futures
+on the tokens it already shows: a launchpad, a DEX terminal, a swap UI, a
+Telegram bot, a wallet, or an analytics dashboard. One SDK, one keeper, one risk
+engine, reused across all of them.
+
+> Devnet by default. Mainnet-capable, not production-approved.
+>
+> OpenPerps v1 is unaudited. Do not use with real user funds unless you complete
+> your own review and accept the risk.
+
+Mainnet-capable means SDK/config/program flows can target `mainnet-beta`. The
+current authority-pushed oracle path is not production-approved and is the main
+blocker for serious mainnet use.
 
 It is built on [Percolator](https://github.com/aeyakovenko/percolator) v16, the
 formally-verified risk engine by Anatoly Yakovenko (@toly). Percolator is the
 pure risk brain and ships no program, decoder, or deployment. OpenPerps is the
 body around it: the Solana program, the client SDK, the UI kit, and the keeper.
+
+**OpenPerps OSS and OpenPerps App.** This repo is OpenPerps OSS: the program,
+SDK, keeper, React components, examples, and docs. OpenPerps App, the live
+trading application, is the first application built on OpenPerps OSS.
 
 ## Who it is for
 

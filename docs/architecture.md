@@ -6,13 +6,13 @@ on-chain program maps onto it. Line references are into
 
 ## The engine has two parallel representations
 
-1. **Runtime / Vec-based** — `MarketGroupV16` (v16.rs:2657), `PortfolioAccountV16`
+1. **Runtime / Vec-based**: `MarketGroupV16` (v16.rs:2657), `PortfolioAccountV16`
    (v16.rs:2523), and constructors like `MarketGroupV16::new` (v16.rs:12025).
    These use `Vec` fields and **allocate**. They are gated
-   `#[cfg(any(kani, feature = "runtime-vec-api"))]` — **tests and Kani proofs
+   `#[cfg(any(kani, feature = "runtime-vec-api"))]`: **tests and Kani proofs
    only.** Do **not** use them on-chain.
 
-2. **Zero-copy account types** — `*Account` POD structs accessed through views:
+2. **Zero-copy account types**: `*Account` POD structs accessed through views:
    - `MarketGroupV16View<'a, T>` / `…ViewMut` (v16.rs:1849) =
      `&MarketGroupV16HeaderAccount` (v16.rs:4182) + `&[Market<T>]` (v16.rs:1821)
    - `PortfolioV16View<'a>` / `…ViewMut` =
@@ -20,7 +20,7 @@ on-chain program maps onto it. Line references are into
      `&[PortfolioSourceDomainV16Account]`
 
    No allocation, fixed layouts that borrow directly from account data. **This
-   is the production, on-chain path** — and the reason the engine fits in an SBF
+   is the production, on-chain path**, and the reason the engine fits in an SBF
    program at all. (`V16_MAX_PORTFOLIO_ASSETS_N = 16` legs per portfolio.)
 
 The production operations are methods on the *ViewMut* types, e.g.
