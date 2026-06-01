@@ -24,7 +24,7 @@ current API. Adaptations:
   House-debit settle) and replaced it with the single-account
   `convert_released_pnl_to_capital_not_atomic`. The wrapper's `settle_pnl_buffer`
   now calls the convert primitive, and the `SettlePnl` instruction dropped its
-  House account (also dropped from `settlePnlIx` in `ts/sdk`). The realizable
+  House account (also dropped from `settlePnlIx` in `packages/sdk`). The realizable
   amount is backed by the source-credit the engine reserved from the
   counterparty at open time, so no House account is touched at settle.
 
@@ -37,7 +37,7 @@ When re-vendoring a newer upstream engine:
    any changed engine API.
 3. Verify account layout is unchanged with
    `cargo test -p openperps-program print_byte_sizes_for_sdk -- --nocapture`
-   (the offsets must still match `ts/sdk/src/layout.ts`).
+   (the offsets must still match `packages/sdk/src/layout.ts`).
 4. Verify behavior with `cargo test -p openperps-program`.
 5. Update the pinned commit above and add a short note describing what changed
    from upstream and any new wrapper adaptation.
