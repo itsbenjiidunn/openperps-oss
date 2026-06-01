@@ -6,3 +6,4 @@ export * from "./price.ts";
 export * from "./decoders.ts";
 export * from "./transactions.ts";
 export * from "./actions.ts";
+export * from "./trade-resolution.ts";
