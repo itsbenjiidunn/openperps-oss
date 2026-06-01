@@ -71,7 +71,9 @@ export function useGroups(owner: string, markets: Market[]): Group[] {
     const sharedMarket = SHARED_MARKET.toBase58();
     const byPortfolio = new Map<string, Group>();
     // Derived PDAs: majors + each custom market.
-    byPortfolio.set(userPortfolio(owner, sharedMarket), { portfolio: userPortfolio(owner, sharedMarket) });
+    byPortfolio.set(userPortfolio(owner, sharedMarket), {
+      portfolio: userPortfolio(owner, sharedMarket),
+    });
     for (const m of markets) {
       if (!m.ownGroup) continue;
       const pf = userPortfolio(owner, m.pubkey);
@@ -430,7 +432,9 @@ function HistoryTab({ owner }: { owner: string }) {
   }, [q.data, local]);
 
   if (rows.length === 0) {
-    return <Empty>No trades yet on this account. Your fills will appear here (indexed ~1 min).</Empty>;
+    return (
+      <Empty>No trades yet on this account. Your fills will appear here (indexed ~1 min).</Empty>
+    );
   }
   const fmt = (n: number) =>
     n < 1 ? n.toFixed(6) : n.toLocaleString(undefined, { maximumFractionDigits: 2 });
@@ -454,7 +458,9 @@ function HistoryTab({ owner }: { owner: string }) {
           </span>
           <span className={t.long ? "text-success" : "text-danger"}>{t.long ? "Buy" : "Sell"}</span>
           <span className="text-right font-mono tabular-nums">{fmt(t.price)}</span>
-          <span className="text-right font-mono tabular-nums text-muted-foreground">{fmt(t.size)}</span>
+          <span className="text-right font-mono tabular-nums text-muted-foreground">
+            {fmt(t.size)}
+          </span>
           <span className="text-right font-mono tabular-nums">
             ${t.notional.toLocaleString(undefined, { maximumFractionDigits: 2 })}
           </span>

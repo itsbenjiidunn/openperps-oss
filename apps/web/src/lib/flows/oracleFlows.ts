@@ -3,12 +3,7 @@
 /// any signer can call — which is the whole point: the price lives in the
 /// pool, not with a trusted keeper.
 
-import {
-  Connection,
-  PublicKey,
-  Transaction,
-  type Commitment,
-} from "@solana/web3.js";
+import { Connection, PublicKey, Transaction, type Commitment } from "@solana/web3.js";
 import type { WalletContextState } from "@solana/wallet-adapter-react";
 import { crankOracleIx, mockSwapIx } from "@openperps/sdk";
 

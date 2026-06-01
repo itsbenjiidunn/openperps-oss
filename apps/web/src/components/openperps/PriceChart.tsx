@@ -14,14 +14,20 @@ export function PriceChart({ className, color = "var(--neon)", volume = true, se
     let v = 50 + seed * 7;
     const points: number[] = [];
     for (let i = 0; i < N; i++) {
-      v += (Math.sin(i * 0.35 + seed) + Math.cos(i * 0.11 + seed * 2)) * 1.6 + (Math.sin(i * 1.9 + seed) * 0.6);
+      v +=
+        (Math.sin(i * 0.35 + seed) + Math.cos(i * 0.11 + seed * 2)) * 1.6 +
+        Math.sin(i * 1.9 + seed) * 0.6;
       points.push(v);
     }
-    const min = Math.min(...points), max = Math.max(...points);
-    const W = 1000, H = 320;
+    const min = Math.min(...points),
+      max = Math.max(...points);
+    const W = 1000,
+      H = 320;
     const x = (i: number) => (i / (N - 1)) * W;
     const y = (p: number) => H - ((p - min) / (max - min || 1)) * (H - 20) - 10;
-    const path = points.map((p, i) => `${i === 0 ? "M" : "L"} ${x(i).toFixed(2)} ${y(p).toFixed(2)}`).join(" ");
+    const path = points
+      .map((p, i) => `${i === 0 ? "M" : "L"} ${x(i).toFixed(2)} ${y(p).toFixed(2)}`)
+      .join(" ");
     const area = path + ` L ${W} ${H} L 0 ${H} Z`;
     const vols = points.map((_, i) => 8 + ((Math.sin(i * 0.7 + seed) + 1) / 2) * 42);
     return { path, area, vols, lastY: y(points[N - 1]), min, max };
@@ -38,7 +44,10 @@ export function PriceChart({ className, color = "var(--neon)", volume = true, se
           </linearGradient>
           <filter id={`glow-${seed}`}>
             <feGaussianBlur stdDeviation="2.5" result="b" />
-            <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+            <feMerge>
+              <feMergeNode in="b" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
           </filter>
         </defs>
 
@@ -49,7 +58,7 @@ export function PriceChart({ className, color = "var(--neon)", volume = true, se
                 key={i}
                 x={(i / vols.length) * 1000}
                 y={380 - h}
-                width={(1000 / vols.length) - 2}
+                width={1000 / vols.length - 2}
                 height={h}
                 fill="var(--violet)"
                 opacity="0.35"
@@ -60,7 +69,16 @@ export function PriceChart({ className, color = "var(--neon)", volume = true, se
 
         <path d={area} fill={`url(#area-${seed})`} />
         <path d={path} fill="none" stroke={color} strokeWidth="1.8" filter={`url(#glow-${seed})`} />
-        <line x1="0" x2="1000" y1={lastY} y2={lastY} stroke={color} strokeDasharray="3 4" strokeWidth="0.8" opacity="0.5" />
+        <line
+          x1="0"
+          x2="1000"
+          y1={lastY}
+          y2={lastY}
+          stroke={color}
+          strokeDasharray="3 4"
+          strokeWidth="0.8"
+          opacity="0.5"
+        />
         <circle cx="1000" cy={lastY} r="4" fill={color} />
       </svg>
       <div className="absolute top-2 right-3 font-mono text-[10px] text-muted-foreground">

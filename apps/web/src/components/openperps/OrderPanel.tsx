@@ -65,8 +65,7 @@ export function OrderPanel({ market }: { market: Market }) {
   // revert with InvalidConfig (0x3e8). Gate the trade on confirmed collateral
   // and surface a deposit box instead (esp. for custom groups, whose account
   // may have been opened but not funded if the deposit half failed).
-  const hasCollateral =
-    portfolioStateQ.data != null && portfolioStateQ.data.capital > 0n;
+  const hasCollateral = portfolioStateQ.data != null && portfolioStateQ.data.capital > 0n;
 
   const maxLev = market.maxLeverage ?? 20;
   // The engine caps the per-trade fee at the group's max_trading_fee_bps;
@@ -115,8 +114,7 @@ export function OrderPanel({ market }: { market: Market }) {
 
   const calc = useMemo(() => {
     const margin = Number(marginUsdc);
-    const price =
-      orderType === "limit" && Number(limitPrice) > 0 ? Number(limitPrice) : liveMark;
+    const price = orderType === "limit" && Number(limitPrice) > 0 ? Number(limitPrice) : liveMark;
     const ok = Number.isFinite(margin) && margin > 0 && price > 0;
     const notional = ok ? margin * lev : 0;
     // sizeQ (base atoms) = notional_usdc * 1e6 / price ; execPrice = price * 1e6
@@ -502,7 +500,13 @@ function AccountFundsBar({
         await depositFlow({
           wallet,
           connection,
-          params: { marketPubkey, portfolioPubkey: pf, vaultPubkey, quoteMint: QUOTE_MINT, amount: amt },
+          params: {
+            marketPubkey,
+            portfolioPubkey: pf,
+            vaultPubkey,
+            quoteMint: QUOTE_MINT,
+            amount: amt,
+          },
         });
       } else {
         if (!customPortfolio) throw new Error("This account is empty.");
@@ -598,7 +602,13 @@ function AccountFundsBar({
             className="btn-primary w-full rounded-md py-1.5 text-[11px] font-medium inline-flex items-center justify-center gap-1.5 disabled:opacity-50"
           >
             {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
-            {busy ? (isDeposit ? "Depositing…" : "Withdrawing…") : isDeposit ? "Deposit" : "Withdraw"}
+            {busy
+              ? isDeposit
+                ? "Depositing…"
+                : "Withdrawing…"
+              : isDeposit
+                ? "Deposit"
+                : "Withdraw"}
           </button>
           {amt > sourceAtoms && (
             <div className="text-[10px] text-danger">Exceeds available balance.</div>

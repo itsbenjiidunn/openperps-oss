@@ -20,11 +20,7 @@ import { fmtPubkey } from "@/lib/format";
 import { OraclePanel } from "@/components/openperps/OraclePanel";
 import { useMarkets } from "@/lib/onchain";
 import { listPortfoliosFor } from "@/lib/portfolioRegistry";
-import {
-  accrueAssetFlow,
-  crankRefreshFlow,
-  liquidateFlow,
-} from "@/lib/flows/portfolioFlows";
+import { accrueAssetFlow, crankRefreshFlow, liquidateFlow } from "@/lib/flows/portfolioFlows";
 import type { Market } from "@/lib/types";
 
 export const Route = createFileRoute("/crank")({
@@ -56,13 +52,10 @@ function Crank() {
           <Zap className="h-5 w-5 text-neon" />
         </div>
         <div>
-          <h1 className="font-display text-2xl font-semibold tracking-tight">
-            Keeper actions
-          </h1>
+          <h1 className="font-display text-2xl font-semibold tracking-tight">Keeper actions</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Run permissionless cranks (CrankRefresh, Liquidate) or
-            authority-pinned oracle refreshes (AccrueAsset). Each form
-            maps one-to-one onto an on-chain instruction.
+            Run permissionless cranks (CrankRefresh, Liquidate) or authority-pinned oracle refreshes
+            (AccrueAsset). Each form maps one-to-one onto an on-chain instruction.
           </p>
         </div>
       </header>
@@ -84,9 +77,7 @@ function ConnectGate() {
       icon={<Wallet className="h-6 w-6 text-neon" />}
       title="Connect a wallet"
       body="Keeper actions need a signer. Connect Phantom or Solflare to crank, refresh, and liquidate."
-      action={
-        <WalletButton />
-      }
+      action={<WalletButton />}
     />
   );
 }
@@ -115,15 +106,12 @@ function UnhealthyQueue() {
     <div className="panel p-4 flex items-start gap-3">
       <ShieldAlert className="h-4 w-4 text-violet shrink-0 mt-0.5" />
       <div className="text-xs space-y-1">
-        <div className="font-medium text-foreground">
-          Unhealthy account queue
-        </div>
+        <div className="font-medium text-foreground">Unhealthy account queue</div>
         <p className="text-muted-foreground">
-          OpenPerps does not run an indexer yet, so we can't scan every
-          portfolio system-wide for liquidation candidates. For now you
-          point the form below at a specific portfolio (typically one you
-          know is under water). The engine itself decides whether to
-          progress; a healthy account responds with{" "}
+          OpenPerps does not run an indexer yet, so we can't scan every portfolio system-wide for
+          liquidation candidates. For now you point the form below at a specific portfolio
+          (typically one you know is under water). The engine itself decides whether to progress; a
+          healthy account responds with{" "}
           <code className="font-mono text-foreground">NonProgress</code>.
         </p>
       </div>
@@ -139,17 +127,13 @@ function MarketKeeperPanel({ market }: { market: Market }) {
   return (
     <div className="panel p-5 space-y-4">
       <div>
-        <h2 className="font-display text-lg font-semibold tracking-tight">
-          {market.symbol}
-        </h2>
+        <h2 className="font-display text-lg font-semibold tracking-tight">{market.symbol}</h2>
         <p className="text-[11px] font-mono text-muted-foreground">
           market <ExplorerLink kind="address" id={market.pubkey} />
         </p>
       </div>
 
-      {market.oracleKind === "dex" && market.oraclePool && (
-        <OraclePanel market={market} />
-      )}
+      {market.oracleKind === "dex" && market.oraclePool && <OraclePanel market={market} />}
 
       <div className="grid lg:grid-cols-3 gap-3">
         <AccrueAssetForm market={market} />
@@ -231,9 +215,7 @@ function CrankRefreshForm({
 }) {
   const { connection } = useConnection();
   const wallet = useWallet();
-  const [portfolio, setPortfolio] = useState<string | undefined>(
-    portfolios[0]?.pubkey,
-  );
+  const [portfolio, setPortfolio] = useState<string | undefined>(portfolios[0]?.pubkey);
   const [assetIndex, setAssetIndex] = useState("0");
   const [price, setPrice] = useState("105000000");
   const [funding, setFunding] = useState("0");
@@ -279,11 +261,7 @@ function CrankRefreshForm({
       submitLabel="Crank"
       disabled={!portfolio}
     >
-      <PortfolioPicker
-        portfolios={portfolios}
-        value={portfolio}
-        onChange={setPortfolio}
-      />
+      <PortfolioPicker portfolios={portfolios} value={portfolio} onChange={setPortfolio} />
       <Field label="Asset index">
         <NumInput value={assetIndex} onChange={setAssetIndex} disabled={running} />
       </Field>
@@ -308,9 +286,7 @@ function LiquidateForm({
 }) {
   const { connection } = useConnection();
   const wallet = useWallet();
-  const [portfolio, setPortfolio] = useState<string | undefined>(
-    portfolios[0]?.pubkey,
-  );
+  const [portfolio, setPortfolio] = useState<string | undefined>(portfolios[0]?.pubkey);
   const [assetIndex, setAssetIndex] = useState("0");
   const [closeQ, setCloseQ] = useState("1000000");
   // Group caps the per-trade fee at GROUP_MAX_FEE_BPS; higher reverts.
@@ -358,11 +334,7 @@ function LiquidateForm({
       disabled={!portfolio}
       submitClass="border border-danger/60 text-danger hover:bg-[oklch(0.66_0.24_18_/_0.10)]"
     >
-      <PortfolioPicker
-        portfolios={portfolios}
-        value={portfolio}
-        onChange={setPortfolio}
-      />
+      <PortfolioPicker portfolios={portfolios} value={portfolio} onChange={setPortfolio} />
       <Field label="Asset index">
         <NumInput value={assetIndex} onChange={setAssetIndex} disabled={running} />
       </Field>
@@ -492,13 +464,7 @@ function PortfolioPicker({
   );
 }
 
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
       <div className="text-[11px] text-muted-foreground mb-1">{label}</div>
@@ -538,13 +504,7 @@ function NumInput({
   );
 }
 
-function ExplorerLink({
-  kind,
-  id,
-}: {
-  kind: "address" | "tx";
-  id: string;
-}) {
+function ExplorerLink({ kind, id }: { kind: "address" | "tx"; id: string }) {
   return (
     <a
       href={`https://explorer.solana.com/${kind === "tx" ? "tx" : "address"}/${id}?cluster=devnet`}

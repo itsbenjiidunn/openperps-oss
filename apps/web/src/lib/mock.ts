@@ -13,12 +13,7 @@
 ///   - `account` / `positions` / `vault` are kept as placeholder fixtures
 ///     until Phases 4–5 land per-route live data hooks.
 
-export {
-  fmtNum,
-  fmtPct,
-  fmtPubkey,
-  fmtUsd,
-} from "./format";
+export { fmtNum, fmtPct, fmtPubkey, fmtUsd } from "./format";
 export type {
   AccountSummary,
   CrankQueueRow,

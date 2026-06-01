@@ -3,12 +3,7 @@
 /// app-baked throwaway keypair (see collateral.ts) — it co-signs the
 /// MintTo; the user's wallet pays fees and creates its ATA if missing.
 
-import {
-  Connection,
-  PublicKey,
-  Transaction,
-  type Commitment,
-} from "@solana/web3.js";
+import { Connection, PublicKey, Transaction, type Commitment } from "@solana/web3.js";
 import type { WalletContextState } from "@solana/wallet-adapter-react";
 import {
   createAssociatedTokenAccountInstruction,
@@ -17,11 +12,7 @@ import {
   getAssociatedTokenAddressSync,
 } from "@solana/spl-token";
 
-import {
-  FAUCET_AUTHORITY,
-  FAUCET_DRIP_ATOMS,
-  QUOTE_MINT,
-} from "../collateral";
+import { FAUCET_AUTHORITY, FAUCET_DRIP_ATOMS, QUOTE_MINT } from "../collateral";
 
 const CONFIRM_COMMITMENT: Commitment = "confirmed";
 
@@ -48,19 +39,10 @@ export async function faucetFlow(args: {
     ataExists = false;
   }
   if (!ataExists) {
-    tx.add(
-      createAssociatedTokenAccountInstruction(owner, ata, owner, QUOTE_MINT),
-    );
+    tx.add(createAssociatedTokenAccountInstruction(owner, ata, owner, QUOTE_MINT));
   }
 
-  tx.add(
-    createMintToInstruction(
-      QUOTE_MINT,
-      ata,
-      FAUCET_AUTHORITY.publicKey,
-      amount,
-    ),
-  );
+  tx.add(createMintToInstruction(QUOTE_MINT, ata, FAUCET_AUTHORITY.publicKey, amount));
 
   const { blockhash, lastValidBlockHeight } =
     await connection.getLatestBlockhash(CONFIRM_COMMITMENT);

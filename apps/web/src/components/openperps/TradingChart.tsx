@@ -95,8 +95,7 @@ export function TradingChart({
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
         textColor: MUTED,
-        fontFamily:
-          "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+        fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
         fontSize: 11,
       },
       grid: { vertLines: { color: GRID }, horzLines: { color: GRID } },
@@ -174,9 +173,7 @@ export function TradingChart({
         const p = market.price || 0;
         const seed: Bar = { time: t, open: p, high: p, low: p, close: p, volume: 0 };
         candle.setData(
-          p > 0
-            ? [{ time: t as UTCTimestamp, open: p, high: p, low: p, close: p }]
-            : [],
+          p > 0 ? [{ time: t as UTCTimestamp, open: p, high: p, low: p, close: p }] : [],
         );
         vol.setData([]);
         lastBarRef.current = p > 0 ? seed : null;

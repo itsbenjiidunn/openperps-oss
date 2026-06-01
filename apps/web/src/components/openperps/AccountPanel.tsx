@@ -4,12 +4,7 @@
 
 import { useWallet } from "@solana/wallet-adapter-react";
 import { Link } from "@tanstack/react-router";
-import {
-  ArrowDownToLine,
-  ArrowUpFromLine,
-  ExternalLink,
-  Wallet,
-} from "lucide-react";
+import { ArrowDownToLine, ArrowUpFromLine, ExternalLink, Wallet } from "lucide-react";
 
 import { useQuery } from "@tanstack/react-query";
 
@@ -42,9 +37,7 @@ export function AccountPanel({ market }: { market: Market }) {
     <div className="panel p-3 space-y-3">
       <div className="flex items-center justify-between">
         <div className="min-w-0">
-          <div className="text-[11px] text-muted-foreground">
-            {market.symbol} account
-          </div>
+          <div className="text-[11px] text-muted-foreground">{market.symbol} account</div>
           <div className="font-mono text-xs truncate">{fmtPubkey(portfolio, 6, 6)}</div>
         </div>
         <Wallet className="h-4 w-4 text-neon shrink-0" />

@@ -9,8 +9,7 @@ import type { Adapter } from "@solana/wallet-adapter-base";
 /// keyless devnet host (heavily rate-limited — set the env var for real use).
 /// NOTE: any value here is still inlined into the client bundle (a static dApp
 /// can't truly hide its RPC URL); route through the indexer Worker for that.
-const RPC_ENDPOINT =
-  import.meta.env.VITE_OPENPERPS_RPC ?? "https://api.devnet.solana.com";
+const RPC_ENDPOINT = import.meta.env.VITE_OPENPERPS_RPC ?? "https://api.devnet.solana.com";
 
 export function SolanaProviders({ children }: { children: ReactNode }) {
   // Empty list → wallet-adapter discovers installed wallets via the Wallet

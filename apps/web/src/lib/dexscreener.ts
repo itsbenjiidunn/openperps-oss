@@ -108,9 +108,7 @@ export async function fetchDexStatsMany(mints: string[]): Promise<Map<string, De
   await Promise.all(
     chunks.map(async (chunk) => {
       try {
-        const res = await fetch(
-          `https://api.dexscreener.com/latest/dex/tokens/${chunk.join(",")}`,
-        );
+        const res = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${chunk.join(",")}`);
         if (!res.ok) return;
         const j = (await res.json()) as {
           pairs?: {

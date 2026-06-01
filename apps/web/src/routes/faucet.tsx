@@ -13,11 +13,7 @@ import { Check, Coins, Droplets, ExternalLink, Loader2, Wallet } from "lucide-re
 
 import { fmtPubkey } from "@/lib/format";
 import { faucetFlow } from "@/lib/flows/faucetFlow";
-import {
-  FAUCET_DRIP_ATOMS,
-  QUOTE_MINT,
-  QUOTE_SYMBOL,
-} from "@/lib/collateral";
+import { FAUCET_DRIP_ATOMS, QUOTE_MINT, QUOTE_SYMBOL } from "@/lib/collateral";
 import { atomsToHuman } from "@/lib/decimals";
 
 export const Route = createFileRoute("/faucet")({
@@ -26,8 +22,7 @@ export const Route = createFileRoute("/faucet")({
       { title: "Faucet — OpenPerps" },
       {
         name: "description",
-        content:
-          "Mint devnet mock-USDC collateral to deposit into any OpenPerps market.",
+        content: "Mint devnet mock-USDC collateral to deposit into any OpenPerps market.",
       },
     ],
   }),
@@ -68,9 +63,9 @@ function Faucet() {
             Devnet collateral faucet
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Every OpenPerps market is margined in the same shared mock-USDC.
-            Mint some here once, then deposit it into any market's trading
-            account. This is test collateral — not the asset you trade.
+            Every OpenPerps market is margined in the same shared mock-USDC. Mint some here once,
+            then deposit it into any market's trading account. This is test collateral — not the
+            asset you trade.
           </p>
         </div>
       </header>
@@ -81,8 +76,8 @@ function Faucet() {
           <div className="flex-1">
             <p className="font-medium">Connect a wallet to claim mUSDC.</p>
             <p className="text-xs text-muted-foreground">
-              You pay only the network fee (~0.00001 SOL) plus a one-time ATA
-              rent if this is your first claim.
+              You pay only the network fee (~0.00001 SOL) plus a one-time ATA rent if this is your
+              first claim.
             </p>
           </div>
           <WalletButton />
@@ -154,8 +149,8 @@ function Faucet() {
               </a>
             </div>
             <p>
-              6 decimals. The mint authority is an app-held devnet keypair —
-              fine here because the token is worthless test collateral.
+              6 decimals. The mint authority is an app-held devnet keypair — fine here because the
+              token is worthless test collateral.
             </p>
           </div>
         </div>
@@ -168,17 +163,10 @@ function useMusdcBalance() {
   const { connection } = useConnection();
   const wallet = useWallet();
   return useQuery({
-    queryKey: [
-      "musdc-balance",
-      wallet.publicKey?.toBase58(),
-      connection.rpcEndpoint,
-    ],
+    queryKey: ["musdc-balance", wallet.publicKey?.toBase58(), connection.rpcEndpoint],
     enabled: !!wallet.publicKey,
     queryFn: async () => {
-      const ata = getAssociatedTokenAddressSync(
-        QUOTE_MINT,
-        wallet.publicKey!,
-      );
+      const ata = getAssociatedTokenAddressSync(QUOTE_MINT, wallet.publicKey!);
       try {
         const acct = await getAccount(connection, ata);
         return acct.amount;

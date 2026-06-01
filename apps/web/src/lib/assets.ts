@@ -45,8 +45,7 @@ export const ASSET_PRESETS: AssetPreset[] = [
     symbol: "SOL-PERP",
     name: "Solana",
     baseMint: "So11111111111111111111111111111111111111112",
-    pythFeedId:
-      "0xef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d",
+    pythFeedId: "0xef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d",
     defaultPriceUsd: 150,
     synthetic: false,
     cexSymbol: "SOLUSDT",
@@ -55,8 +54,7 @@ export const ASSET_PRESETS: AssetPreset[] = [
     ticker: "BTC",
     symbol: "BTC-PERP",
     name: "Bitcoin",
-    pythFeedId:
-      "0xe62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43",
+    pythFeedId: "0xe62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43",
     defaultPriceUsd: 95000,
     synthetic: true,
     cexSymbol: "BTCUSDT",
@@ -65,8 +63,7 @@ export const ASSET_PRESETS: AssetPreset[] = [
     ticker: "ETH",
     symbol: "ETH-PERP",
     name: "Ethereum",
-    pythFeedId:
-      "0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace",
+    pythFeedId: "0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace",
     defaultPriceUsd: 3500,
     synthetic: true,
     cexSymbol: "ETHUSDT",
@@ -76,8 +73,7 @@ export const ASSET_PRESETS: AssetPreset[] = [
     symbol: "BONK-PERP",
     name: "Bonk",
     baseMint: "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
-    pythFeedId:
-      "0x72b021217ca3fe68922a19aaf990109cb9d84e9ad004b4d2025ad6f529314419",
+    pythFeedId: "0x72b021217ca3fe68922a19aaf990109cb9d84e9ad004b4d2025ad6f529314419",
     defaultPriceUsd: 0.00002,
     synthetic: false,
     cexSymbol: "BONKUSDT",
@@ -87,8 +83,7 @@ export const ASSET_PRESETS: AssetPreset[] = [
     symbol: "JUP-PERP",
     name: "Jupiter",
     baseMint: "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN",
-    pythFeedId:
-      "0x0a0408d619e9380abad35060f9192039ed5042fa6f82301d0e48bb52be830996",
+    pythFeedId: "0x0a0408d619e9380abad35060f9192039ed5042fa6f82301d0e48bb52be830996",
     defaultPriceUsd: 0.8,
     synthetic: false,
     cexSymbol: "JUPUSDT",

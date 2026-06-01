@@ -181,9 +181,7 @@ function MarketHeader({
   // rows and the chart all agree and the asset-slot-0 collision (custom groups
   // + SOL all on slot 0) can't smear them together. Synthetic markets fall back
   // to the Pyth 24h-ago ref + indexed volume.
-  const dexQ = useDexStatsMany(
-    markets.map((x) => x.baseMint).filter((x): x is string => !!x),
-  );
+  const dexQ = useDexStatsMany(markets.map((x) => x.baseMint).filter((x): x is string => !!x));
   const synthetic = markets.filter((x) => !x.baseMint);
   const refsQ = use24hRefs(synthetic);
   const statsQ = useQuery({

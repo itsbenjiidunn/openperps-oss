@@ -50,18 +50,11 @@ export function WalletButton() {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-44">
         <DropdownMenuItem onClick={copy}>
-          {copied ? (
-            <Check className="h-4 w-4 text-success" />
-          ) : (
-            <Copy className="h-4 w-4" />
-          )}
+          {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
           {copied ? "Copied!" : "Copy address"}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem
-          onClick={() => disconnect()}
-          className="text-danger focus:text-danger"
-        >
+        <DropdownMenuItem onClick={() => disconnect()} className="text-danger focus:text-danger">
           <LogOut className="h-4 w-4" />
           Disconnect
         </DropdownMenuItem>

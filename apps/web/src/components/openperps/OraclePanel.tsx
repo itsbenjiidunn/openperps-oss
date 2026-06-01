@@ -38,8 +38,7 @@ export function OraclePanel({ market }: { market: Market }) {
   }
   const pool = market.oraclePool;
 
-  const fmtUsd = (usd: number) =>
-    usd >= 1 ? usd.toFixed(2) : usd.toFixed(6);
+  const fmtUsd = (usd: number) => (usd >= 1 ? usd.toFixed(2) : usd.toFixed(6));
 
   const act = async (key: string, fn: () => Promise<{ signature: string }>) => {
     setError(null);
@@ -78,16 +77,12 @@ export function OraclePanel({ market }: { market: Market }) {
         <div className="rounded-md border border-border/70 p-2">
           <div className="text-muted-foreground text-[10px]">Pool spot</div>
           <div className="text-sm">
-            {spotQ.data !== undefined && spotQ.data !== null
-              ? `$${fmtUsd(spotQ.data)}`
-              : "—"}
+            {spotQ.data !== undefined && spotQ.data !== null ? `$${fmtUsd(spotQ.data)}` : "—"}
           </div>
         </div>
         <div className="rounded-md border border-border/70 p-2">
           <div className="text-muted-foreground text-[10px]">Mark (EWMA)</div>
-          <div className="text-sm">
-            {market.price > 0 ? `$${fmtUsd(market.price)}` : "—"}
-          </div>
+          <div className="text-sm">{market.price > 0 ? `$${fmtUsd(market.price)}` : "—"}</div>
         </div>
       </div>
 
@@ -98,9 +93,7 @@ export function OraclePanel({ market }: { market: Market }) {
           inputMode="decimal"
           className="flex-1 bg-background/60 border border-border rounded-md px-2 py-1.5 text-xs font-mono focus:outline-none focus:border-neon/60"
         />
-        <span className="text-[10px] text-muted-foreground font-mono">
-          {market.base}
-        </span>
+        <span className="text-[10px] text-muted-foreground font-mono">{market.base}</span>
       </div>
 
       <div className="grid grid-cols-2 gap-2">
@@ -188,8 +181,8 @@ export function OraclePanel({ market }: { market: Market }) {
       {error && <div className="text-[11px] text-danger break-words">{error}</div>}
 
       <div className="text-[10px] text-muted-foreground">
-        Pool {fmtPubkey(pool, 4, 4)}. Swaps move the pool; the EWMA (α=0.2)
-        nudges the mark toward spot each crank — anyone can crank.
+        Pool {fmtPubkey(pool, 4, 4)}. Swaps move the pool; the EWMA (α=0.2) nudges the mark toward
+        spot each crank — anyone can crank.
       </div>
     </div>
   );

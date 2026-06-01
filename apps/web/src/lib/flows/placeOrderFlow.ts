@@ -211,12 +211,7 @@ export async function placeOrderFlow(args: {
   const signer = session ? session.publicKey : wallet.publicKey;
   // Clear the group stale-loss lock atomically (see staleClearAccrues) + give
   // the tx headroom for the extra accrual instructions.
-  const accrues = await staleClearAccrues(
-    connection,
-    signer,
-    marketOf(params),
-    params.assetIndex,
-  );
+  const accrues = await staleClearAccrues(connection, signer, marketOf(params), params.assetIndex);
   const budget = ComputeBudgetProgram.setComputeUnitLimit({ units: 1_200_000 });
   const { blockhash, lastValidBlockHeight } =
     await connection.getLatestBlockhash(CONFIRM_COMMITMENT);
@@ -242,11 +237,7 @@ export async function placeOrderFlow(args: {
   }
 
   // Wallet path (one popup).
-  const tx = new Transaction().add(
-    budget,
-    ...accrues,
-    ...tradeIxs(params, wallet.publicKey),
-  );
+  const tx = new Transaction().add(budget, ...accrues, ...tradeIxs(params, wallet.publicKey));
   tx.recentBlockhash = blockhash;
   tx.feePayer = wallet.publicKey;
   await preflight(connection, tx);

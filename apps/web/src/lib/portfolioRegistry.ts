@@ -38,9 +38,7 @@ export function listPortfolios(): PortfolioEntry[] {
 export function listPortfoliosFor(owner: string, marketPubkey?: string): PortfolioEntry[] {
   return readRaw()
     .filter(
-      (p) =>
-        p.owner === owner &&
-        (marketPubkey === undefined || p.marketPubkey === marketPubkey),
+      (p) => p.owner === owner && (marketPubkey === undefined || p.marketPubkey === marketPubkey),
     )
     .sort((a, b) => b.addedAt - a.addedAt);
 }

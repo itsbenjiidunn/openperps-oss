@@ -40,10 +40,7 @@ export type Bar = {
 /// The Pyth crypto benchmark symbol for a market, e.g. "Crypto.BTC/USD".
 /// Returns null when the asset has no Pyth feed (custom devnet SPL), in which
 /// case the chart falls back to building bars from the live mark.
-export function pythSymbolFor(market: {
-  base: string;
-  oracleKind?: string;
-}): string | null {
+export function pythSymbolFor(market: { base: string; oracleKind?: string }): string | null {
   const b = market.base?.trim().toUpperCase();
   if (!b) return null;
   // Any Pyth-backed market maps to its crypto benchmark feed. The official
@@ -93,8 +90,7 @@ export async function fetchPythHistory(
       const h = j.h?.[i];
       const l = j.l?.[i];
       const c = j.c?.[i];
-      if (o === undefined || h === undefined || l === undefined || c === undefined)
-        continue;
+      if (o === undefined || h === undefined || l === undefined || c === undefined) continue;
       bars.push({ time: j.t[i]!, open: o, high: h, low: l, close: c, volume: j.v?.[i] ?? 0 });
     }
     return bars;
@@ -153,7 +149,14 @@ export async function fetchGeckoHistory(mint: string, interval: Interval): Promi
     const j = (await res.json()) as { ohlcv_list?: number[][] };
     const list = j.ohlcv_list ?? [];
     const bars = list
-      .map((r) => ({ time: r[0]!, open: r[1]!, high: r[2]!, low: r[3]!, close: r[4]!, volume: r[5] ?? 0 }))
+      .map((r) => ({
+        time: r[0]!,
+        open: r[1]!,
+        high: r[2]!,
+        low: r[3]!,
+        close: r[4]!,
+        volume: r[5] ?? 0,
+      }))
       .filter((b) => Number.isFinite(b.close) && b.close > 0)
       .sort((a, b) => a.time - b.time);
     if (bars.length) histCache.set(key, { bars, ts: Date.now() });

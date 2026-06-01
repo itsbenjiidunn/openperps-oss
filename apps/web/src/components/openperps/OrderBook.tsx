@@ -12,9 +12,7 @@ type Book = { bids: Level[]; asks: Level[] };
 const WS_BASE = "wss://stream.binance.com:9443/ws";
 
 function parseLevels(raw: [string, string][]): Level[] {
-  return raw
-    .map(([p, q]) => [Number(p), Number(q)] as Level)
-    .filter(([p, q]) => p > 0 && q > 0);
+  return raw.map(([p, q]) => [Number(p), Number(q)] as Level).filter(([p, q]) => p > 0 && q > 0);
 }
 
 export function OrderBook({ symbol, base }: { symbol: string; base: string }) {
@@ -55,16 +53,10 @@ export function OrderBook({ symbol, base }: { symbol: string; base: string }) {
     const bids = [...book.bids].sort((a, b) => b[0] - a[0]).slice(0, 12);
     // Cumulative totals + max for the depth bars.
     let cum = 0;
-    const askRows = asks
-      .map(([p, s]) => ({ p, s, total: (cum += s) }))
-      .reverse(); // highest ask on top
+    const askRows = asks.map(([p, s]) => ({ p, s, total: (cum += s) })).reverse(); // highest ask on top
     cum = 0;
     const bidRows = bids.map(([p, s]) => ({ p, s, total: (cum += s) }));
-    const maxTotal = Math.max(
-      askRows[0]?.total ?? 0,
-      bidRows[bidRows.length - 1]?.total ?? 0,
-      1,
-    );
+    const maxTotal = Math.max(askRows[0]?.total ?? 0, bidRows[bidRows.length - 1]?.total ?? 0, 1);
     const bestAsk = asks[0]?.[0] ?? 0;
     const bestBid = bids[0]?.[0] ?? 0;
     const mid = bestAsk && bestBid ? (bestAsk + bestBid) / 2 : bestAsk || bestBid;
@@ -74,9 +66,13 @@ export function OrderBook({ symbol, base }: { symbol: string; base: string }) {
   }, [book]);
 
   const fmtP = (p: number) =>
-    p < 1 ? p.toFixed(6) : p.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    p < 1
+      ? p.toFixed(6)
+      : p.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fmtS = (s: number) =>
-    s >= 1000 ? `${(s / 1000).toFixed(2)}K` : s.toLocaleString(undefined, { maximumFractionDigits: 4 });
+    s >= 1000
+      ? `${(s / 1000).toFixed(2)}K`
+      : s.toLocaleString(undefined, { maximumFractionDigits: 4 });
 
   return (
     <div className="space-y-1">

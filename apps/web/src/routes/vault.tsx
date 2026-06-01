@@ -9,13 +9,7 @@ import { useConnection } from "@solana/wallet-adapter-react";
 import { PublicKey } from "@solana/web3.js";
 import { getAccount } from "@solana/spl-token";
 import { useQuery } from "@tanstack/react-query";
-import {
-  Vault as VaultIcon,
-  ShieldCheck,
-  TrendingUp,
-  Activity,
-  ExternalLink,
-} from "lucide-react";
+import { Vault as VaultIcon, ShieldCheck, TrendingUp, Activity, ExternalLink } from "lucide-react";
 
 import { PriceChart } from "@/components/openperps/PriceChart";
 import { usePortfolioState } from "@/lib/onchain";
@@ -46,12 +40,10 @@ function VaultPage() {
   const houseQ = usePortfolioState(SHARED_HOUSE.toBase58());
 
   const tvl = tvlQ.data !== undefined ? atomsToHuman(tvlQ.data, undefined, true) : "—";
-  const houseCapital =
-    houseQ.data ? atomsToHuman(houseQ.data.capital, undefined, true) : "—";
-  const housePnl =
-    houseQ.data
-      ? `${houseQ.data.pnl >= 0n ? "+" : ""}${atomsToHuman(houseQ.data.pnl, undefined, true)}`
-      : "—";
+  const houseCapital = houseQ.data ? atomsToHuman(houseQ.data.capital, undefined, true) : "—";
+  const housePnl = houseQ.data
+    ? `${houseQ.data.pnl >= 0n ? "+" : ""}${atomsToHuman(houseQ.data.pnl, undefined, true)}`
+    : "—";
   const tvlNum = num(tvl);
   // Illustrative split (no indexer): treat 90% as LP, 10% as insurance buffer.
   const insurance = tvlNum * 0.1;
@@ -65,12 +57,10 @@ function VaultPage() {
             <VaultIcon className="h-5 w-5 text-neon" />
           </div>
           <div>
-            <h1 className="font-display text-2xl font-semibold">
-              LP &amp; Insurance Vault
-            </h1>
+            <h1 className="font-display text-2xl font-semibold">LP &amp; Insurance Vault</h1>
             <p className="text-sm text-muted-foreground">
-              The shared counterparty to every trade. Quote-margined {QUOTE_SYMBOL};
-              earns the spread + taker fees, pays out trader profit.
+              The shared counterparty to every trade. Quote-margined {QUOTE_SYMBOL}; earns the
+              spread + taker fees, pays out trader profit.
             </p>
           </div>
         </div>
@@ -107,12 +97,10 @@ function VaultPage() {
         <div className="panel p-4 lg:col-span-2">
           <div className="flex items-center justify-between mb-3">
             <div className="text-sm">
-              TVL & utilization · 30D{" "}
-              <span className="text-[10px] text-violet">illustrative</span>
+              TVL & utilization · 30D <span className="text-[10px] text-violet">illustrative</span>
             </div>
             <div className="text-[11px] text-muted-foreground font-mono">
-              vault <ExplorerLink id={SHARED_VAULT.toBase58()} /> · idle{" "}
-              {fmtPct(1 - util)}
+              vault <ExplorerLink id={SHARED_VAULT.toBase58()} /> · idle {fmtPct(1 - util)}
             </div>
           </div>
           <div className="h-[280px]">
@@ -131,9 +119,9 @@ function VaultPage() {
             <Bar label="Worst-case 99% VaR" value={0.18} danger />
           </div>
           <div className="mt-4 p-3 panel-flat text-[11px] text-muted-foreground">
-            The LP &amp; Insurance Vault absorbs the opposite side of every
-            position. It is seeded once and shared across all pairs; trader
-            PnL settles against it. Bars are illustrative pending an indexer.
+            The LP &amp; Insurance Vault absorbs the opposite side of every position. It is seeded
+            once and shared across all pairs; trader PnL settles against it. Bars are illustrative
+            pending an indexer.
           </div>
         </div>
       </div>
@@ -166,8 +154,7 @@ function VaultPage() {
         </div>
         <div className="panel p-4">
           <div className="text-sm mb-3">
-            Recent fee accrual{" "}
-            <span className="text-[10px] text-violet">illustrative</span>
+            Recent fee accrual <span className="text-[10px] text-violet">illustrative</span>
           </div>
           <table className="w-full text-xs">
             <thead>
@@ -188,9 +175,7 @@ function VaultPage() {
                   <td className="py-1.5 font-mono text-muted-foreground">{e}</td>
                   <td>{m}</td>
                   <td className="text-right font-mono">${fmtNum(f as number)}</td>
-                  <td className="text-right font-mono text-success">
-                    ${fmtNum(h as number)}
-                  </td>
+                  <td className="text-right font-mono text-success">${fmtNum(h as number)}</td>
                 </tr>
               ))}
             </tbody>
@@ -285,10 +270,7 @@ function Bar({
   );
 }
 
-function useTokenBalance(
-  connection: import("@solana/web3.js").Connection,
-  pubkey: string,
-) {
+function useTokenBalance(connection: import("@solana/web3.js").Connection, pubkey: string) {
   return useQuery({
     queryKey: ["token-balance", pubkey, connection.rpcEndpoint],
     queryFn: async () => {

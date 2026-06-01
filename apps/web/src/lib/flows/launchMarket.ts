@@ -145,8 +145,24 @@ export async function launchMarket(args: {
   // ---------- 2) vault + House + seed the House with the creator's mUSDC ----------
   onProgress({ step: "seed-house" });
   const seedTx = new Transaction()
-    .add(createVaultIx({ programId, market: market.publicKey, authority: payer, vault, quoteMint: QUOTE_MINT }))
-    .add(createHouseVaultIx({ programId, market: market.publicKey, authority: payer, housePortfolio: house, houseBump }))
+    .add(
+      createVaultIx({
+        programId,
+        market: market.publicKey,
+        authority: payer,
+        vault,
+        quoteMint: QUOTE_MINT,
+      }),
+    )
+    .add(
+      createHouseVaultIx({
+        programId,
+        market: market.publicKey,
+        authority: payer,
+        housePortfolio: house,
+        houseBump,
+      }),
+    )
     .add(
       fundHouseVaultIx({
         programId,
@@ -211,7 +227,13 @@ export async function launchMarket(args: {
   );
   if (isDex && poolPubkey) {
     actTx.add(
-      pinOraclePoolIx({ programId, market: market.publicKey, pool: poolPubkey, signer: payer, assetIndex: 0 }),
+      pinOraclePoolIx({
+        programId,
+        market: market.publicKey,
+        pool: poolPubkey,
+        signer: payer,
+        assetIndex: 0,
+      }),
     );
   }
   sigs["activate"] = await sendAndConfirm(connection, wallet, actTx);
@@ -243,7 +265,14 @@ export async function launchMarket(args: {
   addMarket(entry);
   void postMarket(entry);
 
-  return { market: market.publicKey, vault, house, assetIndex: 0, pool: poolPubkey, signatures: sigs };
+  return {
+    market: market.publicKey,
+    vault,
+    house,
+    assetIndex: 0,
+    pool: poolPubkey,
+    signatures: sigs,
+  };
 }
 
 async function sendAndConfirm(

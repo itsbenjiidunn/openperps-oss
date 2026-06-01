@@ -18,11 +18,7 @@ export function humanToAtoms(human: string, decimals = QUOTE_DECIMALS): bigint {
 
 /// 10_000_000n → "10.000000" (or "10" if trimmed). Always returns a
 /// finite-precision string suitable for monospace display.
-export function atomsToHuman(
-  atoms: bigint,
-  decimals = QUOTE_DECIMALS,
-  trim = false,
-): string {
+export function atomsToHuman(atoms: bigint, decimals = QUOTE_DECIMALS, trim = false): string {
   const neg = atoms < 0n;
   const abs = neg ? -atoms : atoms;
   const s = abs.toString().padStart(decimals + 1, "0");

@@ -6,15 +6,9 @@
 
 import { PublicKey } from "@solana/web3.js";
 
-export const SHARED_MARKET = new PublicKey(
-  "EZj2ES82yEvo7GFa1LPvitPSpxwK6BqVegP8sasTeZGE",
-);
-export const SHARED_VAULT = new PublicKey(
-  "75LaQ2aGjbk5XrHUEFy8AgGkLCX72DA2zcjx6qHHFm7R",
-);
-export const SHARED_HOUSE = new PublicKey(
-  "5buZR7SrG6D3t2Ste5HkmWxSkaDwZpmSYvFDuwwcxKqa",
-);
+export const SHARED_MARKET = new PublicKey("EZj2ES82yEvo7GFa1LPvitPSpxwK6BqVegP8sasTeZGE");
+export const SHARED_VAULT = new PublicKey("75LaQ2aGjbk5XrHUEFy8AgGkLCX72DA2zcjx6qHHFm7R");
+export const SHARED_HOUSE = new PublicKey("5buZR7SrG6D3t2Ste5HkmWxSkaDwZpmSYvFDuwwcxKqa");
 export const SHARED_HOUSE_BUMP = 253;
 export const SHARED_SLOT_CAPACITY = 16;
 

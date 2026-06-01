@@ -132,9 +132,7 @@ function Launch() {
   const [result, setResult] = useState<LaunchResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
-  const [priceSource, setPriceSource] = useState<
-    "pyth" | "jupiter" | "preset" | null
-  >(null);
+  const [priceSource, setPriceSource] = useState<"pyth" | "jupiter" | "preset" | null>(null);
   const [priceLoading, setPriceLoading] = useState(false);
   // Token ticker/name auto-resolved from a pasted mint (Jupiter registry).
   const [detected, setDetected] = useState<{ symbol: string; name: string } | null>(null);
@@ -340,10 +338,7 @@ function Launch() {
           maxLeverage: tier.maxLeverage,
           // The group caps the per-trade fee at GROUP_MAX_FEE_BPS;
           // advertising more would make every trade revert as InvalidConfig.
-          feeBps: Math.max(
-            1,
-            Math.min(GROUP_MAX_FEE_BPS, parseInt(s.feeBps || "5", 10) || 5),
-          ),
+          feeBps: Math.max(1, Math.min(GROUP_MAX_FEE_BPS, parseInt(s.feeBps || "5", 10) || 5)),
           seedPriceUsd,
           initialPrice: priceUsdToAtoms(seedPriceUsd, QUOTE_DECIMALS),
           // Seed the new group's House with the creator's mUSDC (LP + insurance).
@@ -376,12 +371,11 @@ function Launch() {
             List a custom SPL market
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            The majors — <span className="text-foreground">SOL, BTC, ETH, JUP</span>{" "}
-            — are already live. Use this to list{" "}
-            <span className="text-foreground">any other SPL token</span> as a
-            perp in its <span className="text-foreground">own isolated market</span>:
-            you create the group and seed its House (LP) with your {QUOTE_SYMBOL}.
-            Risk stays contained to that seed. Devnet only.
+            The majors — <span className="text-foreground">SOL, BTC, ETH, JUP</span> — are already
+            live. Use this to list <span className="text-foreground">any other SPL token</span> as a
+            perp in its <span className="text-foreground">own isolated market</span>: you create the
+            group and seed its House (LP) with your {QUOTE_SYMBOL}. Risk stays contained to that
+            seed. Devnet only.
           </p>
         </div>
       </header>
@@ -400,126 +394,122 @@ function Launch() {
             onGo={(i) => setS((p) => ({ ...p, step: i }))}
           />
           <div className="space-y-4">
-          <div className="panel p-5 space-y-4">
-            {s.step === 0 && (
-              <AssetStep
-                customTicker={s.customTicker}
-                customMint={s.customMint}
-                customMintValid={customMintValid}
-                detected={detected}
-                detecting={priceLoading}
-                onCustomTicker={(v) => setS({ ...s, customTicker: v })}
-                onCustomMint={(v) => setS({ ...s, customMint: v })}
-              />
-            )}
-            {s.step === 1 && asset && (
-              <OracleStep
-                asset={asset}
-                oracleKind={effectiveOracleKind}
-                manualPriceUsd={s.manualPriceUsd}
-                onKind={(k) => setS({ ...s, oracleKind: k })}
-                onManualPrice={(v) => setS({ ...s, manualPriceUsd: v })}
-                priceSource={priceSource}
-                priceLoading={priceLoading}
-                onRefreshPrice={() => void loadPrice()}
-              />
-            )}
-            {s.step === 2 && (
-              <RiskStep
-                tierId={s.tierId}
-                onPick={(id) => setS({ ...s, tierId: id })}
-                feeBps={s.feeBps}
-                onFee={(v) => setS({ ...s, feeBps: v })}
-                seedLp={s.seedLp}
-                onSeed={(v) => setS({ ...s, seedLp: v })}
-                walletMusdc={walletMusdc}
-                seedValid={seedValid}
-              />
-            )}
-            {s.step === 3 && asset && (
-              <ReviewStep
-                asset={asset}
-                oracleKind={effectiveOracleKind}
-                tier={tier}
-                seedPriceUsd={seedPriceUsd}
-                feeBps={s.feeBps}
-                seedLp={s.seedLp}
-              />
-            )}
+            <div className="panel p-5 space-y-4">
+              {s.step === 0 && (
+                <AssetStep
+                  customTicker={s.customTicker}
+                  customMint={s.customMint}
+                  customMintValid={customMintValid}
+                  detected={detected}
+                  detecting={priceLoading}
+                  onCustomTicker={(v) => setS({ ...s, customTicker: v })}
+                  onCustomMint={(v) => setS({ ...s, customMint: v })}
+                />
+              )}
+              {s.step === 1 && asset && (
+                <OracleStep
+                  asset={asset}
+                  oracleKind={effectiveOracleKind}
+                  manualPriceUsd={s.manualPriceUsd}
+                  onKind={(k) => setS({ ...s, oracleKind: k })}
+                  onManualPrice={(v) => setS({ ...s, manualPriceUsd: v })}
+                  priceSource={priceSource}
+                  priceLoading={priceLoading}
+                  onRefreshPrice={() => void loadPrice()}
+                />
+              )}
+              {s.step === 2 && (
+                <RiskStep
+                  tierId={s.tierId}
+                  onPick={(id) => setS({ ...s, tierId: id })}
+                  feeBps={s.feeBps}
+                  onFee={(v) => setS({ ...s, feeBps: v })}
+                  seedLp={s.seedLp}
+                  onSeed={(v) => setS({ ...s, seedLp: v })}
+                  walletMusdc={walletMusdc}
+                  seedValid={seedValid}
+                />
+              )}
+              {s.step === 3 && asset && (
+                <ReviewStep
+                  asset={asset}
+                  oracleKind={effectiveOracleKind}
+                  tier={tier}
+                  seedPriceUsd={seedPriceUsd}
+                  feeBps={s.feeBps}
+                  seedLp={s.seedLp}
+                />
+              )}
 
-            {needsLiquidityGate && !liquidityOk && (
-              <div className="mt-3 rounded-md border border-danger/40 bg-danger/[0.06] px-3 py-2 text-[11px] text-danger">
-                {poolLiquidity == null
-                  ? "Checking pool liquidity…"
-                  : `Pool liquidity too low ($${poolLiquidity.toLocaleString(undefined, { maximumFractionDigits: 0 })}). Minimum $${MIN_POOL_LIQUIDITY_USD.toLocaleString()} — a thin pool can be flash-loan-manipulated, so this market is blocked.`}
+              {needsLiquidityGate && !liquidityOk && (
+                <div className="mt-3 rounded-md border border-danger/40 bg-danger/[0.06] px-3 py-2 text-[11px] text-danger">
+                  {poolLiquidity == null
+                    ? "Checking pool liquidity…"
+                    : `Pool liquidity too low ($${poolLiquidity.toLocaleString(undefined, { maximumFractionDigits: 0 })}). Minimum $${MIN_POOL_LIQUIDITY_USD.toLocaleString()} — a thin pool can be flash-loan-manipulated, so this market is blocked.`}
+                </div>
+              )}
+
+              <div className="flex items-center justify-between pt-3 border-t border-border/60">
+                <button
+                  onClick={() => go(-1)}
+                  disabled={s.step === 0 || running}
+                  className="btn-ghost-border rounded-md px-3 py-2 text-sm inline-flex items-center gap-1.5 disabled:opacity-40"
+                >
+                  <ChevronLeft className="h-4 w-4" /> Back
+                </button>
+                {s.step < STEP_LABELS.length - 1 ? (
+                  <button
+                    onClick={() => go(1)}
+                    disabled={!stepValid(s.step)}
+                    className="btn-primary rounded-md px-4 py-2 text-sm font-medium inline-flex items-center gap-1.5 disabled:opacity-50"
+                  >
+                    Next <ChevronRight className="h-4 w-4" />
+                  </button>
+                ) : (
+                  <button
+                    onClick={onLaunch}
+                    disabled={!stepValid(3) || running}
+                    className="btn-primary rounded-md px-4 py-2 text-sm font-medium inline-flex items-center gap-2 disabled:opacity-50"
+                  >
+                    {running ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Rocket className="h-4 w-4" />
+                    )}
+                    {running ? "Launching…" : "Launch market"}
+                  </button>
+                )}
               </div>
-            )}
 
-            <div className="flex items-center justify-between pt-3 border-t border-border/60">
-              <button
-                onClick={() => go(-1)}
-                disabled={s.step === 0 || running}
-                className="btn-ghost-border rounded-md px-3 py-2 text-sm inline-flex items-center gap-1.5 disabled:opacity-40"
-              >
-                <ChevronLeft className="h-4 w-4" /> Back
-              </button>
-              {s.step < STEP_LABELS.length - 1 ? (
-                <button
-                  onClick={() => go(1)}
-                  disabled={!stepValid(s.step)}
-                  className="btn-primary rounded-md px-4 py-2 text-sm font-medium inline-flex items-center gap-1.5 disabled:opacity-50"
-                >
-                  Next <ChevronRight className="h-4 w-4" />
-                </button>
-              ) : (
-                <button
-                  onClick={onLaunch}
-                  disabled={!stepValid(3) || running}
-                  className="btn-primary rounded-md px-4 py-2 text-sm font-medium inline-flex items-center gap-2 disabled:opacity-50"
-                >
-                  {running ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Rocket className="h-4 w-4" />
-                  )}
-                  {running ? "Launching…" : "Launch market"}
-                </button>
+              {error && (
+                <div className="panel-flat border border-danger/50 p-3 text-xs text-danger">
+                  {error}
+                </div>
               )}
             </div>
 
-            {error && (
-              <div className="panel-flat border border-danger/50 p-3 text-xs text-danger">
-                {error}
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-4">
-            {!wallet.connected && (
-              <div className="panel p-4 flex flex-col gap-3">
-                <p className="text-sm font-medium">Connect to launch</p>
-                <p className="text-[11px] text-muted-foreground">
-                  Launching is 3–4 signatures (group rent ~0.05 SOL + your
-                  {" "}{QUOTE_SYMBOL} seed). You're the market's authority and
-                  can withdraw unused House LP later.
-                </p>
-                <WalletButton />
-              </div>
-            )}
-            {running || Object.keys(progress).length > 0 ? (
-              <ProgressPanel
-                progress={progress}
-                order={txOrderFor(effectiveOracleKind)}
-              />
-            ) : (
-              <SummaryAside
-                asset={asset}
-                oracleKind={effectiveOracleKind}
-                tier={tier}
-                seedPriceUsd={seedPriceUsd}
-              />
-            )}
-          </div>
+            <div className="space-y-4">
+              {!wallet.connected && (
+                <div className="panel p-4 flex flex-col gap-3">
+                  <p className="text-sm font-medium">Connect to launch</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Launching is 3–4 signatures (group rent ~0.05 SOL + your {QUOTE_SYMBOL} seed).
+                    You're the market's authority and can withdraw unused House LP later.
+                  </p>
+                  <WalletButton />
+                </div>
+              )}
+              {running || Object.keys(progress).length > 0 ? (
+                <ProgressPanel progress={progress} order={txOrderFor(effectiveOracleKind)} />
+              ) : (
+                <SummaryAside
+                  asset={asset}
+                  oracleKind={effectiveOracleKind}
+                  tier={tier}
+                  seedPriceUsd={seedPriceUsd}
+                />
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -587,12 +577,8 @@ function StepSidebar({
                 {done ? <Check className="h-3.5 w-3.5" /> : i + 1}
               </span>
               <span className="flex-1">
-                <span className="block text-[11px] text-muted-foreground">
-                  Step {i + 1}
-                </span>
-                <span className={`block text-sm ${active ? "text-neon" : ""}`}>
-                  {label}
-                </span>
+                <span className="block text-[11px] text-muted-foreground">Step {i + 1}</span>
+                <span className={`block text-sm ${active ? "text-neon" : ""}`}>{label}</span>
                 <span className="block text-[11px] text-muted-foreground mt-0.5">
                   {STEP_HINTS[i]}
                 </span>
@@ -628,10 +614,9 @@ function AssetStep({
     <div className="space-y-4">
       <StepHeader n={1} title="Custom SPL token" />
       <p className="text-xs text-muted-foreground">
-        SOL, BTC, ETH and JUP are already listed with live prices — no need to
-        launch them. This wizard lists any{" "}
-        <span className="text-foreground">other SPL token</span> as a perp.
-        Paste its mint and we auto-fill the ticker and price.
+        SOL, BTC, ETH and JUP are already listed with live prices — no need to launch them. This
+        wizard lists any <span className="text-foreground">other SPL token</span> as a perp. Paste
+        its mint and we auto-fill the ticker and price.
       </p>
 
       <div className="space-y-3 pt-1">
@@ -668,8 +653,8 @@ function AssetStep({
 
         {customMintValid && !detecting && !detected && (
           <div className="text-[11px] text-muted-foreground">
-            Not in Jupiter's registry (devnet-only mint?) — enter the ticker and
-            seed price manually below.
+            Not in Jupiter's registry (devnet-only mint?) — enter the ticker and seed price manually
+            below.
           </div>
         )}
 
@@ -713,8 +698,8 @@ function OracleStep({
     <div className="space-y-4">
       <StepHeader n={2} title="Oracle price feed" />
       <p className="text-xs text-muted-foreground">
-        Perps are priced off an oracle, not an order book. Pick the price
-        source for <span className="font-mono">{asset.symbol}</span>.
+        Perps are priced off an oracle, not an order book. Pick the price source for{" "}
+        <span className="font-mono">{asset.symbol}</span>.
       </p>
 
       <button
@@ -733,9 +718,9 @@ function OracleStep({
           </span>
         </div>
         <div className="text-[11px] text-muted-foreground mt-1">
-          A mock constant-product pool is created and pinned at the seed price
-          below. The mark is its on-chain EWMA — anyone can crank, no keeper.
-          On mainnet this would be a Raydium / pumpswap pool.
+          A mock constant-product pool is created and pinned at the seed price below. The mark is
+          its on-chain EWMA — anyone can crank, no keeper. On mainnet this would be a Raydium /
+          pumpswap pool.
         </div>
       </button>
 
@@ -752,8 +737,8 @@ function OracleStep({
           <span className="font-medium">Manual / devnet-simulated</span>
         </div>
         <div className="text-[11px] text-muted-foreground mt-1">
-          No pool — you set the price and refresh it via AccrueAsset on the
-          Advanced page. Simplest, least realistic.
+          No pool — you set the price and refresh it via AccrueAsset on the Advanced page. Simplest,
+          least realistic.
         </div>
       </button>
 
@@ -836,9 +821,9 @@ function RiskStep({
     <div className="space-y-4">
       <StepHeader n={3} title="Margin, fee & liquidity" />
       <p className="text-xs text-muted-foreground">
-        Max leverage sets the trader's cap; the taker fee accrues to this
-        market's House. You seed that House with your own {QUOTE_SYMBOL} — it's
-        the LP + insurance that backs every trade on this isolated market.
+        Max leverage sets the trader's cap; the taker fee accrues to this market's House. You seed
+        that House with your own {QUOTE_SYMBOL} — it's the LP + insurance that backs every trade on
+        this isolated market.
       </p>
       <div className="space-y-2">
         {RISK_TIERS.map((t) => (
@@ -853,13 +838,9 @@ function RiskStep({
           >
             <div className="flex items-center justify-between">
               <span className="font-medium">{t.label}</span>
-              <span className="font-mono text-sm text-neon">
-                {t.maxLeverage}× max
-              </span>
+              <span className="font-mono text-sm text-neon">{t.maxLeverage}× max</span>
             </div>
-            <div className="text-[11px] text-muted-foreground mt-0.5">
-              {t.blurb}
-            </div>
+            <div className="text-[11px] text-muted-foreground mt-0.5">{t.blurb}</div>
           </button>
         ))}
       </div>
@@ -875,10 +856,7 @@ function RiskStep({
           type="range"
           min={1}
           max={GROUP_MAX_FEE_BPS}
-          value={Math.max(
-            1,
-            Math.min(GROUP_MAX_FEE_BPS, parseInt(feeBps || "5", 10) || 5),
-          )}
+          value={Math.max(1, Math.min(GROUP_MAX_FEE_BPS, parseInt(feeBps || "5", 10) || 5))}
           onChange={(e) => onFee(e.target.value)}
           className="w-full accent-[var(--neon)]"
         />
@@ -893,7 +871,8 @@ function RiskStep({
         <div className="flex items-center justify-between">
           <span className="text-sm">Seed deposit (LP collateral)</span>
           <span className="text-[11px] text-muted-foreground">
-            Wallet: {walletMusdc.toLocaleString(undefined, { maximumFractionDigits: 2 })} {QUOTE_SYMBOL}
+            Wallet: {walletMusdc.toLocaleString(undefined, { maximumFractionDigits: 2 })}{" "}
+            {QUOTE_SYMBOL}
           </span>
         </div>
         <div className="flex items-center gap-2 bg-background/60 border border-border rounded-md px-3 py-2 focus-within:border-neon/60">
@@ -907,9 +886,8 @@ function RiskStep({
           <span className="text-[10px] text-muted-foreground font-mono">{QUOTE_SYMBOL}</span>
         </div>
         <p className="text-[11px] text-muted-foreground">
-          This funds the new market's House (LP + insurance). Trades match
-          against it — risk is isolated to this seed, never the majors pool.
-          Min {MIN_SEED_LP} {QUOTE_SYMBOL}.
+          This funds the new market's House (LP + insurance). Trades match against it — risk is
+          isolated to this seed, never the majors pool. Min {MIN_SEED_LP} {QUOTE_SYMBOL}.
         </p>
         {!seedValid && seedNum > 0 && (
           <div className="text-[11px] text-danger">
@@ -978,18 +956,20 @@ function ReviewStep({
           k="Taker fee"
           v={`${feeBps || "0"} bps · ${((parseInt(feeBps || "0", 10) || 0) / 100).toFixed(2)}%`}
         />
-        <ReviewRow k="House seed (LP)" v={`${Number(seedLp || "0").toLocaleString()} ${QUOTE_SYMBOL}`} />
+        <ReviewRow
+          k="House seed (LP)"
+          v={`${Number(seedLp || "0").toLocaleString()} ${QUOTE_SYMBOL}`}
+        />
         <ReviewRow k="Group" v="Isolated (own vault + House)" />
       </dl>
 
       <div className="flex items-start gap-2 text-[11px] text-muted-foreground">
         <AlertCircle className="h-3.5 w-3.5 text-violet shrink-0 mt-0.5" />
         <span>
-          Creates an <span className="text-foreground">isolated market group</span>:
-          its own vault + House, seeded with your {QUOTE_SYMBOL}. Trades match
-          against this House only — risk never touches the majors pool. ~3–4
-          signatures (group rent + your seed). You can withdraw unused House LP
-          later (you're the authority).
+          Creates an <span className="text-foreground">isolated market group</span>: its own vault +
+          House, seeded with your {QUOTE_SYMBOL}. Trades match against this House only — risk never
+          touches the majors pool. ~3–4 signatures (group rent + your seed). You can withdraw unused
+          House LP later (you're the authority).
         </span>
       </div>
     </div>
@@ -1014,15 +994,10 @@ function SummaryAside({
       <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
         Market preview
       </div>
-      <div className="font-display text-xl font-semibold">
-        {asset?.symbol ?? "—"}
-      </div>
+      <div className="font-display text-xl font-semibold">{asset?.symbol ?? "—"}</div>
       <dl className="text-[11px] space-y-1 font-mono">
         <PreviewRow k="oracle" v={oracleKind} />
-        <PreviewRow
-          k="seed"
-          v={seedPriceUsd !== null ? `$${seedPriceUsd}` : "—"}
-        />
+        <PreviewRow k="seed" v={seedPriceUsd !== null ? `$${seedPriceUsd}` : "—"} />
         <PreviewRow k="max lev" v={`${tier.maxLeverage}×`} />
         <PreviewRow k="group" v="isolated" />
       </dl>
@@ -1034,9 +1009,7 @@ function ProgressPanel({
   progress,
   order,
 }: {
-  progress: Partial<
-    Record<LaunchStepName, { signature?: string; running?: boolean }>
-  >;
+  progress: Partial<Record<LaunchStepName, { signature?: string; running?: boolean }>>;
   order: LaunchStepName[];
 }) {
   return (
@@ -1070,13 +1043,9 @@ function ProgressPanel({
                 )}
               </span>
               <div className="flex-1 min-w-0">
-                <div className="text-[11px] text-muted-foreground">
-                  Tx {i + 1}
-                </div>
+                <div className="text-[11px] text-muted-foreground">Tx {i + 1}</div>
                 <div className="text-sm">{meta.label}</div>
-                <div className="text-[11px] text-muted-foreground">
-                  {meta.hint}
-                </div>
+                <div className="text-[11px] text-muted-foreground">{meta.hint}</div>
                 {st?.signature && (
                   <a
                     href={`https://explorer.solana.com/tx/${st.signature}?cluster=devnet`}
@@ -1146,9 +1115,7 @@ function TxIcon({ step }: { step: LaunchStepName }) {
 function StepHeader({ n, title }: { n: number; title: string }) {
   return (
     <div>
-      <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
-        Step {n} / 4
-      </div>
+      <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Step {n} / 4</div>
       <h2 className="font-display text-lg font-semibold">{title}</h2>
     </div>
   );
@@ -1217,4 +1184,3 @@ function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
     />
   );
 }
-

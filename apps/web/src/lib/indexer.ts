@@ -5,8 +5,7 @@
 import type { RegistryEntry } from "./registry";
 
 const INDEXER_URL =
-  import.meta.env.VITE_OPENPERPS_INDEXER ??
-  "https://openperps-indexer.denath1707.workers.dev";
+  import.meta.env.VITE_OPENPERPS_INDEXER ?? "https://openperps-indexer.denath1707.workers.dev";
 
 export type IndexedTrade = {
   signature: string;
@@ -63,9 +62,7 @@ export function fetchUserTrades(owner: string, limit = 30): Promise<IndexedTrade
   return get<IndexedTrade[]>(`/trades?owner=${owner}&limit=${limit}`, []);
 }
 
-export function fetchStats(): Promise<
-  Record<number, { trades: number; volume: number }>
-> {
+export function fetchStats(): Promise<Record<number, { trades: number; volume: number }>> {
   return get(`/stats`, {});
 }
 
@@ -102,9 +99,7 @@ export async function registerMarket(m: {
 /// Publish a launched custom market to the shared registry so every other
 /// wallet/device can discover it (not just this browser's localStorage).
 /// Fire-and-forget — local registry is still written as a fallback.
-export async function postMarket(
-  entry: Omit<RegistryEntry, "addedAt">,
-): Promise<void> {
+export async function postMarket(entry: Omit<RegistryEntry, "addedAt">): Promise<void> {
   try {
     await fetch(`${INDEXER_URL}/markets`, {
       method: "POST",
@@ -152,9 +147,7 @@ export async function fetchUserPortfolios(
 
 /// VWAP entry per (market, asset slot), derived from the owner's indexed fills.
 /// Keyed by `entryKey` for collision-free lookup against on-chain positions.
-export async function fetchPositionEntries(
-  owner: string,
-): Promise<Map<string, PositionEntry>> {
+export async function fetchPositionEntries(owner: string): Promise<Map<string, PositionEntry>> {
   const arr = await get<PositionEntry[]>(`/positions?owner=${owner}`, []);
   return new Map(arr.map((p) => [entryKey(p.market, p.assetIndex), p]));
 }

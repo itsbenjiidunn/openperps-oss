@@ -37,9 +37,7 @@ const SORTS: { key: Sort; label: string; live: boolean }[] = [
 /// Pyth 24h-ago reference + indexed volume.
 function useMarketMetrics(markets: Market[]) {
   const livePrices = useLivePrices(markets.map((m) => m.oracleFeedId));
-  const dexQ = useDexStatsMany(
-    markets.map((m) => m.baseMint).filter((x): x is string => !!x),
-  );
+  const dexQ = useDexStatsMany(markets.map((m) => m.baseMint).filter((x): x is string => !!x));
   const synthetic = markets.filter((m) => !m.baseMint);
   const refsQ = useQuery({
     queryKey: ["refs24h", synthetic.map((m) => m.base).join(",")],
@@ -217,52 +215,52 @@ export function MarketBrowser({
               const ch = changeOf(m);
               const vol = volOf(m);
               return (
-              <li
-                key={marketKey(m)}
-                onClick={() => onSelect(marketKey(m))}
-                className="flex items-center gap-3 px-3 py-2.5 text-sm cursor-pointer row-hover border-t border-border/30"
-              >
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium truncate">{m.symbol}</span>
-                    {isNew(m.createdAt) && (
-                      <span className="text-[9px] uppercase tracking-wide rounded px-1 py-px bg-[oklch(0.86_0.16_188_/_0.12)] text-neon">
-                        New
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-[11px] text-muted-foreground truncate">
-                    {m.base} · {m.baseMint ? "Token" : "Synthetic"}
-                  </div>
-                </div>
-                <div className="w-20 sm:w-24 text-right font-mono">
-                  {px === 0
-                    ? "—"
-                    : px < 1
-                      ? `$${px.toFixed(6)}`
-                      : `$${px.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-                </div>
-                <div
-                  className={`hidden md:block w-14 text-right font-mono ${ch === null ? "text-muted-foreground" : ch > 0 ? "text-success" : ch < 0 ? "text-danger" : "text-muted-foreground"}`}
+                <li
+                  key={marketKey(m)}
+                  onClick={() => onSelect(marketKey(m))}
+                  className="flex items-center gap-3 px-3 py-2.5 text-sm cursor-pointer row-hover border-t border-border/30"
                 >
-                  {ch === null ? "—" : `${ch >= 0 ? "+" : ""}${ch.toFixed(1)}%`}
-                </div>
-                <div className="hidden lg:block w-24 text-right font-mono text-muted-foreground">
-                  {vol > 0 ? fmtUsd(vol) : "—"}
-                </div>
-                <div className="hidden lg:block w-16 text-right font-mono text-muted-foreground">
-                  {m.openInterest === 0 ? "—" : fmtUsd(m.openInterest)}
-                </div>
-                <div className="w-10 text-right font-mono">
-                  {m.maxLeverage ? `${m.maxLeverage}x` : "—"}
-                </div>
-                <div className="hidden sm:flex w-[84px] justify-end">
-                  <OracleBadge kind={m.oracleKind} status={m.oracleStatus} />
-                </div>
-                <div className="hidden lg:block w-12 text-right font-mono text-[11px] text-muted-foreground">
-                  {fmtAge(m.createdAt)}
-                </div>
-              </li>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium truncate">{m.symbol}</span>
+                      {isNew(m.createdAt) && (
+                        <span className="text-[9px] uppercase tracking-wide rounded px-1 py-px bg-[oklch(0.86_0.16_188_/_0.12)] text-neon">
+                          New
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground truncate">
+                      {m.base} · {m.baseMint ? "Token" : "Synthetic"}
+                    </div>
+                  </div>
+                  <div className="w-20 sm:w-24 text-right font-mono">
+                    {px === 0
+                      ? "—"
+                      : px < 1
+                        ? `$${px.toFixed(6)}`
+                        : `$${px.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                  </div>
+                  <div
+                    className={`hidden md:block w-14 text-right font-mono ${ch === null ? "text-muted-foreground" : ch > 0 ? "text-success" : ch < 0 ? "text-danger" : "text-muted-foreground"}`}
+                  >
+                    {ch === null ? "—" : `${ch >= 0 ? "+" : ""}${ch.toFixed(1)}%`}
+                  </div>
+                  <div className="hidden lg:block w-24 text-right font-mono text-muted-foreground">
+                    {vol > 0 ? fmtUsd(vol) : "—"}
+                  </div>
+                  <div className="hidden lg:block w-16 text-right font-mono text-muted-foreground">
+                    {m.openInterest === 0 ? "—" : fmtUsd(m.openInterest)}
+                  </div>
+                  <div className="w-10 text-right font-mono">
+                    {m.maxLeverage ? `${m.maxLeverage}x` : "—"}
+                  </div>
+                  <div className="hidden sm:flex w-[84px] justify-end">
+                    <OracleBadge kind={m.oracleKind} status={m.oracleStatus} />
+                  </div>
+                  <div className="hidden lg:block w-12 text-right font-mono text-[11px] text-muted-foreground">
+                    {fmtAge(m.createdAt)}
+                  </div>
+                </li>
               );
             })}
           </ul>
@@ -270,10 +268,10 @@ export function MarketBrowser({
       )}
 
       <p className="text-[11px] text-muted-foreground">
-        Price is live (Pyth for majors, on-chain pool for custom). 24h change /
-        volume / liquidity come from DexScreener, keyed by the token mint, so
-        every surface shows the same number. Synthetic perps with no token fall
-        back to the Pyth 24h reference. Open interest is on-chain.
+        Price is live (Pyth for majors, on-chain pool for custom). 24h change / volume / liquidity
+        come from DexScreener, keyed by the token mint, so every surface shows the same number.
+        Synthetic perps with no token fall back to the Pyth 24h reference. Open interest is
+        on-chain.
       </p>
     </div>
   );

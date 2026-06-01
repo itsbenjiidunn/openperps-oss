@@ -5,8 +5,7 @@ import { portfolioPda } from "@openperps/sdk";
 /// Override via `VITE_OPENPERPS_PROGRAM_ID` for a different cluster /
 /// upgraded program.
 const PROGRAM_ID_STRING =
-  import.meta.env.VITE_OPENPERPS_PROGRAM_ID ??
-  "4zZDZaAEWmVdc6phAKCbpe5CgvZJZosLtpiJUEHnxNzy";
+  import.meta.env.VITE_OPENPERPS_PROGRAM_ID ?? "4zZDZaAEWmVdc6phAKCbpe5CgvZJZosLtpiJUEHnxNzy";
 
 export const PROGRAM_ID = new PublicKey(PROGRAM_ID_STRING);
 
@@ -16,9 +15,5 @@ export const PROGRAM_ID = new PublicKey(PROGRAM_ID_STRING);
 /// on-chain yet (until the user inits it); callers that need existence check the
 /// account data (e.g. `usePortfolioState`) or the batched positions read.
 export function userPortfolio(owner: string, marketPubkey: string): string {
-  return portfolioPda(
-    PROGRAM_ID,
-    new PublicKey(owner),
-    new PublicKey(marketPubkey),
-  )[0].toBase58();
+  return portfolioPda(PROGRAM_ID, new PublicKey(owner), new PublicKey(marketPubkey))[0].toBase58();
 }

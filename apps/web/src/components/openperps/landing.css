@@ -58,7 +58,8 @@
   position: absolute;
   inset: 0;
   z-index: 0;
-  background-image: linear-gradient(rgba(46, 230, 194, 0.035) 1px, transparent 1px),
+  background-image:
+    linear-gradient(rgba(46, 230, 194, 0.035) 1px, transparent 1px),
     linear-gradient(90deg, rgba(46, 230, 194, 0.035) 1px, transparent 1px);
   background-size: 64px 64px;
   mask: radial-gradient(900px 700px at 70% 10%, #000 30%, transparent 75%);
@@ -438,7 +439,9 @@
   border-radius: 18px;
   padding: 1px;
   background: linear-gradient(180deg, rgba(46, 230, 194, 0.3), transparent 45%);
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
   pointer-events: none;
@@ -588,7 +591,8 @@
   text-align: center;
   position: relative;
   overflow: hidden;
-  background: radial-gradient(700px 300px at 50% 0%, rgba(46, 230, 194, 0.12), transparent 60%),
+  background:
+    radial-gradient(700px 300px at 50% 0%, rgba(46, 230, 194, 0.12), transparent 60%),
     linear-gradient(180deg, var(--panel), var(--bg-2));
 }
 .op-home .bigcta-inner h2 {

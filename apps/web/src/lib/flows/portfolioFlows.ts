@@ -391,4 +391,3 @@ async function sendAndConfirm(
   );
   return sig;
 }
-

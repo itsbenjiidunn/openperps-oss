@@ -5,13 +5,7 @@
 /// so a leaked session key can't drain funds. Session secrets live in
 /// localStorage; clearing them or revoking on-chain disables 1-click trading.
 
-import {
-  Connection,
-  Keypair,
-  PublicKey,
-  SystemProgram,
-  Transaction,
-} from "@solana/web3.js";
+import { Connection, Keypair, PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
 import type { WalletContextState } from "@solana/wallet-adapter-react";
 import { DELEGATE_SEED, setDelegateIx } from "@openperps/sdk";
 
@@ -44,10 +38,7 @@ export function clearSession(owner: string): void {
 }
 
 export function delegatePda(portfolio: PublicKey): [PublicKey, number] {
-  return PublicKey.findProgramAddressSync(
-    [DELEGATE_SEED, portfolio.toBuffer()],
-    PROGRAM_ID,
-  );
+  return PublicKey.findProgramAddressSync([DELEGATE_SEED, portfolio.toBuffer()], PROGRAM_ID);
 }
 
 /// True if a session key exists locally AND can pay fees. NOTE: this does not
@@ -127,8 +118,7 @@ export async function enableSession(args: {
       }),
     );
 
-  const { blockhash, lastValidBlockHeight } =
-    await connection.getLatestBlockhash("confirmed");
+  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
   tx.recentBlockhash = blockhash;
   tx.feePayer = wallet.publicKey;
   const sig = await wallet.sendTransaction(tx, connection);
@@ -161,8 +151,7 @@ export async function disableSession(args: {
       bump,
     }),
   );
-  const { blockhash, lastValidBlockHeight } =
-    await connection.getLatestBlockhash("confirmed");
+  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
   tx.recentBlockhash = blockhash;
   tx.feePayer = wallet.publicKey;
   const sig = await wallet.sendTransaction(tx, connection);

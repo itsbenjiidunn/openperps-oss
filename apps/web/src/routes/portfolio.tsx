@@ -33,11 +33,7 @@ import { useLivePrices, normalizeFeedId } from "@/lib/livePrice";
 import { placeOrderFlow } from "@/lib/flows/placeOrderFlow";
 import { addTrade, useTrades, localVwapEntry } from "@/lib/tradeLog";
 import { fetchFees24h, fetchEquity, fetchPositionEntries, entryKey } from "@/lib/indexer";
-import {
-  useGroups,
-  useAllPositions,
-  type AggPosition,
-} from "@/components/openperps/AccountTabs";
+import { useGroups, useAllPositions, type AggPosition } from "@/components/openperps/AccountTabs";
 import { atomsToHuman, humanToAtoms } from "@/lib/decimals";
 import { QUOTE_MINT, QUOTE_SYMBOL } from "@/lib/collateral";
 import {
@@ -89,8 +85,9 @@ function Portfolio() {
         <div>
           <h1 className="font-display text-2xl font-semibold tracking-tight">Portfolio</h1>
           <p className="text-sm text-muted-foreground">
-            Majors cross-margin account · <span className="font-mono">{fmtPubkey(owner, 6, 6)}</span>.
-            Custom markets each have their own account, funded from your wallet in the terminal.
+            Majors cross-margin account ·{" "}
+            <span className="font-mono">{fmtPubkey(owner, 6, 6)}</span>. Custom markets each have
+            their own account, funded from your wallet in the terminal.
           </p>
         </div>
         {portfolio && (
@@ -151,7 +148,11 @@ function AccountsSummary({ markets }: { markets: Market[] }) {
   }, [groups]);
 
   const q = useQuery({
-    queryKey: ["accounts-capital", accounts.map((a) => a.portfolio).join(","), connection.rpcEndpoint],
+    queryKey: [
+      "accounts-capital",
+      accounts.map((a) => a.portfolio).join(","),
+      connection.rpcEndpoint,
+    ],
     enabled: accounts.length > 0,
     refetchInterval: 8_000,
     queryFn: async () => {
@@ -179,12 +180,15 @@ function AccountsSummary({ markets }: { markets: Market[] }) {
         <div>
           <h2 className="font-display text-lg font-semibold">Your accounts</h2>
           <p className="text-[11px] text-muted-foreground">
-            {QUOTE_SYMBOL} is held per market — majors share one account, each custom market its own.
+            {QUOTE_SYMBOL} is held per market — majors share one account, each custom market its
+            own.
           </p>
         </div>
         <div className="text-right">
           <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Total</div>
-          <div className="font-mono text-xl text-neon">${total.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
+          <div className="font-mono text-xl text-neon">
+            ${total.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+          </div>
         </div>
       </div>
 
@@ -509,8 +513,8 @@ function PositionsTable({ markets }: { markets: Market[] }) {
         <div className="py-8 text-center">
           <p className="text-sm text-foreground">No open positions</p>
           <p className="mt-1 text-[11px] text-muted-foreground">
-            Open a Long or Short from the Terminal — majors share one account, each custom market its
-            own.
+            Open a Long or Short from the Terminal — majors share one account, each custom market
+            its own.
           </p>
         </div>
       ) : (
@@ -542,7 +546,7 @@ function PositionsTable({ markets }: { markets: Market[] }) {
               // tracking the mark (PnL stuck at 0) before the fill is indexed.
               const entry =
                 entriesQ.data?.get(entryKey(groupMarketOf(p), p.assetIndex))?.entry ??
-                (m ? localVwapEntry(m.symbol, localTrades) ?? undefined : undefined) ??
+                (m ? (localVwapEntry(m.symbol, localTrades) ?? undefined) : undefined) ??
                 (mark > 0 ? mark : undefined);
               const notional = (entry ?? mark) * size;
               const unrealized =

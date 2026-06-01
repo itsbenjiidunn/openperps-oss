@@ -13,7 +13,12 @@
 import type { RegistryEntry } from "./registry";
 import { ASSET_PRESETS } from "./assets";
 import { QUOTE_MINT } from "./collateral";
-import { GROUP_MAX_FEE_BPS, SHARED_MARKET, SHARED_SLOT_CAPACITY, SHARED_VAULT } from "./sharedMarket";
+import {
+  GROUP_MAX_FEE_BPS,
+  SHARED_MARKET,
+  SHARED_SLOT_CAPACITY,
+  SHARED_VAULT,
+} from "./sharedMarket";
 
 /// (ticker → fixed asset slot) for the built-in majors. Keep in sync with the
 /// indexer's relayer registration and the on-chain activations.
