@@ -14,10 +14,12 @@ test("builds one accrual when fresh", () => {
     market,
     authority,
     assetIndex: 0,
+    oldMark: 0n,
     effectivePrice: 100_000_000n,
     slotLast: 100,
     nowSlot: 100,
     maxAccrualDtSlots: 1000,
+    maxPriceMoveBpsPerSlot: 10,
   });
   assert.equal(ixs.length, 1);
   // Structural check rather than `instanceof`: across the file: SDK boundary the
@@ -32,10 +34,12 @@ test("bursts catch-up accruals when behind", () => {
     market,
     authority,
     assetIndex: 0,
+    oldMark: 0n,
     effectivePrice: 100_000_000n,
     slotLast: 0,
     nowSlot: 2500,
     maxAccrualDtSlots: 1000,
+    maxPriceMoveBpsPerSlot: 10,
   });
   assert.equal(ixs.length, 3);
 });

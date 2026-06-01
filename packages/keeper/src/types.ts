@@ -6,6 +6,10 @@ export type KeeperMarket = {
   /// The market's on-chain `max_accrual_dt_slots` (the freshness window the
   /// keeper must respect when bursting catch-up accruals).
   maxAccrualDtSlots: number;
+  /// The market's on-chain `max_price_move_bps_per_slot`. Caps how far each
+  /// catch-up accrual may advance the price, so a large jump is split into steps
+  /// that each clear the engine's per-slot move bound.
+  maxPriceMoveBpsPerSlot: number;
 };
 
 export type KeeperLogLevel = "info" | "error";

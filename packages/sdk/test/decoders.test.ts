@@ -6,6 +6,7 @@ import {
   OFFSET_PNL,
   decodePortfolioSummary,
 } from "../src/decoders.ts";
+import { portfolioAccountSize } from "../src/layout.ts";
 
 function writeU128LE(buf: Uint8Array, offset: number, value: bigint): void {
   let v = value;
@@ -16,10 +17,10 @@ function writeU128LE(buf: Uint8Array, offset: number, value: bigint): void {
 }
 
 test("decodePortfolioSummary reads capital and pnl", () => {
-  // Size the buffer to the full portfolio header so decodePortfolioSummary's
-  // position decode (which reads the legs further into the header) stays in
-  // bounds. capital and pnl sit near the front; legs do not.
-  const data = new Uint8Array(4096);
+  // Size the buffer to a real portfolio account (header + legs) so
+  // decodePortfolioSummary's position decode, which reads the legs further in,
+  // stays in bounds. capital and pnl sit near the front; legs do not.
+  const data = new Uint8Array(portfolioAccountSize(1));
   writeU128LE(data, OFFSET_CAPITAL, 50_000_000n);
   writeU128LE(data, OFFSET_PNL, 1_000_000n);
   const summary = decodePortfolioSummary(data);

@@ -35,7 +35,9 @@ export function OpenPerpsTrade({
     commitment,
   });
   const [size, setSize] = useState<string>(
-    defaultSize ?? (10 ** market.sizeDecimals).toString(),
+    // BigInt, not `10 ** n`, so a large `sizeDecimals` keeps integer precision
+    // instead of overflowing Number's 2^53 safe-integer range.
+    defaultSize ?? (10n ** BigInt(market.sizeDecimals)).toString(),
   );
 
   const submit = async (side: "long" | "short"): Promise<void> => {

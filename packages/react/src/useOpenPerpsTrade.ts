@@ -42,12 +42,14 @@ export function useOpenPerpsTrade(args: {
 
   const placeTrade = useCallback(
     async (input: PlaceTradeInput): Promise<string> => {
-      if (!wallet.publicKey || !wallet.sendTransaction) {
-        throw new Error("Wallet is not connected.");
-      }
       setPending(true);
       setError(null);
       try {
+        // Inside the try so a disconnected wallet sets `error` (and clears
+        // `pending` via finally) instead of throwing past the error state.
+        if (!wallet.publicKey || !wallet.sendTransaction) {
+          throw new Error("Wallet is not connected.");
+        }
         const built = buildTradeFromIntent({
           intent: {
             schemaVersion: 1,

@@ -18,7 +18,7 @@ const connection = new Connection("https://api.devnet.solana.com", "confirmed");
 const authority = Keypair.fromSecretKey(/* your oracle authority key */);
 
 const markets: KeeperMarket[] = [
-  { config: solDevnetConfig, maxAccrualDtSlots: 1000 },
+  { config: solDevnetConfig, maxAccrualDtSlots: 1000, maxPriceMoveBpsPerSlot: 10 },
 ];
 
 await runKeeper(
@@ -41,7 +41,11 @@ oracle authority. If it does not, the program rejects the oracle/funding update.
 The keeper respects the engine's per-slot price-move bound and
 `max_accrual_dt_slots` freshness window. When a market has fallen behind,
 `buildAccrualInstructions` bursts catch-up accruals (capped per cycle) so the
-asset is current before risk-increasing trades are attempted. See
+asset is current before risk-increasing trades are attempted. Each `KeeperMarket`
+declares both bounds via `maxAccrualDtSlots` and `maxPriceMoveBpsPerSlot`: a large
+price jump is split into steps that each stay within the per-slot move budget
+(`oldPrice * maxPriceMoveBpsPerSlot * dt / 10000`), so no single `AccrueAsset` is
+rejected for moving the price too far too fast. See
 [`../../docs/keeper-freshness.md`](../../docs/keeper-freshness.md).
 
 ## Liquidation

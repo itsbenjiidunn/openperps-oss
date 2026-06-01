@@ -4,13 +4,45 @@
 /// come later.
 
 import { PublicKey, Transaction } from "@solana/web3.js";
-import { liquidateIx, readU64LE, slotOffset } from "@openperps/sdk";
+import {
+  liquidateIx,
+  readU64LE,
+  slotEffectivePriceOffset,
+  slotOffset,
+} from "@openperps/sdk";
 import { buildAccrualInstructions } from "./accrual.ts";
 import type { KeeperDeps, KeeperMarket } from "./types.ts";
 
 // `slot_last` byte offset within one engine market slot (32-byte wrapper +
 // in-asset offset 41).
 const SLOT_LAST_IN_SLOT = 73;
+
+/// One asset slot's freshness and price state, read from the market account in a
+/// single fetch.
+export type SlotState = {
+  /// The slot of the asset's last accrual (0 if unavailable).
+  slotLast: number;
+  /// The asset's current EWMA mark (`effective_price`); 0 if never accrued or
+  /// unavailable. Used to bound each catch-up step's price move.
+  mark: bigint;
+};
+
+/// Read an asset slot's `slot_last` and current mark from the market account in
+/// one fetch. Returns zeros if the account or slot is unavailable.
+export async function readSlotState(
+  deps: Pick<KeeperDeps, "connection">,
+  market: PublicKey,
+  assetIndex: number,
+): Promise<SlotState> {
+  const info = await deps.connection.getAccountInfo(market);
+  if (!info) return { slotLast: 0, mark: 0n };
+  const u = new Uint8Array(info.data.buffer, info.data.byteOffset, info.data.byteLength);
+  const slotLastOff = slotOffset(assetIndex) + SLOT_LAST_IN_SLOT;
+  const markOff = slotEffectivePriceOffset(assetIndex);
+  const slotLast = slotLastOff + 8 <= u.length ? Number(readU64LE(u, slotLastOff)) : 0;
+  const mark = markOff + 8 <= u.length ? readU64LE(u, markOff) : 0n;
+  return { slotLast, mark };
+}
 
 /// Read an asset slot's `slot_last` from the market account. Returns 0 if the
 /// account or slot is unavailable.
@@ -19,12 +51,7 @@ export async function readSlotLast(
   market: PublicKey,
   assetIndex: number,
 ): Promise<number> {
-  const info = await deps.connection.getAccountInfo(market);
-  if (!info) return 0;
-  const u = new Uint8Array(info.data.buffer, info.data.byteOffset, info.data.byteLength);
-  const off = slotOffset(assetIndex) + SLOT_LAST_IN_SLOT;
-  if (off + 8 > u.length) return 0;
-  return Number(readU64LE(u, off));
+  return (await readSlotState(deps, market, assetIndex)).slotLast;
 }
 
 /// Push one oracle/funding update for a market, bursting catch-up accruals if it
@@ -37,9 +64,9 @@ export async function crankMarketOnce(
   const programId = new PublicKey(market.config.programId);
   const marketAccount = new PublicKey(market.config.market);
   try {
-    const [price, slotLast, nowSlot] = await Promise.all([
+    const [price, slot, nowSlot] = await Promise.all([
       deps.priceProvider.getPrice(market.config),
-      readSlotLast(deps, marketAccount, market.config.assetIndex),
+      readSlotState(deps, marketAccount, market.config.assetIndex),
       deps.connection.getSlot("confirmed"),
     ]);
 
@@ -48,10 +75,12 @@ export async function crankMarketOnce(
       market: marketAccount,
       authority: deps.authority.publicKey,
       assetIndex: market.config.assetIndex,
+      oldMark: slot.mark,
       effectivePrice: price.price,
-      slotLast,
+      slotLast: slot.slotLast,
       nowSlot,
       maxAccrualDtSlots: market.maxAccrualDtSlots,
+      maxPriceMoveBpsPerSlot: market.maxPriceMoveBpsPerSlot,
     });
 
     const tx = new Transaction().add(...instructions);
