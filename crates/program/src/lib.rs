@@ -1,0 +1,26 @@
+//! OpenPerps on-chain program — a Pinocchio wrapper around the percolator
+//! v16 risk engine.
+//!
+//! EDUCATIONAL / EXPERIMENTAL — NOT AUDITED. Do not use with real funds.
+//!
+//! The engine (crate `percolator`) is a pure, `no_std`, account-local risk
+//! library: every operation is a `*_not_atomic` method on in-memory structs.
+//! This program owns everything the engine deliberately leaves out: the
+//! entrypoint, instruction decoding, account loading/ownership checks,
+//! signer authorization, and persisting state back to account data.
+#![cfg_attr(target_os = "solana", no_std)]
+
+pub mod cpi;
+pub mod error;
+pub mod instruction;
+pub mod processor;
+pub mod state;
+
+// The pinocchio `entrypoint!` macro also installs a global allocator and a
+// panic handler. Those only make sense for — and only compile cleanly on —
+// the on-chain SBF target, so we gate the whole entrypoint there. Host builds
+// (and unit tests / shared codec) stay on std.
+#[cfg(all(target_os = "solana", not(feature = "no-entrypoint")))]
+mod entrypoint;
+
+pub use processor::process_instruction;

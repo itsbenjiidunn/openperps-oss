@@ -1,0 +1,25 @@
+name = "openperps-indexer"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+# RPC_URL is set as a secret (server-friendly devnet RPC), not committed here.
+[vars]
+PROGRAM_ID = "4zZDZaAEWmVdc6phAKCbpe5CgvZJZosLtpiJUEHnxNzy"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "openperps-indexer"
+database_id = "e59a561b-5b0c-41a6-b70c-6506dc38767e"
+
+# Shared realtime price feed (one Helius WS per token, fanned out to clients).
+[[durable_objects.bindings]]
+name = "PRICE_FEED"
+class_name = "PriceFeed"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["PriceFeed"]
+
+[triggers]
+crons = ["*/1 * * * *"]

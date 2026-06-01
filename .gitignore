@@ -1,0 +1,42 @@
+# Rust/Cargo
+/target/
+**/*.rs.bk
+*.pdb
+
+# Build artifacts
+*.o
+*.a
+*.so
+*.rlib
+
+# Solana
+test-ledger/
+**/*-keypair.json
+/deploy/
+
+# Node / frontend
+node_modules/
+dist/
+.next/
+*.tsbuildinfo
+
+# Cloudflare Workers local state
+.wrangler/
+.dev.vars
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini

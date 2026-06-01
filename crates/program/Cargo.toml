@@ -1,0 +1,22 @@
+# OpenPerps on-chain program: the Pinocchio wrapper around the percolator engine.
+[package]
+name = "openperps-program"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "openperps_program"
+
+[dependencies]
+percolator = { path = "../engine" }
+pinocchio = "0.8"
+bytemuck = { version = "1.23", default-features = false, features = ["derive"] }
+
+[features]
+default = []
+no-entrypoint = []
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }

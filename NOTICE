@@ -1,0 +1,20 @@
+OpenPerps
+Copyright 2026 OpenPerps contributors
+
+This product includes software forked from Percolator
+(https://github.com/aeyakovenko/percolator), authored by
+Anatoly Yakovenko and contributors, licensed under the
+Apache License, Version 2.0.
+
+The contents of crates/engine/ (the v16 risk-engine library, its
+specification in spec.md, tests, and proof scripts) are derived from
+that project and remain under Apache-2.0. See LICENSE.
+
+UPSTREAM DISCLAIMER (preserved from Percolator):
+  EDUCATIONAL RESEARCH PROJECT — NOT PRODUCTION READY. NOT AUDITED.
+  Do NOT use with real funds.
+
+OpenPerps adds an on-chain Solana program wrapper (crates/program),
+client SDK, and frontend around the engine. These additions are the
+"hard part" Percolator intentionally left out of scope, and they are
+likewise unaudited and experimental.

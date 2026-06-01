@@ -1,0 +1,27 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/engine",
+    "crates/program",
+]
+
+# Profiles must live at the workspace root.
+[profile.release]
+lto = "fat"
+codegen-units = 1
+opt-level = 3
+overflow-checks = true
+
+# Custom profile kept from upstream percolator for SBF builds.
+[profile.sbf]
+inherits = "release"
+panic = "abort"
+
+# Kani formal-verification config inherited from upstream percolator.
+[workspace.metadata.kani]
+flags = { tests = true }
+unstable = { stubbing = true }
+
+[[workspace.metadata.kani.proof]]
+harness = ".*"
+unwind = 70

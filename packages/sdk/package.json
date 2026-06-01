@@ -1,0 +1,21 @@
+{
+  "name": "@openperps/sdk",
+  "version": "0.1.0",
+  "description": "TypeScript SDK for the OpenPerps on-chain program.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "smoke": "tsx scripts/smoke.ts"
+  },
+  "dependencies": {
+    "@solana/spl-token": "^0.4.8",
+    "@solana/web3.js": "^1.95.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "tsx": "^4.19.0",
+    "@types/node": "^22.0.0"
+  }
+}

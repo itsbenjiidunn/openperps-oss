@@ -1,0 +1,8 @@
+# Normalize all text to LF. This repo is built in WSL/Linux (SBF toolchain),
+# so CRLF would break shell scripts (\r in shebang) and is undesirable for
+# Rust sources. Binary artifacts are left untouched by `text=auto`.
+* text=auto eol=lf
+*.sh text eol=lf
+*.rs text eol=lf
+*.toml text eol=lf
+*.md text eol=lf
