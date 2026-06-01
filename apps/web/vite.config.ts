@@ -11,4 +11,22 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
+  build: {
+    rollupOptions: {
+      output: {
+        // Split the heavy, rarely-changing vendors out of the main bundle so
+        // they cache independently and load in parallel (was one ~830 kB chunk).
+        manualChunks: {
+          solana: [
+            "@solana/web3.js",
+            "@solana/spl-token",
+            "@solana/wallet-adapter-base",
+            "@solana/wallet-adapter-react",
+            "@solana/wallet-adapter-react-ui",
+          ],
+          charts: ["lightweight-charts"],
+        },
+      },
+    },
+  },
 });
