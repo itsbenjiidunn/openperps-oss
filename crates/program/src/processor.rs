@@ -18,15 +18,20 @@ use crate::{
     instruction::OpenPerpsInstruction,
     state::{
         accrue_asset_buffer, activate_market_buffer, crank_oracle_buffer, crank_refresh_buffer,
-        deposit_buffer, init_market_buffer, init_mock_pool_buffer, init_portfolio_buffer,
+        deposit_buffer, init_market_buffer, init_portfolio_buffer,
         liquidate_buffer, market_engine_split_mut, market_header, market_wrapper_header,
-        delegate_of, mock_pool_spot_price, mock_pool_swap_buffer, portfolio_account_size,
+        delegate_of, mock_pool_spot_price, portfolio_account_size,
         portfolio_split_mut, resolve_market_buffer, set_delegate_buffer, set_slot_oracle_pool,
         settle_pnl_buffer, slot_oracle_pool, trade_buffer, withdraw_buffer, DelegateAccount,
         DELEGATE_SEED,
         HOUSE_SEED, PORTFOLIO_SEED, VAULT_SEED,
     },
 };
+
+// Buffer initializers used only by the devnet-only mock-pool handlers; gated so
+// a mainnet build (no devnet feature) does not flag them as unused.
+#[cfg(feature = "devnet")]
+use crate::state::{init_mock_pool_buffer, mock_pool_swap_buffer};
 
 /// SPL Token v1 account data length (fixed).
 const SPL_TOKEN_ACCOUNT_LEN: u64 = 165;
@@ -102,7 +107,20 @@ pub fn process_instruction(
             size_q,
             exec_price,
             fee_bps,
-        } => process_trade(program_id, accounts, asset_index, size_q, exec_price, fee_bps),
+        } => {
+            // Devnet-only raw two-account cross (allows self-cross / wash trades).
+            // The production path is PlaceOrder (user vs House); a mainnet build
+            // compiles no handler here, so the program rejects raw Trade.
+            #[cfg(feature = "devnet")]
+            {
+                process_trade(program_id, accounts, asset_index, size_q, exec_price, fee_bps)
+            }
+            #[cfg(not(feature = "devnet"))]
+            {
+                let _ = (asset_index, size_q, exec_price, fee_bps);
+                Err(OpenPerpsError::InvalidInstruction.into())
+            }
+        }
         OpenPerpsInstruction::CreateVault => process_create_vault(program_id, accounts),
         OpenPerpsInstruction::Withdraw { amount } => {
             process_withdraw(program_id, accounts, amount)
@@ -151,11 +169,35 @@ pub fn process_instruction(
         OpenPerpsInstruction::CreateMockPool {
             reserve_base,
             reserve_quote,
-        } => process_create_mock_pool(program_id, accounts, reserve_base, reserve_quote),
+        } => {
+            // Devnet-only price toy. Excluded from a mainnet build so no one can
+            // stand up a token-less, freely-movable pool as an oracle source.
+            #[cfg(feature = "devnet")]
+            {
+                process_create_mock_pool(program_id, accounts, reserve_base, reserve_quote)
+            }
+            #[cfg(not(feature = "devnet"))]
+            {
+                let _ = (reserve_base, reserve_quote);
+                Err(OpenPerpsError::InvalidInstruction.into())
+            }
+        }
         OpenPerpsInstruction::MockSwap {
             amount_in,
             base_to_quote,
-        } => process_mock_swap(program_id, accounts, amount_in, base_to_quote),
+        } => {
+            // Devnet-only: moves pool reserves with no token CPI (zero-cost price
+            // push). Excluded from a mainnet build.
+            #[cfg(feature = "devnet")]
+            {
+                process_mock_swap(program_id, accounts, amount_in, base_to_quote)
+            }
+            #[cfg(not(feature = "devnet"))]
+            {
+                let _ = (amount_in, base_to_quote);
+                Err(OpenPerpsError::InvalidInstruction.into())
+            }
+        }
         OpenPerpsInstruction::CrankOracle { asset_index } => {
             process_crank_oracle(program_id, accounts, asset_index)
         }
@@ -190,6 +232,13 @@ fn process_init_market(
         return Err(OpenPerpsError::InvalidAccountData.into());
     }
     if unsafe { market.owner() } != program_id {
+        return Err(OpenPerpsError::InvalidAccountOwner.into());
+    }
+    // Fail fast if the collateral mint is not an SPL Token account. Not a drain
+    // vector on its own (CreateVault's InitializeAccount3 rejects a non-mint),
+    // but this stops the market header from ever recording a garbage quote_mint
+    // that would disagree with the vault the later handlers enforce.
+    if unsafe { quote_mint.owner() } != &TOKEN_PROGRAM_ID {
         return Err(OpenPerpsError::InvalidAccountOwner.into());
     }
 
@@ -669,6 +718,7 @@ fn process_create_vault(program_id: &Pubkey, accounts: &[AccountInfo]) -> Progra
     Ok(())
 }
 
+#[cfg(feature = "devnet")]
 fn process_trade(
     program_id: &Pubkey,
     accounts: &[AccountInfo],
@@ -1222,6 +1272,7 @@ fn process_settle_pnl(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramR
     Ok(())
 }
 
+#[cfg(feature = "devnet")]
 fn process_create_mock_pool(
     program_id: &Pubkey,
     accounts: &[AccountInfo],
@@ -1257,6 +1308,7 @@ fn process_create_mock_pool(
     Ok(())
 }
 
+#[cfg(feature = "devnet")]
 fn process_mock_swap(
     program_id: &Pubkey,
     accounts: &[AccountInfo],

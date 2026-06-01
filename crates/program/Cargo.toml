@@ -15,8 +15,15 @@ pinocchio = "0.8"
 bytemuck = { version = "1.23", default-features = false, features = ["derive"] }
 
 [features]
-default = []
+default = ["devnet"]
 no-entrypoint = []
+# Devnet-only price-simulation instructions: CreateMockPool and MockSwap (the
+# manipulable, token-less price toy) plus the raw two-account Trade self-cross.
+# ON by default so the devnet app and the host tests keep working. A mainnet
+# build (`cargo build-sbf --no-default-features`) excludes these handlers, so
+# the deployed program rejects them and the toy oracle source cannot exist on
+# mainnet. The production trade path (PlaceOrder, user vs House) is unaffected.
+devnet = []
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }

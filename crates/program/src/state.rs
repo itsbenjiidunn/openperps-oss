@@ -216,10 +216,14 @@ pub struct OpenPerpsMarketHeader {
 impl OpenPerpsMarketHeader {
     pub const LEN: usize = core::mem::size_of::<Self>();
 
-    /// Once the discriminator matches, the account has been initialized by
-    /// this program.
+    /// A usable OpenPerps market: the discriminator matches AND the layout
+    /// version is the one this build understands. Gating on `version` too means
+    /// an account written by an older (or future) header layout reads as
+    /// uninitialized instead of being silently mis-decoded, forcing an explicit
+    /// migration rather than reading stale padding as `oracle_kind` /
+    /// `oracle_pool`.
     pub fn is_initialized(&self) -> bool {
-        self.discriminator == MARKET_DISCRIMINATOR
+        self.discriminator == MARKET_DISCRIMINATOR && self.version == MARKET_HEADER_VERSION
     }
 }
 
@@ -405,8 +409,11 @@ pub fn set_slot_oracle_pool(
 
 /// DEX-EWMA crank: fold a fresh pool spot price into the market's mark via
 /// an on-chain EWMA, then accrue. `old_ema` is the engine slot's current
-/// `effective_price` (the EWMA accumulator itself); the first crank after
-/// activation seeds the EWMA from spot directly. Permissionless — the price
+/// `effective_price` (the EWMA accumulator itself). ActivateMarket seeds
+/// `effective_price` with the authenticated activation price, which the engine
+/// requires to be non-zero, so the first crank already smooths from that seed
+/// rather than from raw pool spot; the `old_ema == 0` branch below is a
+/// defensive fallback an active asset never reaches. Permissionless — the price
 /// comes from the pool, so any signer may call.
 pub fn crank_oracle_buffer(
     market_buf: &mut [u8],
@@ -426,6 +433,8 @@ pub fn crank_oracle_buffer(
             .get()
     };
     let new_ema = if old_ema == 0 {
+        // Fallback only: an active asset's effective_price was seeded non-zero
+        // at activation, so this branch does not run in the normal flow.
         spot_price
     } else {
         ewma_step(old_ema, spot_price, ORACLE_EWMA_ALPHA_BPS)
