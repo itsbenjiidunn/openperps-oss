@@ -9,6 +9,15 @@ This example shows how to integrate OpenPerps through `@openperps/sdk`.
 - embed a chart shell with integrator-provided candles
 - show the user's position
 
+## Run
+
+```bash
+npm install
+npm run dev      # or: npm run build
+```
+
+`src/App.tsx` is the whole integration, built on `@openperps/react`.
+
 ## Boundaries
 
 This example is devnet-default. It is not production-approved.
