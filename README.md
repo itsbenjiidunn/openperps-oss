@@ -24,7 +24,9 @@ body around it: the Solana program, the client SDK, the UI kit, and the keeper.
 
 **OpenPerps OSS and OpenPerps App.** This repo is OpenPerps OSS: the program,
 SDK, keeper, React components, examples, and docs. OpenPerps App, the live
-trading application, is the first application built on OpenPerps OSS.
+perpetuals trading app at [openperps.fun](https://openperps.fun), is the first
+application built on OpenPerps OSS: it consumes these same packages rather than
+keeping private copies.
 
 ## Who it is for
 
