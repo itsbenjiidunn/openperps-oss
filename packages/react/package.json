@@ -4,9 +4,28 @@
   "description": "Drop-in React components and hooks for embedding OpenPerps trading, charts, and positions.",
   "license": "MIT",
   "type": "module",
-  "main": "src/index.ts",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "build": "tsc -p tsconfig.build.json && node ../../scripts/rewrite-dts-extensions.mjs dist",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run clean && npm run build"
   },
   "peerDependencies": {
     "@solana/wallet-adapter-react": "^0.15.0",
@@ -14,7 +33,7 @@
     "react": ">=18"
   },
   "dependencies": {
-    "@openperps/sdk": "file:../sdk"
+    "@openperps/sdk": "^0.1.0"
   },
   "devDependencies": {
     "@solana/wallet-adapter-base": "^0.9.23",

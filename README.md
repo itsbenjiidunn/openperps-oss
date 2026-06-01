@@ -82,10 +82,20 @@ The repo layout follows the layers: `crates/engine`, `crates/program`,
 ```bash
 # Protocol: engine + program, unit + integration tests
 cargo test -p openperps-program
+
+# TypeScript packages: one workspace install, then build / test / typecheck
+npm install            # root: links @openperps/sdk, @openperps/react, @openperps/keeper
+npm run build          # compiles each package to dist/ (.js + .d.ts)
+npm test               # runs every package's test suite
+npm run typecheck      # type-checks every package
 ```
 
-The TypeScript packages each build with `npm ci && npm run build` (or
-`typecheck`). See each package's README.
+`packages/*` is an npm workspace. Each package publishes its compiled `dist`
+(`main`, `types`, and `exports` point there, and `prepublishOnly` rebuilds it),
+so `npm install @openperps/sdk` gives a consumer runnable JS plus types, not raw
+TypeScript. The apps and examples consume the same packages locally; run
+`npm run build` once at the root before installing or building them. See each
+package's README.
 
 ## Status
 

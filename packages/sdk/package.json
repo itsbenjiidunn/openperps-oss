@@ -4,11 +4,30 @@
   "description": "TypeScript SDK for the OpenPerps on-chain program.",
   "license": "Apache-2.0",
   "type": "module",
-  "main": "src/index.ts",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
+    "build": "tsc -p tsconfig.build.json && node ../../scripts/rewrite-dts-extensions.mjs dist",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "typecheck": "tsc --noEmit",
     "test": "node --test --import tsx \"test/**/*.test.ts\"",
-    "smoke": "tsx scripts/smoke.ts"
+    "smoke": "tsx scripts/smoke.ts",
+    "prepublishOnly": "npm run clean && npm run build"
   },
   "peerDependencies": {
     "@solana/spl-token": "^0.4.8",

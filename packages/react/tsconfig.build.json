@@ -1,0 +1,18 @@
+{
+  // Emit config for publishing: compile src/ to dist/ as Node ESM (.js + .d.ts).
+  // `rewriteRelativeImportExtensions` turns the source's explicit `.ts`/`.tsx`
+  // import specifiers into `.js` in the emitted output, so dist runs as ESM.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "rewriteRelativeImportExtensions": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    "tsBuildInfoFile": "dist/.tsbuildinfo"
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "exclude": ["test", "scripts", "**/*.test.ts", "**/*.test.tsx"]
+}
