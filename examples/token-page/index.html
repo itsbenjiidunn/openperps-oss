@@ -3,33 +3,117 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>OpenPerps token page example</title>
+    <title>OpenPerps · Token page</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
     <style>
-      :root { color-scheme: dark; }
+      :root {
+        color-scheme: dark;
+        --bg: #070b12;
+        --panel: #0d131d;
+        --teal: #2ee6c2;
+        --white: #eef2f7;
+        --gray: #8b97a8;
+        --dim: #525d6b;
+        --line: #1c3a38;
+        --red: #ff6b81;
+      }
+      * { box-sizing: border-box; }
       body {
         margin: 0;
-        background: #0b0f17;
-        color: #e8edf2;
-        font-family: system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--white);
+        font-family: "Space Grotesk", system-ui, sans-serif;
+        -webkit-font-smoothing: antialiased;
       }
-      main { max-width: 460px; margin: 56px auto; padding: 0 16px; }
-      .openperps-chart { color: #2ee6c2; display: block; margin: 16px 0; }
-      .openperps-trade { display: flex; gap: 8px; margin: 16px 0; }
+      .op-brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 20px 24px;
+        font-weight: 600;
+        font-size: 22px;
+        letter-spacing: -0.01em;
+      }
+      .op-brand .teal { color: var(--teal); }
+      .op-brand .tag {
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 11px;
+        font-weight: 500;
+        color: var(--teal);
+        border: 1px solid rgba(46, 230, 194, 0.4);
+        border-radius: 14px;
+        padding: 3px 9px;
+        letter-spacing: 0.08em;
+      }
+      main { max-width: 480px; margin: 24px auto 64px; padding: 0 24px; }
+      h1 { font-weight: 600; letter-spacing: -0.02em; font-size: 32px; margin: 0 0 6px; }
+      h2 { font-weight: 500; font-size: 17px; color: var(--white); margin: 18px 0 8px; }
+      p { color: var(--gray); line-height: 1.5; }
+      code { font-family: "IBM Plex Mono", monospace; color: var(--teal); }
+      input, button { font-family: inherit; }
+
+      .openperps-chart { color: var(--teal); display: block; margin: 14px 0; }
+
+      .openperps-trade {
+        display: flex; gap: 8px; align-items: center; margin: 14px 0; flex-wrap: wrap;
+      }
       .openperps-trade-size {
-        flex: 1; padding: 8px 10px; border-radius: 8px;
-        border: 1px solid #24303f; background: #111826; color: inherit;
+        flex: 1; min-width: 120px; padding: 10px 12px; border-radius: 10px;
+        border: 1px solid var(--line); background: var(--panel); color: var(--white);
+        font-family: "IBM Plex Mono", monospace;
       }
       .openperps-trade-long, .openperps-trade-short {
-        padding: 8px 16px; border-radius: 8px; border: 0;
-        font-weight: 600; cursor: pointer; color: #06120c;
+        padding: 10px 18px; border-radius: 10px; border: 0; font-weight: 600;
+        cursor: pointer; color: #06120c;
       }
-      .openperps-trade-long { background: #2ee6c2; }
-      .openperps-trade-short { background: #ff6b81; }
-      .openperps-trade-error { color: #ff6b81; font-size: 13px; width: 100%; }
-      .openperps-position { display: flex; gap: 12px; font-variant-numeric: tabular-nums; }
+      .openperps-trade-long { background: var(--teal); }
+      .openperps-trade-short { background: var(--red); }
+      .openperps-trade-long:disabled,
+      .openperps-trade-short:disabled { opacity: 0.45; cursor: default; }
+      .openperps-trade-error {
+        color: var(--red); font-size: 13px; width: 100%;
+        font-family: "IBM Plex Mono", monospace;
+      }
+
+      .openperps-position {
+        display: inline-flex; gap: 14px; font-family: "IBM Plex Mono", monospace;
+        font-variant-numeric: tabular-nums; color: var(--gray);
+      }
+      .openperps-position-capital { color: var(--white); }
+      .openperps-position-pnl { color: var(--teal); }
+
+      .openperps-launcher-steps {
+        font-family: "IBM Plex Mono", monospace; color: var(--gray);
+        padding-left: 18px; line-height: 1.8;
+      }
+      .openperps-launcher-create {
+        margin-top: 12px; padding: 10px 18px; border-radius: 10px; border: 0;
+        background: var(--teal); color: #06120c; font-weight: 600; cursor: pointer;
+      }
+
+      ul { list-style: none; padding: 0; }
+      ul button {
+        background: transparent; border: 1px solid var(--line); color: var(--white);
+        border-radius: 8px; padding: 8px 12px; margin: 4px 0; cursor: pointer;
+        font-family: "IBM Plex Mono", monospace;
+      }
+
+      .wallet-adapter-button-trigger {
+        background: var(--teal) !important; color: #06120c !important;
+        font-family: "IBM Plex Mono", monospace !important; border-radius: 10px !important;
+      }
     </style>
   </head>
   <body>
+    <header class="op-brand">
+      <span>Open<span class="teal">Perps</span></span>
+      <span class="tag">TOKEN PAGE</span>
+    </header>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
