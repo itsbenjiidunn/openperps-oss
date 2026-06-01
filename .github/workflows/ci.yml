@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  rust:
+    name: Rust program
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p openperps-program
+      # The mainnet build excludes the devnet-only instructions; keep it compiling.
+      - run: cargo check -p openperps-program --no-default-features
+
+  packages:
+    name: Packages (build, test, typecheck, pack)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - run: npm run typecheck
+      - name: npm pack --dry-run
+        run: |
+          for p in sdk react keeper; do
+            ( cd "packages/$p" && npm pack --dry-run )
+          done
+
+  web:
+    name: apps/web (build, lint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      # Root install runs `prepare`, which builds the packages' dist so the
+      # app's file: dependencies resolve.
+      - run: npm ci
+      - run: npm ci
+        working-directory: apps/web
+      - run: npm run build
+        working-directory: apps/web
+      - run: npm run lint
+        working-directory: apps/web
+
+  indexer:
+    name: apps/indexer (typecheck, build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+        working-directory: apps/indexer
+      - run: npm run typecheck
+        working-directory: apps/indexer
+      - run: npm run build
+        working-directory: apps/indexer
+
+  examples:
+    name: examples (build / typecheck)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        example:
+          - token-page
+          - dex-terminal
+          - launchpad
+          - wallet-position-card
+          - node-create-market
+          - telegram-bot
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      # Build the packages' dist first so each example's file: deps resolve.
+      - run: npm ci
+      - run: npm ci
+        working-directory: examples/${{ matrix.example }}
+      - run: npm run build --if-present
+        working-directory: examples/${{ matrix.example }}
+      - run: npm run typecheck --if-present
+        working-directory: examples/${{ matrix.example }}

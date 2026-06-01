@@ -17,8 +17,10 @@ type OpenPerpsMarketCreationIntent = {
 };
 ```
 
-Creating a usable custom market is a composed lifecycle. `createMarket(intent)`
-(and the pure `planMarketCreation(intent)` planner) composes:
+Creating a usable custom market is a composed lifecycle. The pure
+`planMarketCreation(intent)` planner describes the ordered steps, and
+`buildMarketCreationInstructions(...)` composes them into the on-chain
+instructions a caller signs and sends:
 
 ```txt
 InitMarket

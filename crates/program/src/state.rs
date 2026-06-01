@@ -8,7 +8,6 @@
 
 use bytemuck::{Pod, Zeroable};
 use percolator::v16::{
-    AssetStateV16Account, EngineAssetSlotV16Account,
     LiquidationOutcomeV16, LiquidationRequestV16, Market, MarketGroupV16HeaderAccount,
     MarketGroupV16ViewMut, PermissionlessCrankActionV16, PermissionlessCrankRequestV16,
     PortfolioAccountV16Account, PortfolioLegV16, PortfolioLegV16Account,
@@ -1014,6 +1013,9 @@ fn pod_from_bytes_mut<T: Pod + Zeroable>(bytes: &mut [u8]) -> Result<&mut T, Ope
 #[cfg(test)]
 mod tests {
     use super::*;
+    // Only the byte-size test reads these engine struct layouts, so importing
+    // them here keeps the non-test build free of unused-import warnings.
+    use percolator::v16::{AssetStateV16Account, EngineAssetSlotV16Account};
 
     #[test]
     fn market_size_grows_with_capacity() {

@@ -69,13 +69,15 @@ it, so a backend script or a Telegram bot has the same power as a web app.
 | Package | Role |
 |---------|------|
 | `@openperps/sdk` | The core client. High-level functions that hide PDAs, instruction tags, account layouts, and atom math |
-| `@openperps/react` | Web widgets (`<OpenPerpsTrade/>`, `<OpenPerpsChart/>`, `<OpenPerpsPositions/>`) and headless hooks |
-| `@openperps/bot` | Adapter and example helpers for Telegram trading bots |
-| `@openperps/keeper` | Self-host keeper template (Cloudflare Worker / D1 / Durable Objects) |
+| `@openperps/react` | Web widgets (`<OpenPerpsTrade/>`, `<OpenPerpsChart/>`, `<OpenPerpsPosition/>`, `<OpenPerpsMarketLauncher/>`) and headless hooks |
+| `@openperps/keeper` | Self-host keeper for the oracle crank, funding accrual, and liquidations |
+
+A Telegram trading bot ships as a runnable example (`examples/telegram-bot`)
+built on `@openperps/sdk` rather than as a separate package.
 
 The repo layout follows the layers: `crates/engine`, `crates/program`,
-`packages/sdk`, `packages/react`, `packages/bot`, `packages/keeper`, `apps/web`
-(reference app), `examples/`, and `docs/`.
+`packages/sdk`, `packages/react`, `packages/keeper`, `apps/web` (reference app),
+`apps/indexer`, `examples/`, and `docs/`.
 
 ## Build and test
 
