@@ -8,8 +8,6 @@ on the tokens it already shows: a launchpad, a DEX terminal, a swap UI, a
 Telegram bot, a wallet, or an analytics dashboard. One SDK, one keeper, one risk
 engine, reused across all of them.
 
-> Devnet by default. Mainnet-capable, not production-approved.
->
 > OpenPerps v1 is unaudited. Do not use with real user funds unless you complete
 > your own review and accept the risk.
 
