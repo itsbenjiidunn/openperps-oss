@@ -1,7 +1,7 @@
 import { Connection, Keypair, PublicKey } from "@solana/web3.js";
 import { getOrCreateAssociatedTokenAccount, mintTo } from "@solana/spl-token";
 import { readFileSync } from "node:fs";
-const RPC = "https://devnet.helius-rpc.com/?api-key=REDACTED";
+const RPC = process.env.OPENPERPS_RPC ?? "https://api.devnet.solana.com";
 const QUOTE = new PublicKey("9r6k1R6tLsMJhvsU4RVNunbpWcTqivudCRYCJGP9Urat");
 const FAUCET = Keypair.fromSecretKey(Uint8Array.from([196,54,13,224,137,112,196,54,209,253,170,100,165,253,25,148,147,110,191,122,1,40,253,13,144,18,185,162,114,77,87,137,185,53,215,136,178,161,13,254,6,192,49,243,149,196,166,33,65,189,148,254,151,211,73,181,244,232,61,255,155,180,153,76]));
 const payer = Keypair.fromSecretKey(Uint8Array.from(JSON.parse(readFileSync("../../deploy/payer.json","utf8"))));
