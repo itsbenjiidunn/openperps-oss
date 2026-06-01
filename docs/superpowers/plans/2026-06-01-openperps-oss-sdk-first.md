@@ -10,6 +10,53 @@
 
 ---
 
+## OpenPerps OSS And OpenPerps App
+
+OpenPerps has two layers:
+
+1. OpenPerps OSS
+   The open-source perp layer: program, SDK, keeper, React components, examples, docs.
+
+2. OpenPerps App
+   The existing perp trading application built on top of OpenPerps OSS.
+
+During extraction, the current repo is the source codebase that contains both app code and reusable infrastructure. The OSS work extracts reusable pieces into `D:\Working\openperps-oss`.
+
+After extraction, OpenPerps App should consume OpenPerps OSS packages instead of keeping private copies of reusable primitives.
+
+Rule:
+
+> Generic reusable code goes to OpenPerps OSS.
+> Product/app-specific code stays in OpenPerps App.
+
+Move to OpenPerps OSS:
+
+- program
+- SDK
+- account decoders
+- intent types
+- market config
+- keeper core
+- generic React widgets
+- examples
+- docs
+
+Stay in OpenPerps App:
+
+- app routes
+- brand-specific UI
+- hosted config
+- curated market pages
+- product copy
+- product analytics
+- deployment/domain setup
+
+Positioning line:
+
+> OpenPerps App is the first application built on OpenPerps OSS.
+
+Do not call OpenPerps App a "PerpDEX".
+
 ## Scope Notes
 
 The approved spec is `docs/superpowers/specs/2026-06-01-openperps-oss-sdk-first-design.md`.
