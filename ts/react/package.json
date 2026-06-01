@@ -1,0 +1,27 @@
+{
+  "name": "@openperps/react",
+  "version": "0.1.0",
+  "description": "Drop-in React components and hooks for embedding OpenPerps trading, charts, and positions.",
+  "license": "MIT",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@solana/wallet-adapter-react": "^0.15.0",
+    "@solana/web3.js": "^1.95.0",
+    "react": ">=18"
+  },
+  "dependencies": {
+    "@openperps/sdk": "file:../sdk"
+  },
+  "devDependencies": {
+    "@solana/wallet-adapter-base": "^0.9.23",
+    "@solana/wallet-adapter-react": "^0.15.35",
+    "@solana/web3.js": "^1.95.0",
+    "@types/react": "^18.3.0",
+    "react": "^18.3.1",
+    "typescript": "^5.6.0"
+  }
+}
