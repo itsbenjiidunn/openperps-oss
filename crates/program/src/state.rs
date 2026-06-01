@@ -946,23 +946,24 @@ pub fn crank_refresh_buffer(
 ///
 /// Returns the engine's `TradeOutcomeV16` (per-side fees + notional) so
 /// callers can verify or surface the result.
-/// Settle a flat user account's positive realized PnL into withdrawable
-/// `capital`, debiting the House symmetrically (see
-/// `MarketGroupV16ViewMut::settle_realized_pnl_not_atomic`). Returns the amount
-/// moved. Balanced transfer — c_tot / vault unchanged.
+/// Convert a user account's released positive PnL into withdrawable `capital`
+/// via the engine's `convert_released_pnl_to_capital_not_atomic`. The realizable
+/// amount is backed by the source-credit the engine reserved from the
+/// counterparty (the House) when the position opened, so no House account is
+/// touched here. Returns the amount converted; vault and c_tot stay conserved.
+///
+/// Replaces the old `settle_realized_pnl_not_atomic` (House-debit) path, which
+/// upstream Percolator removed in favor of this single-account primitive.
 pub fn settle_pnl_buffer(
     market_buf: &mut [u8],
     user_buf: &mut [u8],
-    house_buf: &mut [u8],
 ) -> Result<u128, V16Error> {
     let (m_h, m_s) =
         market_engine_split_mut(market_buf).map_err(|_| V16Error::InvalidConfig)?;
     let (u_h, u_d) = portfolio_split_mut(user_buf).map_err(|_| V16Error::InvalidConfig)?;
-    let (h_h, h_d) = portfolio_split_mut(house_buf).map_err(|_| V16Error::InvalidConfig)?;
     let mut mg = MarketGroupV16ViewMut::new(m_h, m_s);
     let mut user = PortfolioV16ViewMut::new(u_h, u_d);
-    let mut house = PortfolioV16ViewMut::new(h_h, h_d);
-    mg.settle_realized_pnl_not_atomic(&mut user, &mut house)
+    mg.convert_released_pnl_to_capital_not_atomic(&mut user)
 }
 
 pub fn trade_buffer(

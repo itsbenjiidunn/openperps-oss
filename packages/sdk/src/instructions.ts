@@ -363,15 +363,15 @@ export function pinOraclePoolIx(args: {
   });
 }
 
-/// Settle a flat account's positive realized PnL into withdrawable `capital`,
-/// debiting the House. Permissionless — any signer may crank it; it only
-/// credits the user's own profit into the user's own portfolio. The House must
-/// be the market's House Vault PDA.
+/// Convert an account's released positive PnL into withdrawable `capital`.
+/// Permissionless: any signer may crank it, and it only credits the user's own
+/// profit into the user's own portfolio. Backed by the engine's source-credit,
+/// so no House account is needed (upstream Percolator replaced the old
+/// House-debit settle with the single-account `convert_released_pnl_to_capital`).
 export function settlePnlIx(args: {
   programId: PublicKey;
   market: PublicKey;
   userPortfolio: PublicKey;
-  housePortfolio: PublicKey;
   signer: PublicKey;
 }): TransactionInstruction {
   return new TransactionInstruction({
@@ -379,7 +379,6 @@ export function settlePnlIx(args: {
     keys: [
       { pubkey: args.market, isSigner: false, isWritable: true },
       { pubkey: args.userPortfolio, isSigner: false, isWritable: true },
-      { pubkey: args.housePortfolio, isSigner: false, isWritable: true },
       { pubkey: args.signer, isSigner: true, isWritable: false },
     ],
     data: encodeSettlePnl(),

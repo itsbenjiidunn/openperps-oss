@@ -1183,41 +1183,32 @@ fn process_place_order(
 /// user's own profit into the user's own portfolio (the House is the gated
 /// counterparty PDA), so any signer may crank it — no owner signature needed.
 fn process_settle_pnl(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
-    let [market, user_portfolio, house_portfolio, signer, ..] = accounts else {
+    // The new engine primitive converts the user's own released PnL to capital
+    // and touches no other account, so the House is no longer passed in (the
+    // old House-drain attack surface is gone with it).
+    let [market, user_portfolio, signer, ..] = accounts else {
         return Err(OpenPerpsError::InvalidInstruction.into());
     };
     if !signer.is_signer() {
         return Err(OpenPerpsError::MissingRequiredSignature.into());
     }
-    if !market.is_writable()
-        || !user_portfolio.is_writable()
-        || !house_portfolio.is_writable()
-    {
+    if !market.is_writable() || !user_portfolio.is_writable() {
         return Err(OpenPerpsError::InvalidAccountData.into());
     }
     if unsafe { market.owner() } != program_id
         || unsafe { user_portfolio.owner() } != program_id
-        || unsafe { house_portfolio.owner() } != program_id
     {
         return Err(OpenPerpsError::InvalidAccountOwner.into());
     }
 
-    let market_key = *market.key();
     {
         let data = market
             .try_borrow_data()
             .map_err(|_| OpenPerpsError::InvalidAccountData)?;
         let wrapper = market_wrapper_header(&data)?;
-        if !wrapper.is_initialized() || wrapper.house_bump == 0 {
+        if !wrapper.is_initialized() {
             return Err(OpenPerpsError::UninitializedAccount.into());
         }
-        // Gate the House: it must be THIS market's House Vault PDA, else an
-        // attacker could drain any program-owned portfolio's capital.
-        verify_house_pda(&market_key, house_portfolio, wrapper.house_bump, program_id)?;
-    }
-    // The user portfolio must not be the House itself (no self-settle).
-    if *user_portfolio.key() == *house_portfolio.key() {
-        return Err(OpenPerpsError::InvalidAccountData.into());
     }
 
     let mut market_data = market
@@ -1226,11 +1217,8 @@ fn process_settle_pnl(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramR
     let mut user_data = user_portfolio
         .try_borrow_mut_data()
         .map_err(|_| OpenPerpsError::InvalidAccountData)?;
-    let mut house_data = house_portfolio
-        .try_borrow_mut_data()
-        .map_err(|_| OpenPerpsError::InvalidAccountData)?;
 
-    settle_pnl_buffer(&mut market_data, &mut user_data, &mut house_data).map_v16()?;
+    settle_pnl_buffer(&mut market_data, &mut user_data).map_v16()?;
     Ok(())
 }
 

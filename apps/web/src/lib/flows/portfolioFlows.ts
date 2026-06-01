@@ -158,21 +158,16 @@ async function preflightDeposit(connection: Connection, tx: Transaction): Promis
   }
 }
 
-/// SettlePnl realizes positive PnL into withdrawable `capital` (the House pays).
-/// The on-chain ix is a safe no-op unless the account is flat with realized
-/// profit, so callers append it unconditionally — after a close (the balance
-/// reflects profit immediately) and before a withdraw (you withdraw the profit
-/// too). The House PDA is `[HOUSE_SEED, market]`.
+/// SettlePnl realizes positive PnL into withdrawable `capital`. The on-chain ix
+/// is a safe no-op unless the account has released profit, so callers append it
+/// unconditionally: after a close (the balance reflects profit immediately) and
+/// before a withdraw (you withdraw the profit too). No House account is needed.
 export function settleIxFor(
   market: PublicKey,
   portfolio: PublicKey,
   signer: PublicKey,
 ): ReturnType<typeof settlePnlIx> {
-  const [housePortfolio] = PublicKey.findProgramAddressSync(
-    [HOUSE_SEED, market.toBuffer()],
-    PROGRAM_ID,
-  );
-  return settlePnlIx({ programId: PROGRAM_ID, market, userPortfolio: portfolio, housePortfolio, signer });
+  return settlePnlIx({ programId: PROGRAM_ID, market, userPortfolio: portfolio, signer });
 }
 
 export type WithdrawParams = DepositParams;
