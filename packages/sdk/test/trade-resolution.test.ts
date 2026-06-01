@@ -69,6 +69,19 @@ test("custom market requires a configured counterparty", () => {
   );
 });
 
+test("rejects a zero execution price (mark not loaded or market inactive)", () => {
+  assert.throws(
+    () =>
+      resolveTradeIntent({
+        intent: baseIntent,
+        market: marketWith("major"),
+        counterparty: house,
+        executionPrice: 0n,
+      }),
+    /execution price is 0/i,
+  );
+});
+
 test("limitPrice rejects an execution price outside the guard", () => {
   assert.throws(
     () =>

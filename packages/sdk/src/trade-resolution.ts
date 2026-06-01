@@ -63,6 +63,15 @@ export function resolveTradeIntent(input: ResolveTradeInput): ResolvedTrade {
     );
   }
 
+  // A 0 (or negative) execution price means the on-chain mark has not loaded or
+  // the market is inactive. The program rejects a 0 price, so fail here rather
+  // than build a transaction guaranteed to revert when the wallet simulates it.
+  if (executionPrice <= 0n) {
+    throw new Error(
+      "execution price is 0: the on-chain mark has not loaded or the market is inactive",
+    );
+  }
+
   if (!counterparty || counterparty.housePortfolio.length === 0) {
     throw new Error(`no House/LP counterparty configured for market ${market.id}`);
   }
