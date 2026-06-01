@@ -1,5 +1,8 @@
 # @openperps/sdk
 
+[![npm](https://img.shields.io/npm/v/@openperps/sdk?logo=npm&label=npm)](https://www.npmjs.com/package/@openperps/sdk)
+[![license](https://img.shields.io/npm/l/@openperps/sdk)](./LICENSE)
+
 The core TypeScript client for [OpenPerps](https://github.com/itsbenjiidunn/openperps-oss),
 the open-source perpetual-futures layer for Solana apps. It hides PDAs,
 instruction tags, account layouts, and atom/price math behind small, typed

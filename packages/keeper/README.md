@@ -1,5 +1,8 @@
 # @openperps/keeper
 
+[![npm](https://img.shields.io/npm/v/@openperps/keeper?logo=npm&label=npm)](https://www.npmjs.com/package/@openperps/keeper)
+[![license](https://img.shields.io/npm/l/@openperps/keeper)](./LICENSE)
+
 The core-only self-host keeper for OpenPerps. A keeper is part of the risk
 system, not just a price cron: it pushes oracle/funding updates on-chain and
 submits liquidations across many markets.

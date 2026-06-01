@@ -1,5 +1,8 @@
 # @openperps/react
 
+[![npm](https://img.shields.io/npm/v/@openperps/react?logo=npm&label=npm)](https://www.npmjs.com/package/@openperps/react)
+[![license](https://img.shields.io/npm/l/@openperps/react)](./LICENSE)
+
 Drop-in React components and hooks for embedding OpenPerps trading, charts, and
 positions. Built on [`@openperps/sdk`](../sdk) and the Solana wallet adapter.
 

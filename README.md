@@ -1,5 +1,9 @@
 # OpenPerps
 
+[![npm](https://img.shields.io/npm/v/@openperps/sdk?logo=npm&label=npm)](https://www.npmjs.com/package/@openperps/sdk)
+[![license](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+[![CI](https://github.com/itsbenjiidunn/openperps-oss/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/itsbenjiidunn/openperps-oss/actions/workflows/ci.yml)
+
 The open-source perp layer for Solana apps. Add long/short markets to any token,
 from any trading surface.
 
