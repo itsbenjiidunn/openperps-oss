@@ -20,5 +20,5 @@ to build their own interface, bot, mobile app, or backend flow.
 The host app provides market config, registry provider, wallet adapter, RPC
 endpoint, optional theme, optional chart data, and optional callbacks. Chart
 candles come from the integrator; OpenPerps renders the chart shell and position
-overlays. The components do not require the host app to use the OpenPerps App
+overlays. The components do not require the host app to adopt any particular
 layout.

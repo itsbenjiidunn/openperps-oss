@@ -1,4 +1,4 @@
-# OpenPerps
+# OpenPerps OSS
 
 [![npm](https://img.shields.io/npm/v/@openperps/sdk?logo=npm&label=npm)](https://www.npmjs.com/package/@openperps/sdk)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
@@ -7,28 +7,50 @@
 The open-source perp layer for Solana apps. Add long/short markets to any token,
 from any trading surface.
 
-OpenPerps is the infrastructure a Solana app embeds to offer perpetual futures
-on the tokens it already shows: a launchpad, a DEX terminal, a swap UI, a
-Telegram bot, a wallet, or an analytics dashboard. One SDK, one keeper, one risk
-engine, reused across all of them.
-
-> OpenPerps v1 is unaudited. Do not use with real user funds unless you complete
-> your own review and accept the risk.
-
-Mainnet-capable means SDK/config/program flows can target `mainnet-beta`. The
-current authority-pushed oracle path is not production-approved and is the main
-blocker for serious mainnet use.
+OpenPerps OSS is the infrastructure a Solana app embeds to offer perpetual
+futures on the tokens it already shows: a launchpad, a DEX terminal, a swap UI, a
+Telegram bot, a wallet, or an analytics dashboard. One shared risk core, one SDK,
+one keeper path, reused across all of them.
 
 It is built on [Percolator](https://github.com/aeyakovenko/percolator) v16, the
 formally-verified risk engine by Anatoly Yakovenko (@toly). Percolator is the
-pure risk brain and ships no program, decoder, or deployment. OpenPerps is the
-body around it: the Solana program, the client SDK, the UI kit, and the keeper.
+pure risk brain and ships no program, decoder, or deployment. OpenPerps OSS adds
+no risk logic of its own: it vendors Percolator unmodified and supplies the body
+around it, the Solana program, the client SDK, the UI kit, and the keeper, so any
+app can put markets on that one verified core instead of building a perp engine
+of its own.
 
-**OpenPerps OSS and OpenPerps App.** This repo is OpenPerps OSS: the program,
-SDK, keeper, React components, examples, and docs. OpenPerps App, the live
-perpetuals trading app at [openperps.fun](https://openperps.fun), is the first
-application built on OpenPerps OSS: it consumes these same packages rather than
-keeping private copies.
+**This repo.** OpenPerps OSS is that open layer: the program, SDK, keeper, React
+components, examples, and docs, open and self-hostable, so integrators run their
+own stack rather than routing through a middleman.
+
+## Quickstart
+
+```bash
+npm install @openperps/sdk @solana/web3.js @solana/spl-token
+```
+
+```ts
+import { buildTradeFromIntent, transactionFromInstructions } from "@openperps/sdk";
+
+// Build a long from a validated intent against the market's House/LP counterparty.
+const built = buildTradeFromIntent({
+  intent: { schemaVersion: 1, marketId: market.id, side: "long", size: "1000000" },
+  market,            // OpenPerpsMarketConfig
+  counterparty,      // resolved House / LP portfolio
+  executionPrice,    // bigint, from the keeper / on-chain mark
+  owner: wallet.publicKey,
+});
+
+const tx = transactionFromInstructions(built.instructions, {
+  feePayer: wallet.publicKey,
+});
+// sign + send with your wallet adapter
+```
+
+`@openperps/react` wraps this in a drop-in `<OpenPerpsTrade/>` widget, and
+`@openperps/keeper` runs the oracle crank and liquidations. See each package's
+README.
 
 ## Who it is for
 
@@ -78,7 +100,7 @@ A Telegram trading bot ships as a runnable example (`examples/telegram-bot`)
 built on `@openperps/sdk` rather than as a separate package.
 
 The repo layout follows the layers: `crates/engine`, `crates/program`,
-`packages/sdk`, `packages/react`, `packages/keeper`, `apps/web` (reference app),
+`packages/sdk`, `packages/react`, `packages/keeper`, `apps/web` (example app),
 `apps/indexer`, `examples/`, and `docs/`.
 
 ## Build and test
@@ -101,13 +123,16 @@ TypeScript. The apps and examples consume the same packages locally; run
 `npm run build` once at the root before installing or building them. See each
 package's README.
 
-## Status
+## Status and scope
 
-Live on devnet, not independently audited. The Percolator engine in
-`crates/engine` is Kani-formally-verified upstream and vendored unmodified. The
-OpenPerps program, SDK, and keeper are not. The oracle trust model on devnet
-lets the signing authority set the price; production replaces that with a real
-oracle. Treat mainnet use as your own risk decision.
+OpenPerps OSS is infrastructure, devnet by default. The
+[Percolator](https://github.com/aeyakovenko/percolator) risk engine in
+`crates/engine` is Kani-formally-verified upstream and vendored unmodified; the
+OpenPerps program wrapper, SDK, and keeper are not audited. Integrators own their
+deployment: the oracle path, liquidity and risk parameters, keeper operator, and
+market registry are yours to configure and review before any production use. The
+devnet oracle lets the signing authority set the price; a production deployment
+replaces it with a real one.
 
 ## License
 
