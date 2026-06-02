@@ -25,4 +25,4 @@ signs and submits from their own wallet. The bot never holds user funds.
 
 ## Boundaries
 
-This example is devnet-default. It is not production-approved.
+This example targets Solana devnet.

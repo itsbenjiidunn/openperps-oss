@@ -8,9 +8,6 @@ the open-source perpetual-futures layer for Solana apps. It hides PDAs,
 instruction tags, account layouts, and atom/price math behind small, typed
 functions so a web app, a backend, or a bot all share the same power.
 
-> Devnet by default. Mainnet-capable, not production-approved. OpenPerps v1 is
-> unaudited; do not use with real user funds without your own review.
-
 ## Install
 
 ```bash

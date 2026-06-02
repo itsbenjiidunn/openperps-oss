@@ -26,4 +26,4 @@ mint, and sign and send `build.instructions` with `[authority, market]`.
 
 ## Boundaries
 
-This example is devnet-default. It is not production-approved.
+This example targets Solana devnet.

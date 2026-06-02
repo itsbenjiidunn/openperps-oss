@@ -23,4 +23,4 @@ needs an initialized, funded portfolio; deposit devnet USDC through
 
 ## Boundaries
 
-This example is devnet-default. It is not production-approved.
+This example targets Solana devnet.

@@ -20,4 +20,4 @@ npm run dev      # or: npm run build
 
 ## Boundaries
 
-This example is devnet-default. It is not production-approved.
+This example targets Solana devnet.

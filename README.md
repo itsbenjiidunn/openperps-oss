@@ -123,16 +123,14 @@ TypeScript. The apps and examples consume the same packages locally; run
 `npm run build` once at the root before installing or building them. See each
 package's README.
 
-## Status and scope
+## Scope
 
-OpenPerps OSS is infrastructure, devnet by default. The
+OpenPerps OSS is infrastructure. The
 [Percolator](https://github.com/aeyakovenko/percolator) risk engine in
-`crates/engine` is Kani-formally-verified upstream and vendored unmodified; the
-OpenPerps program wrapper, SDK, and keeper are not audited. Integrators own their
-deployment: the oracle path, liquidity and risk parameters, keeper operator, and
-market registry are yours to configure and review before any production use. The
-devnet oracle lets the signing authority set the price; a production deployment
-replaces it with a real one.
+`crates/engine` is Kani-formally-verified upstream and vendored unmodified;
+OpenPerps OSS adds no risk logic of its own. Integrators own their deployment:
+the oracle path, liquidity and risk parameters, keeper operator, and market
+registry are yours to configure and review.
 
 ## License
 
