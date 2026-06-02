@@ -130,7 +130,9 @@ OpenPerps OSS is infrastructure. The
 `crates/engine` is Kani-formally-verified upstream and vendored unmodified;
 OpenPerps OSS adds no risk logic of its own. Integrators own their deployment:
 the oracle path, liquidity and risk parameters, keeper operator, and market
-registry are yours to configure and review.
+registry are yours to configure and review. See [`SECURITY.md`](SECURITY.md) for
+the trust boundary, and [`docs/`](docs/) for the permission map, oracle model,
+and deployment checklist.
 
 ## License
 

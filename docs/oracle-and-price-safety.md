@@ -1,16 +1,35 @@
 # Oracle And Price Safety
 
-OpenPerps does not need to be the market data provider in v1.
+OpenPerps OSS is not the market-data provider. Integrators bring their own price
+source and chart data.
 
-Integrators provide their own price source and chart data.
+Client-rendered prices, chart prices, and third-party frontend prices (Birdeye,
+DexScreener, GMGN) are for display and prefill only. Settlement, PnL, funding,
+and liquidation use the on-chain mark, advanced through the keeper/oracle path.
+The SDK takes the execution price as an explicit value sourced from on-chain mark
+state, never a chart price.
 
-Client-rendered prices, chart prices, DOM-scraped prices, and third-party
-frontend prices can be used for display and prefill only. Settlement, PnL,
-funding, and liquidation must use the keeper/oracle path.
+## Price paths and their status
 
-The keeper consumes a `PriceProvider` interface and pushes authenticated prices
-on-chain.
+| Path | How it prices | Status |
+| --- | --- | --- |
+| Authority relayer (`AccrueAsset`) | An off-chain relayer signs and pushes the mark on-chain; the engine enforces a per-slot move bound and a freshness window. | **Live on devnet.** Trusted: a single pinned `ORACLE_AUTHORITY` key sets the price (rotating it currently needs a program upgrade). First trust point to harden. |
+| DEX-EWMA (`CrankOracle`) | A permissionless crank reads a pinned on-chain pool's spot price and folds it into the mark via an EWMA (alpha 0.2), bounded by the per-slot move cap and freshness window. | **Partial.** EWMA, move bound, and freshness exist. The devnet pool is a token-less mock (`CreateMockPool` / `MockSwap`, gated out of mainnet builds). A real AMM reader plus pool-depth / TWAP checks are not implemented yet. |
+| Pyth (`oracle_kind = PYTH`) | A Pyth feed id is bound to the market. | **Stub.** The feed id is stored, but the on-chain Pyth CPI is not implemented; price is still authority-seeded. Do not rely on it for settlement. |
 
-The current manual authority oracle path is acceptable for devnet/demo flows but
-is not production-approved for serious mainnet use. The authority-pushed oracle
-trust model is the first mainnet blocker to remove.
+## Already enforced
+
+- Per-slot price-move bound (`max_price_move_bps_per_slot`): a single accrual
+  cannot move the mark beyond the bound; a large catch-up is split into steps.
+- Freshness window (`max_accrual_dt_slots`): a stale slot locks risk-increasing
+  trades until it is cranked forward.
+- A per-portfolio collateral cap on DEX-priced markets bounds the profit an
+  attacker can extract by manipulating a thin pool. This is a coarse backstop,
+  not a substitute for pool-depth checks.
+
+## Known gaps
+
+- The authority relayer is a single trusted key (global in v1).
+- DEX-EWMA has no pool-depth or TWAP check yet: a thin or Sybil-funded pool can
+  still be pushed within the per-slot bound.
+- Pyth settlement is not wired.
