@@ -23,5 +23,6 @@ UPSTREAM DISCLAIMER (preserved from Percolator):
 
 OpenPerps adds an on-chain Solana program wrapper (crates/program),
 client SDK, and frontend around the engine. These additions are the
-"hard part" Percolator intentionally left out of scope, and they are
-likewise unaudited and experimental.
+part Percolator intentionally left out of scope: the entrypoint, account
+validation, SPL custody, and the trading surface. Their independent review
+status is tracked in SECURITY.md.

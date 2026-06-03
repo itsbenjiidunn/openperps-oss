@@ -23,7 +23,7 @@ const QUOTE_MINT_STRING =
 
 export const QUOTE_MINT = new PublicKey(QUOTE_MINT_STRING);
 
-/// Faucet mint-authority keypair (devnet only — see file header).
+/// Faucet mint-authority keypair (devnet faucet; see file header).
 const FAUCET_AUTHORITY_SECRET = Uint8Array.from([
   196, 54, 13, 224, 137, 112, 196, 54, 209, 253, 170, 100, 165, 253, 25, 148, 147, 110, 191, 122, 1,
   40, 253, 13, 144, 18, 185, 162, 114, 77, 87, 137, 185, 53, 215, 136, 178, 161, 13, 254, 6, 192,

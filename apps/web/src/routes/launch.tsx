@@ -223,10 +223,10 @@ function Launch() {
   }, [s.manualPriceUsd, asset, effectiveOracleKind, customMintValid]);
 
   // Min-liquidity gate: a DEX-priced memecoin market is only as safe as its
-  // pool is deep. Thin pools are flash-loan-manipulable — the #1 oracle attack
-  // on a memecoin perp — so refuse to list a market whose pool is below the
-  // floor. (Interim app-level guard; the on-chain enforcement — size caps vs
-  // pool depth at trade time — is the mainnet-blocker still to come.)
+  // pool is deep. Thin pools are flash-loan-manipulable (the #1 oracle attack
+  // on a memecoin perp), so refuse to list a market whose pool is below the
+  // floor. (Interim app-level guard; the on-chain enforcement, size caps vs
+  // pool depth at trade time, is the next production-hardening item.)
   const dexStatsQ = useDexStats(customMintValid ? s.customMint.trim() : undefined);
   const poolLiquidity = dexStatsQ.data?.liquidityUsd ?? null;
   const needsLiquidityGate = effectiveOracleKind === "dex" && customMintValid;
@@ -371,11 +371,11 @@ function Launch() {
             List a custom SPL market
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            The majors — <span className="text-foreground">SOL, BTC, ETH, JUP</span> — are already
+            The majors (<span className="text-foreground">SOL, BTC, ETH, JUP</span>) are already
             live. Use this to list <span className="text-foreground">any other SPL token</span> as a
             perp in its <span className="text-foreground">own isolated market</span>: you create the
             group and seed its House (LP) with your {QUOTE_SYMBOL}. Risk stays contained to that
-            seed. Devnet only.
+            seed. Runs on Solana devnet.
           </p>
         </div>
       </header>
@@ -653,7 +653,7 @@ function AssetStep({
 
         {customMintValid && !detecting && !detected && (
           <div className="text-[11px] text-muted-foreground">
-            Not in Jupiter's registry (devnet-only mint?) — enter the ticker and seed price manually
+            Not in Jupiter's registry (devnet mint?). Enter the ticker and seed price manually
             below.
           </div>
         )}

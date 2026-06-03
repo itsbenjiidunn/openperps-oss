@@ -1,6 +1,6 @@
 # Quickstart
 
-OpenPerps examples are devnet-default.
+OpenPerps examples use Solana devnet configuration.
 
 The fastest integration path is:
 
@@ -11,5 +11,5 @@ The fastest integration path is:
 5. run a keeper against the same market config
 
 Mainnet-capable means SDK/config/program flows can target `mainnet-beta`. The
-current authority-pushed oracle path is not production-approved and is the main
-blocker for serious mainnet use.
+authority-pushed oracle path is the next production-hardening item; the trustless
+price paths are designed in [`oracle-integration.md`](oracle-integration.md).

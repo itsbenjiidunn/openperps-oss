@@ -1,7 +1,7 @@
 /// node-create-market: build a custom OpenPerps market from a creation intent,
 /// register it in a local JSON registry, and print the plan and addresses.
 ///
-/// Devnet-default. By default it builds and registers without sending (so it
+/// Configured for Solana devnet. By default it builds and registers without sending (so it
 /// runs without a funded key). To actually create the market on-chain, fund the
 /// authority, supply a real quote mint, and send `build.instructions` signed by
 /// [authority, market].

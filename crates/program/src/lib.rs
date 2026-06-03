@@ -1,7 +1,9 @@
-//! OpenPerps on-chain program — a Pinocchio wrapper around the percolator
+//! OpenPerps on-chain program: a Pinocchio wrapper around the percolator
 //! v16 risk engine.
 //!
-//! EDUCATIONAL / EXPERIMENTAL — NOT AUDITED. Do not use with real funds.
+//! The engine (crate `percolator`) is Kani-formally-verified upstream and
+//! vendored unmodified; this wrapper's independent review status is tracked in
+//! SECURITY.md.
 //!
 //! The engine (crate `percolator`) is a pure, `no_std`, account-local risk
 //! library: every operation is a `*_not_atomic` method on in-memory structs.

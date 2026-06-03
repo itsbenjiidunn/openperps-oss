@@ -300,7 +300,7 @@ export function Landing() {
             <br />
             No permission.
           </h2>
-          <p>Live on devnet. Bring a wallet and grab some test USDC.</p>
+          <p>Connect a wallet and try the devnet market flow with test collateral.</p>
           <div className="row">
             <Link to="/app" className="btn btn-teal btn-lg">
               Start trading →
@@ -321,8 +321,8 @@ export function Landing() {
               OpenPerps
             </div>
             <p>
-              Perpetual futures for any Solana token. No permission, no admin keys. An experimental
-              devnet build. Not audited, no real money.
+              Perpetual futures infrastructure for Solana token markets. Permissionless market
+              creation, embedded trading surfaces, and self-hostable keeper tooling.
             </p>
           </div>
           <div className="fcol">
@@ -349,7 +349,7 @@ export function Landing() {
         </div>
         <div className="foot-bot">
           <span>© 2026 OpenPerps</span>
-          <span className="warn">⚠ Experimental · not audited · devnet only</span>
+          <span>Open source · Solana devnet</span>
         </div>
       </footer>
     </div>

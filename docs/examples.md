@@ -1,7 +1,7 @@
 # Examples
 
-OpenPerps examples are organized by integration surface. Each is devnet-default
-and not production-approved.
+OpenPerps examples are organized by integration surface. Each example is
+configured for Solana devnet and can be adapted by integrators.
 
 ## SDK-only
 

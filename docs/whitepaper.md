@@ -238,8 +238,8 @@ For curated mainnet markets such as SOL, BTC, and ETH, the intended oracle path
 is a production price feed such as Pyth. These markets are liquid, widely
 tracked, and suitable for higher confidence pricing.
 
-For custom SPL assets, especially experimental devnet markets, OpenPerps uses a
-DEX-EWMA model. A market can pin a DEX pool as its price source. A crank reads
+For custom SPL assets, especially thinly traded or newly listed markets, OpenPerps
+uses a DEX-EWMA model. A market can pin a DEX pool as its price source. A crank reads
 the pool spot price and folds it into an exponentially weighted moving average.
 This produces a smoother mark price while still deriving from on-chain liquidity
 rather than a trusted manual price.

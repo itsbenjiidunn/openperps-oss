@@ -33,10 +33,13 @@ independent third-party audit.
 ## Known limitations
 
 - The authority-pushed oracle is a single trusted key (see
-  [`oracle-and-price-safety.md`](oracle-and-price-safety.md)); rotating it
-  currently needs a program upgrade. This is the first mainnet blocker.
+  [`oracle-and-price-safety.md`](oracle-and-price-safety.md)). It is rotatable per
+  market via `SetOracleAuthority` (a `[ORACLE_SEED, market]` PDA) without a program
+  upgrade, but a trusted key still sets the price; a trustless feed is the next
+  production-hardening item.
 - DEX-EWMA has no pool-depth / TWAP check yet.
 - The on-chain Pyth CPI is not implemented.
-- Custom SPL markets are experimental: integrators own price-source quality, LP
-  and insurance liquidity, and keeper reliability for liquidation safety.
-- The program wrapper, SDK, and keeper are unaudited.
+- Custom SPL markets put more on the integrator: price-source quality, LP and
+  insurance liquidity, and keeper reliability for liquidation safety.
+- Independent third-party review of the wrapper, SDK, and keeper is in scope and
+  not yet complete; see [`../SECURITY.md`](../SECURITY.md).
