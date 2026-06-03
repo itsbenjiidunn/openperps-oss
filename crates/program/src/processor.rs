@@ -20,12 +20,12 @@ use crate::{
         accrue_asset_buffer, activate_market_buffer, crank_oracle_buffer, crank_refresh_buffer,
         deposit_buffer, init_market_buffer, init_portfolio_buffer,
         liquidate_buffer, market_engine_split_mut, market_header, market_wrapper_header,
-        delegate_of, deposit_cap_of, mock_pool_spot_price, oracle_authority_of,
+        delegate_of, deposit_cap_of, dex_pool_of, mock_pool_spot_price, oracle_authority_of,
         portfolio_account_size, portfolio_split_mut, resolve_market_buffer, set_delegate_buffer,
-        set_deposit_cap_buffer, set_oracle_authority_buffer, set_slot_oracle_pool,
+        set_deposit_cap_buffer, set_dex_pool_buffer, set_oracle_authority_buffer, set_slot_oracle_pool,
         settle_pnl_buffer, slot_oracle_pool, trade_buffer, withdraw_buffer, DelegateAccount,
-        DELEGATE_SEED, DepositCapAccount, DEPOSIT_CAP_SEED, OracleAuthorityAccount, ORACLE_SEED,
-        HOUSE_SEED, PORTFOLIO_SEED, VAULT_SEED,
+        DELEGATE_SEED, DepositCapAccount, DEPOSIT_CAP_SEED, DexPoolConfig, DEXPOOL_SEED,
+        OracleAuthorityAccount, ORACLE_SEED, HOUSE_SEED, PORTFOLIO_SEED, VAULT_SEED,
     },
 };
 
@@ -267,6 +267,24 @@ pub fn process_instruction(
         }
         OpenPerpsInstruction::CrankPyth { asset_index } => {
             process_crank_pyth(program_id, accounts, asset_index)
+        }
+        OpenPerpsInstruction::SetDexPool {
+            base_vault,
+            quote_vault,
+            base_decimals,
+            min_quote_depth,
+            bump,
+        } => process_set_dex_pool(
+            program_id,
+            accounts,
+            base_vault,
+            quote_vault,
+            base_decimals,
+            min_quote_depth,
+            bump,
+        ),
+        OpenPerpsInstruction::CrankDexSpot { asset_index } => {
+            process_crank_dex_spot(program_id, accounts, asset_index)
         }
     }
 }
@@ -1523,6 +1541,164 @@ fn process_crank_pyth(
         .map_err(|_| OpenPerpsError::InvalidAccountData)?;
     accrue_asset_buffer(&mut m_data, asset_index, now_slot, mark, 0, /* protective */ true)
         .map_v16()?;
+    Ok(())
+}
+
+/// Bind a DEX-priced market's constant-product pool (its two SPL reserve vaults,
+/// base decimals, and minimum depth). Only the market authority may call. The
+/// `[DEXPOOL_SEED, market]` PDA is created on first use.
+fn process_set_dex_pool(
+    program_id: &Pubkey,
+    accounts: &[AccountInfo],
+    base_vault: [u8; 32],
+    quote_vault: [u8; 32],
+    base_decimals: u8,
+    min_quote_depth: u64,
+    bump: u8,
+) -> ProgramResult {
+    let [config_pda, market, authority, _system_program, ..] = accounts else {
+        return Err(OpenPerpsError::InvalidInstruction.into());
+    };
+    if !authority.is_signer() {
+        return Err(OpenPerpsError::MissingRequiredSignature.into());
+    }
+    if !config_pda.is_writable() {
+        return Err(OpenPerpsError::InvalidAccountData.into());
+    }
+    if unsafe { market.owner() } != program_id {
+        return Err(OpenPerpsError::InvalidAccountOwner.into());
+    }
+
+    let market_key = *market.key();
+    {
+        let data = market
+            .try_borrow_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        let wrapper = market_wrapper_header(&data)?;
+        if !wrapper.is_initialized() {
+            return Err(OpenPerpsError::UninitializedAccount.into());
+        }
+        if wrapper.authority != *authority.key() {
+            return Err(OpenPerpsError::MissingRequiredSignature.into());
+        }
+    }
+
+    let derived =
+        create_program_address(&[DEXPOOL_SEED, market_key.as_ref(), &[bump]], program_id)
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    if *config_pda.key() != derived {
+        return Err(OpenPerpsError::InvalidAccountData.into());
+    }
+
+    if unsafe { config_pda.owner() } != program_id {
+        let rent = Rent::get()?;
+        let lamports = rent.minimum_balance(DexPoolConfig::LEN);
+        let bump_arr = [bump];
+        let seeds = [
+            Seed::from(DEXPOOL_SEED),
+            Seed::from(market_key.as_ref()),
+            Seed::from(bump_arr.as_ref()),
+        ];
+        let signer = Signer::from(seeds.as_ref());
+        system_create_account(
+            authority,
+            config_pda,
+            lamports,
+            DexPoolConfig::LEN as u64,
+            program_id,
+            &[signer],
+        )?;
+    }
+
+    let mut data = config_pda
+        .try_borrow_mut_data()
+        .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    set_dex_pool_buffer(
+        &mut data,
+        market_key,
+        base_vault,
+        quote_vault,
+        base_decimals,
+        min_quote_depth,
+    )?;
+    Ok(())
+}
+
+/// Permissionless DEX spot crank for a `DEX_EWMA` market: read the two pinned
+/// reserve vaults, reject a pool whose quote depth is below the floor, derive the
+/// spot, and fold it into the EWMA mark (per-slot move bound + freshness). The
+/// price comes from the pinned vaults, not the signer, so any signer may crank.
+fn process_crank_dex_spot(
+    program_id: &Pubkey,
+    accounts: &[AccountInfo],
+    asset_index: u32,
+) -> ProgramResult {
+    let [market, config_pda, base_vault, quote_vault, signer, ..] = accounts else {
+        return Err(OpenPerpsError::InvalidInstruction.into());
+    };
+    if !signer.is_signer() {
+        return Err(OpenPerpsError::MissingRequiredSignature.into());
+    }
+    if !market.is_writable() {
+        return Err(OpenPerpsError::InvalidAccountData.into());
+    }
+    if unsafe { market.owner() } != program_id || unsafe { config_pda.owner() } != program_id {
+        return Err(OpenPerpsError::InvalidAccountOwner.into());
+    }
+    // The reserve vaults must be SPL token accounts.
+    if unsafe { base_vault.owner() } != &TOKEN_PROGRAM_ID
+        || unsafe { quote_vault.owner() } != &TOKEN_PROGRAM_ID
+    {
+        return Err(OpenPerpsError::InvalidAccountOwner.into());
+    }
+
+    let market_key = *market.key();
+    let spot = {
+        let m_data = market
+            .try_borrow_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        let wrapper = market_wrapper_header(&m_data)?;
+        if !wrapper.is_initialized() {
+            return Err(OpenPerpsError::UninitializedAccount.into());
+        }
+        if wrapper.oracle_kind != crate::state::oracle_kind::DEX_EWMA {
+            return Err(OpenPerpsError::InvalidAccountData.into());
+        }
+        let cfg = {
+            let c_data = config_pda
+                .try_borrow_data()
+                .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+            dex_pool_of(&c_data, &market_key)?
+        };
+        // The passed vaults must be the ones the authority pinned.
+        if *base_vault.key() != cfg.base_vault || *quote_vault.key() != cfg.quote_vault {
+            return Err(OpenPerpsError::InvalidAccountData.into());
+        }
+        let reserve_base = {
+            let d = base_vault
+                .try_borrow_data()
+                .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+            crate::dexamm::token_account_amount(&d)
+                .map_err(|_| OpenPerpsError::InvalidAccountData)?
+        };
+        let reserve_quote = {
+            let d = quote_vault
+                .try_borrow_data()
+                .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+            crate::dexamm::token_account_amount(&d)
+                .map_err(|_| OpenPerpsError::InvalidAccountData)?
+        };
+        crate::dexamm::check_depth(reserve_quote, u64::from_le_bytes(cfg.min_quote_depth))
+            .map_err(|_| OpenPerpsError::PoolTooThin)?;
+        crate::dexamm::cp_spot_to_mark(reserve_base, reserve_quote, cfg.base_decimals as u32)
+            .map_err(|_| OpenPerpsError::PoolTooThin)?
+    };
+
+    let now_slot = Clock::get()?.slot;
+    let mut m_data = market
+        .try_borrow_mut_data()
+        .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    crank_oracle_buffer(&mut m_data, asset_index, spot, now_slot).map_v16()?;
     Ok(())
 }
 

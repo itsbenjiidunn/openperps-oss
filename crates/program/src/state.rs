@@ -111,6 +111,13 @@ pub const ORACLE_SEED: &[u8] = b"oracle";
 /// the program floor is always enforced.
 pub const DEPOSIT_CAP_SEED: &[u8] = b"depositcap";
 
+/// PDA seed prefix for a DEX-priced market's pinned constant-product pool. Full
+/// seeds: `[DEXPOOL_SEED, market.key()]`. Optional, per-market: binds the two SPL
+/// token vaults whose live balances are the pool reserves, the base token's
+/// decimals, and a minimum quote-side depth, so `CrankDexSpot` can price the
+/// market from a real on-chain pool and reject a thin one.
+pub const DEXPOOL_SEED: &[u8] = b"dexpool";
+
 /// PDA seed prefix for a user's portfolio under a market. Full seed list is
 /// `[PORTFOLIO_SEED, owner.key(), market.key()]`. Makes a user's account on a
 /// given market group DETERMINISTIC, one account per (owner, market), derivable
@@ -127,6 +134,9 @@ pub const ORACLE_AUTHORITY_DISCRIMINATOR: [u8; 8] = *b"OPORAUTH";
 
 /// Magic bytes for a [`DepositCapAccount`].
 pub const DEPOSIT_CAP_DISCRIMINATOR: [u8; 8] = *b"OPDEPCAP";
+
+/// Magic bytes for a [`DexPoolConfig`].
+pub const DEXPOOL_DISCRIMINATOR: [u8; 8] = *b"OPDEXAMM";
 
 /// Tiny PDA holding the session key authorized to place orders for one
 /// portfolio. Owner-set; all-zero `delegate` means revoked. `portfolio` binds
@@ -289,6 +299,64 @@ pub fn deposit_cap_of(buf: &[u8]) -> Result<([u8; 32], u128), OpenPerpsError> {
         return Ok(([0u8; 32], 0));
     }
     Ok((acc.market, u128::from_le_bytes(acc.max_capital)))
+}
+
+/// Per-market DEX pool binding for `CrankDexSpot`: the two SPL token vaults whose
+/// live balances are the constant-product reserves, the base token's decimals,
+/// and the minimum quote-side depth (LE `u64`, quote atoms). Byte arrays keep it
+/// alignment-1 and free of padding (Pod-safe).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Pod, Zeroable)]
+pub struct DexPoolConfig {
+    pub discriminator: [u8; 8],
+    pub market: [u8; 32],
+    pub base_vault: [u8; 32],
+    pub quote_vault: [u8; 32],
+    pub base_decimals: u8,
+    pub min_quote_depth: [u8; 8],
+}
+
+impl DexPoolConfig {
+    pub const LEN: usize = core::mem::size_of::<Self>();
+    pub fn is_initialized(&self) -> bool {
+        self.discriminator == DEXPOOL_DISCRIMINATOR
+    }
+}
+
+/// Write/overwrite a market's DEX pool binding (market-authority-authorized).
+pub fn set_dex_pool_buffer(
+    buf: &mut [u8],
+    market: [u8; 32],
+    base_vault: [u8; 32],
+    quote_vault: [u8; 32],
+    base_decimals: u8,
+    min_quote_depth: u64,
+) -> Result<(), OpenPerpsError> {
+    if buf.len() < DexPoolConfig::LEN {
+        return Err(OpenPerpsError::AccountDataTooSmall);
+    }
+    let acc: &mut DexPoolConfig = pod_from_bytes_mut(&mut buf[..DexPoolConfig::LEN])?;
+    acc.discriminator = DEXPOOL_DISCRIMINATOR;
+    acc.market = market;
+    acc.base_vault = base_vault;
+    acc.quote_vault = quote_vault;
+    acc.base_decimals = base_decimals;
+    acc.min_quote_depth = min_quote_depth.to_le_bytes();
+    Ok(())
+}
+
+/// Read a market's DEX pool binding; errors if uninitialized or bound to a
+/// different market.
+pub fn dex_pool_of(buf: &[u8], market: &[u8; 32]) -> Result<DexPoolConfig, OpenPerpsError> {
+    if buf.len() < DexPoolConfig::LEN {
+        return Err(OpenPerpsError::AccountDataTooSmall);
+    }
+    let acc: &DexPoolConfig = bytemuck::try_from_bytes(&buf[..DexPoolConfig::LEN])
+        .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    if !acc.is_initialized() || acc.market != *market {
+        return Err(OpenPerpsError::InvalidAccountData);
+    }
+    Ok(*acc)
 }
 
 /// OpenPerps-owned prefix at the start of a market-group account, in front

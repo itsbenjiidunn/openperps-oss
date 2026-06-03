@@ -33,6 +33,8 @@ pub mod tag {
     pub const SET_ORACLE_AUTHORITY: u8 = 21;
     pub const SET_DEPOSIT_CAP: u8 = 22;
     pub const CRANK_PYTH: u8 = 23;
+    pub const SET_DEX_POOL: u8 = 24;
+    pub const CRANK_DEX_SPOT: u8 = 25;
 }
 
 /// Decoded OpenPerps instruction.
@@ -360,6 +362,36 @@ pub enum OpenPerpsInstruction {
     CrankPyth {
         asset_index: u32,
     },
+    /// Bind (or rebind) a DEX-priced market's constant-product pool: the two SPL
+    /// token vaults whose balances are the reserves, the base token decimals, and
+    /// the minimum quote-side depth. Market-authority-signed. The
+    /// `[DEXPOOL_SEED, market]` PDA is created on first use.
+    ///
+    /// Accounts:
+    ///   0. `[writable]` dex pool config PDA
+    ///   1. `[]`         market account
+    ///   2. `[signer,writable]` market authority (pays PDA rent on first set)
+    ///   3. `[]`         System program
+    SetDexPool {
+        base_vault: [u8; 32],
+        quote_vault: [u8; 32],
+        base_decimals: u8,
+        min_quote_depth: u64,
+        bump: u8,
+    },
+    /// Permissionless: pull a fresh spot from a DEX market's pinned constant-product
+    /// pool (two SPL vault balances), reject a too-thin pool, and fold the spot
+    /// into the EWMA mark (per-slot move bound + freshness).
+    ///
+    /// Accounts:
+    ///   0. `[writable]` market account
+    ///   1. `[]`         dex pool config PDA (`[DEXPOOL_SEED, market]`)
+    ///   2. `[]`         base reserve vault (SPL token account)
+    ///   3. `[]`         quote reserve vault (SPL token account)
+    ///   4. `[signer]`   any signer (pays fee)
+    CrankDexSpot {
+        asset_index: u32,
+    },
 }
 
 impl OpenPerpsInstruction {
@@ -494,6 +526,27 @@ impl OpenPerpsInstruction {
                 Ok(Self::SetDepositCap { max_capital, bump })
             }
             tag::CRANK_PYTH => Ok(Self::CrankPyth {
+                asset_index: read_u32(rest, 0)?,
+            }),
+            tag::SET_DEX_POOL => {
+                let base_vault = read_pubkey(rest, 0)?;
+                let quote_vault = read_pubkey(rest, 32)?;
+                let base_decimals = *rest
+                    .get(64)
+                    .ok_or(OpenPerpsError::InvalidInstructionData)?;
+                let min_quote_depth = read_u64(rest, 65)?;
+                let bump = *rest
+                    .get(73)
+                    .ok_or(OpenPerpsError::InvalidInstructionData)?;
+                Ok(Self::SetDexPool {
+                    base_vault,
+                    quote_vault,
+                    base_decimals,
+                    min_quote_depth,
+                    bump,
+                })
+            }
+            tag::CRANK_DEX_SPOT => Ok(Self::CrankDexSpot {
                 asset_index: read_u32(rest, 0)?,
             }),
             _ => Err(OpenPerpsError::InvalidInstruction),
@@ -782,6 +835,36 @@ mod tests {
         assert_eq!(
             OpenPerpsInstruction::unpack(&data).unwrap(),
             OpenPerpsInstruction::CrankPyth { asset_index: 3 }
+        );
+    }
+
+    #[test]
+    fn unpack_set_dex_pool() {
+        let mut data = vec![tag::SET_DEX_POOL];
+        data.extend_from_slice(&[1u8; 32]); // base_vault
+        data.extend_from_slice(&[2u8; 32]); // quote_vault
+        data.push(9); // base_decimals
+        data.extend_from_slice(&25_000_000_000u64.to_le_bytes()); // min_quote_depth
+        data.push(254); // bump
+        assert_eq!(
+            OpenPerpsInstruction::unpack(&data).unwrap(),
+            OpenPerpsInstruction::SetDexPool {
+                base_vault: [1u8; 32],
+                quote_vault: [2u8; 32],
+                base_decimals: 9,
+                min_quote_depth: 25_000_000_000,
+                bump: 254,
+            }
+        );
+    }
+
+    #[test]
+    fn unpack_crank_dex_spot() {
+        let mut data = vec![tag::CRANK_DEX_SPOT];
+        data.extend_from_slice(&1u32.to_le_bytes());
+        assert_eq!(
+            OpenPerpsInstruction::unpack(&data).unwrap(),
+            OpenPerpsInstruction::CrankDexSpot { asset_index: 1 }
         );
     }
 }

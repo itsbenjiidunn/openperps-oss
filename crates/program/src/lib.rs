@@ -13,6 +13,7 @@
 #![cfg_attr(target_os = "solana", no_std)]
 
 pub mod cpi;
+pub mod dexamm;
 pub mod error;
 pub mod instruction;
 pub mod processor;

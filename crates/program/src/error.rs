@@ -34,6 +34,9 @@ pub enum OpenPerpsError {
     /// A Pyth price update was malformed, bound to the wrong feed, not fully
     /// verified, or too stale to crank the mark from.
     StalePythPrice = 11,
+    /// A DEX pool's quote-side depth is below the per-market floor, so it cannot
+    /// price the market (or a vault/account was malformed).
+    PoolTooThin = 12,
 }
 
 impl From<OpenPerpsError> for ProgramError {

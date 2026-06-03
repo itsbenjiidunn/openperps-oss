@@ -152,6 +152,9 @@ export const ORACLE_SEED = new TextEncoder().encode("oracle");
 /** Deposit-cap PDA seed prefix; matches Rust `state::DEPOSIT_CAP_SEED`. */
 export const DEPOSIT_CAP_SEED = new TextEncoder().encode("depositcap");
 
+/** DEX pool config PDA seed prefix; matches Rust `state::DEXPOOL_SEED`. */
+export const DEXPOOL_SEED = new TextEncoder().encode("dexpool");
+
 /** DelegateAccount size: discriminator(8) + portfolio(32) + delegate(32). */
 export const DELEGATE_ACCOUNT_SIZE = 72;
 

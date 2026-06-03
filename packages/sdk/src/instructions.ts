@@ -4,7 +4,7 @@
 import { PublicKey, SystemProgram, TransactionInstruction } from "@solana/web3.js";
 import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 
-import { DEPOSIT_CAP_SEED, ORACLE_SEED, PORTFOLIO_SEED } from "./layout.ts";
+import { DEPOSIT_CAP_SEED, DEXPOOL_SEED, ORACLE_SEED, PORTFOLIO_SEED } from "./layout.ts";
 
 export { TOKEN_PROGRAM_ID };
 
@@ -33,6 +33,8 @@ export const Tag = {
   SetOracleAuthority: 21,
   SetDepositCap: 22,
   CrankPyth: 23,
+  SetDexPool: 24,
+  CrankDexSpot: 25,
 } as const;
 
 /// Side encoding for `PlaceOrder`.
@@ -373,6 +375,96 @@ export function crankPythIx(args: {
       { pubkey: args.signer, isSigner: true, isWritable: false },
     ],
     data: encodeCrankPyth(args.assetIndex),
+  });
+}
+
+/** The per-market DEX pool config PDA; matches Rust `[DEXPOOL_SEED, market]`. */
+export function dexPoolPda(programId: PublicKey, market: PublicKey): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync([DEXPOOL_SEED, market.toBuffer()], programId);
+}
+
+export function encodeSetDexPool(
+  baseVault: Uint8Array,
+  quoteVault: Uint8Array,
+  baseDecimals: number,
+  minQuoteDepth: bigint,
+  bump: number,
+): Buffer {
+  expect32(baseVault, "baseVault");
+  expect32(quoteVault, "quoteVault");
+  const data = new Uint8Array(1 + 32 + 32 + 1 + 8 + 1);
+  data[0] = Tag.SetDexPool;
+  data.set(baseVault, 1);
+  data.set(quoteVault, 33);
+  data[65] = baseDecimals & 0xff;
+  writeU64LE(data, 66, minQuoteDepth);
+  data[74] = bump;
+  return Buffer.from(data);
+}
+
+/// Bind a DEX-priced market's constant-product pool: the two SPL token vaults
+/// holding the reserves, the base token decimals, and the minimum quote-side
+/// depth (quote atoms). Market-authority-signed; the PDA is created on first use.
+export function setDexPoolIx(args: {
+  programId: PublicKey;
+  /** The PDA from `dexPoolPda(programId, market)`. */
+  dexPoolPda: PublicKey;
+  market: PublicKey;
+  authority: PublicKey;
+  baseVault: PublicKey;
+  quoteVault: PublicKey;
+  baseDecimals: number;
+  minQuoteDepth: bigint;
+  bump: number;
+}): TransactionInstruction {
+  return new TransactionInstruction({
+    programId: args.programId,
+    keys: [
+      { pubkey: args.dexPoolPda, isSigner: false, isWritable: true },
+      { pubkey: args.market, isSigner: false, isWritable: false },
+      { pubkey: args.authority, isSigner: true, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    data: encodeSetDexPool(
+      args.baseVault.toBytes(),
+      args.quoteVault.toBytes(),
+      args.baseDecimals,
+      args.minQuoteDepth,
+      args.bump,
+    ),
+  });
+}
+
+export function encodeCrankDexSpot(assetIndex: number): Buffer {
+  const data = new Uint8Array(1 + 4);
+  data[0] = Tag.CrankDexSpot;
+  writeU32LE(data, 1, assetIndex);
+  return Buffer.from(data);
+}
+
+/// Permissionless crank for a DEX-priced market: read the pinned pool's two SPL
+/// vault balances, reject a thin pool, and fold the spot into the EWMA mark. Any
+/// signer.
+export function crankDexSpotIx(args: {
+  programId: PublicKey;
+  market: PublicKey;
+  /** The PDA from `dexPoolPda(programId, market)`. */
+  dexPoolPda: PublicKey;
+  baseVault: PublicKey;
+  quoteVault: PublicKey;
+  signer: PublicKey;
+  assetIndex: number;
+}): TransactionInstruction {
+  return new TransactionInstruction({
+    programId: args.programId,
+    keys: [
+      { pubkey: args.market, isSigner: false, isWritable: true },
+      { pubkey: args.dexPoolPda, isSigner: false, isWritable: false },
+      { pubkey: args.baseVault, isSigner: false, isWritable: false },
+      { pubkey: args.quoteVault, isSigner: false, isWritable: false },
+      { pubkey: args.signer, isSigner: true, isWritable: false },
+    ],
+    data: encodeCrankDexSpot(args.assetIndex),
   });
 }
 
