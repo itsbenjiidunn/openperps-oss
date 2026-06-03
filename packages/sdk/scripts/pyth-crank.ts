@@ -1,9 +1,9 @@
-// Devnet on-chain test for the Pyth pull-oracle crank (CrankPyth) against the
+// On-chain test for the Pyth pull-oracle crank (CrankPyth) against the
 // live Pyth SOL/USD sponsored feed.
 //
 // Run (PowerShell):
 //   $env:OPENPERPS_PAYER="C:\tmp\op-devnet\pyth-id.json"
-//   node --import tsx packages/sdk/scripts/devnet-pyth.ts
+//   node --import tsx packages/sdk/scripts/pyth-crank.ts
 //
 // Proves, on real accounts, that a PYTH market pulls its mark from the verified
 // Pyth `PriceUpdateV2` account: CrankPyth on a market bound to the SOL/USD feed

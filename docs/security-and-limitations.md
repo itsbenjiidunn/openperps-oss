@@ -19,9 +19,9 @@ in place, and the open items.
 
 ## Hardening already in place
 
-- The token-less demo price source and the raw self-cross trade are gated behind
-  the `devnet` cargo feature: `CreateMockPool`, `MockSwap`, and raw `Trade` are
-  excluded from a `--no-default-features` build. The standard trade path is
+- The token-less demo price source and the raw self-cross trade are demo-only:
+  `CreateMockPool`, `MockSwap`, and raw `Trade` are excluded from a
+  `--no-default-features` build. The standard trade path is
   `PlaceOrder` (user vs House).
 - The market header carries a version; a header from an older or future layout
   reads as uninitialized instead of being mis-decoded against stale padding.

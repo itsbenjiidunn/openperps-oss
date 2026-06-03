@@ -17,11 +17,11 @@ import { Connection, Keypair } from "@solana/web3.js";
 import { createStaticPriceProvider } from "@openperps/sdk";
 import { runKeeper, type KeeperMarket } from "@openperps/keeper";
 
-const connection = new Connection("https://api.devnet.solana.com", "confirmed");
+const connection = new Connection(process.env.OPENPERPS_RPC!, "confirmed");
 const authority = Keypair.fromSecretKey(/* your oracle authority key */);
 
 const markets: KeeperMarket[] = [
-  { config: solDevnetConfig, maxAccrualDtSlots: 1000, maxPriceMoveBpsPerSlot: 10 },
+  { config: sampleMarketConfig, maxAccrualDtSlots: 1000, maxPriceMoveBpsPerSlot: 10 },
 ];
 
 await runKeeper(

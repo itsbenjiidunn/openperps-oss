@@ -16,7 +16,7 @@ For the current per-path status see
 - Authority relayer (`AccrueAsset`) is live; the oracle authority is rotatable
   per market (`SetOracleAuthority`). `PYTH` is implemented via `CrankPyth` (Part A).
   `DEX_EWMA` prices from a real constant-product pool via `CrankDexSpot` (Part B);
-  the token-less mock source stays behind the `devnet` cargo feature.
+  the token-less mock source is demo-only, excluded from a `--no-default-features` build.
 - The engine already enforces a per-slot price-move bound, a freshness window,
   and an EWMA (alpha 0.2). The per-portfolio deposit cap (`SetDepositCap`) bounds
   the profit extractable by manipulating a thin pool.
@@ -31,7 +31,7 @@ economic cap (done).
 **Status: implemented and validated against a live account.**
 `crates/program/src/pyth.rs` hand-parses `PriceUpdateV2` (the receiver SDK is not
 pulled into the SBF build), with a golden unit test against a real SOL/USD account
-snapshot, and `packages/sdk/scripts/devnet-pyth.ts` cranks a live feed on-chain.
+snapshot, and `packages/sdk/scripts/pyth-crank.ts` cranks a live feed on-chain.
 The design below is what was built, including the step 2 confidence-interval gate
 (reject `conf / price` above 2%) and a spot/EMA-divergence gate (reject a spike
 above 10%).
@@ -71,7 +71,7 @@ Hard parts / validation needs:
 `crates/program/src/dexamm.rs` reads the two reserve vaults as standard SPL token
 accounts (AMM-agnostic), derives the spot, and gates on quote-side depth.
 `SetDexPool` pins the vaults, base decimals, and floor; `CrankDexSpot` folds the
-spot into the EWMA mark. `packages/sdk/scripts/devnet-dex.ts` validates it against
+spot into the EWMA mark. `packages/sdk/scripts/dex-crank.ts` validates it against
 real token accounts. The program-side TWAP (step 3) ships as pure helpers in
 `dexamm`; the PDA wiring is the next layer.
 

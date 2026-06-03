@@ -40,8 +40,6 @@ export function Header() {
             <span
               className={`h-1.5 w-1.5 rounded-full ${slot ? "bg-success pulse-dot" : "bg-muted-foreground"}`}
             />
-            <span className="text-muted-foreground">devnet</span>
-            <span className="text-foreground/70">·</span>
             <span className="text-muted-foreground">slot</span>
             <span className="text-foreground">{slot ? slot.toLocaleString() : "-"}</span>
           </div>

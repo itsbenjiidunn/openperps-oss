@@ -1,10 +1,10 @@
-// Devnet on-chain test for the DEX-EWMA spot crank (CrankDexSpot): price a
+// On-chain test for the DEX-EWMA spot crank (CrankDexSpot): price a
 // DEX_EWMA market from two real SPL token vaults (constant-product reserves),
 // track a pool move, and reject a pool below the depth floor.
 //
 // Run (PowerShell):
 //   $env:OPENPERPS_PAYER="C:\tmp\op-devnet\pyth-id.json"
-//   node --import tsx packages/sdk/scripts/devnet-dex.ts
+//   node --import tsx packages/sdk/scripts/dex-crank.ts
 //
 // The two "pool vaults" are plain SPL token accounts with known balances, the
 // same format a real CP-AMM (e.g. Raydium CPMM) keeps its reserves in, so this

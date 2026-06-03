@@ -1,9 +1,9 @@
-// Devnet integration test for the Phase 1.1 (rotatable oracle authority) and
+// Integration test for the Phase 1.1 (rotatable oracle authority) and
 // Phase 2.1 (per-market deposit cap) instructions, against the deployed program.
 //
 // Run (PowerShell), with the funded devnet keypair and the deployed program id:
 //   $env:OPENPERPS_PAYER="C:\tmp\op-devnet\id.json"
-//   node --import tsx packages/sdk/scripts/devnet-integration.ts
+//   node --import tsx packages/sdk/scripts/integration.ts
 //
 // It proves, on real accounts, that:
 //   A) AccrueAsset cannot move a market's mark unless the signer is the market's

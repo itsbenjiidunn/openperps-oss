@@ -118,7 +118,7 @@ const DEFAULT_STATE: WizardState = {
 const MIN_SEED_LP = 100;
 /// Floor on the underlying token's DEX-pool liquidity (USD) before we let a
 /// memecoin perp market be created. Below this, the pool is cheap to move with a
-/// flash loan → the mark can be manipulated. Tune up for mainnet.
+/// flash loan → the mark can be manipulated. Tune up per deployment.
 const MIN_POOL_LIQUIDITY_USD = 25_000;
 
 function Launch() {
@@ -185,7 +185,7 @@ function Launch() {
     [s.tierId],
   );
 
-  // Creator's mUSDC balance, the seed must come from it (faucet on devnet).
+  // Creator's mUSDC balance, the seed must come from it (use the faucet first).
   const owner = wallet.publicKey?.toBase58() ?? "";
   const balanceQ = useQuery({
     queryKey: ["musdc-bal", owner, connection.rpcEndpoint],
@@ -205,7 +205,7 @@ function Launch() {
   const seedLpNum = Number(s.seedLp) || 0;
   const seedValid = seedLpNum >= MIN_SEED_LP && seedLpNum <= walletMusdc;
 
-  // DEX (mock pool) and Manual are both available for any asset on devnet.
+  // DEX (mock pool) and Manual are both available for any asset.
   const effectiveOracleKind: OracleKind = s.oracleKind === "dex" ? "dex" : "manual";
 
   const seedPriceUsd = useMemo(() => {

@@ -1,4 +1,4 @@
-/// DEX-EWMA oracle control panel (devnet). For DEX-priced markets it shows the
+/// DEX-EWMA oracle control panel. For DEX-priced markets it shows the
 /// pinned pool's live spot price and the market's on-chain EWMA mark, and
 /// lets anyone move the pool (mock swaps) and crank a fresh mark, making
 /// the "price comes from an on-chain pool, no keeper" mechanic tangible.
