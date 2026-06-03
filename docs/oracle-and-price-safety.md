@@ -34,8 +34,8 @@ trade's `executionPrice`, never a chart price.
   trustless feed.
 - DEX-EWMA has no pool-depth or TWAP check yet: a thin or Sybil-funded pool can
   still be pushed within the per-slot bound.
-- Pyth cranking accrues the verified price but does not yet gate on the price
-  confidence interval or a large EMA divergence.
+- Pyth cranking gates on the confidence interval (rejecting `conf / price` above
+  2%) but does not yet cross-check the Pyth EMA against the spot price.
 
 Depth- and TWAP-aware DEX-EWMA for custom tokens is designed in
 [`oracle-integration.md`](oracle-integration.md).

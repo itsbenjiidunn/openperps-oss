@@ -1445,6 +1445,10 @@ fn process_crank_oracle(
 /// clock (either stale or implausibly ahead).
 const MAX_PYTH_AGE_SECS: i64 = 60;
 
+/// Reject a Pyth price whose confidence interval exceeds this fraction of the
+/// price (in bps): a too-uncertain price. 200 bps = 2%.
+const MAX_PYTH_CONF_BPS: u64 = 200;
+
 /// Permissionless Pyth crank for a `PYTH` market: read a verified `PriceUpdateV2`
 /// account (owned by the receiver program), bind it to the market's feed id,
 /// check Full verification and freshness, convert the price to the mark scale,
@@ -1496,6 +1500,10 @@ fn process_crank_pyth(
             .map_err(|_| OpenPerpsError::StalePythPrice)?;
         let age = now_unix.saturating_sub(pp.publish_time);
         if age > MAX_PYTH_AGE_SECS || age < -MAX_PYTH_AGE_SECS {
+            return Err(OpenPerpsError::StalePythPrice.into());
+        }
+        // Reject a too-uncertain price (wide confidence band).
+        if !crate::pyth::confidence_ok(pp.price, pp.conf, MAX_PYTH_CONF_BPS) {
             return Err(OpenPerpsError::StalePythPrice.into());
         }
         // PRICE_SCALE is 1e6, so the mark carries 6 quote decimals.

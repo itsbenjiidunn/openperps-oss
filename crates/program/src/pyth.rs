@@ -55,6 +55,9 @@ pub enum PythError {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PythPrice {
     pub price: i64,
+    /// Confidence interval (same scale as `price`); a wider band is a less
+    /// certain price.
+    pub conf: u64,
     pub expo: i32,
     /// Unix seconds the price was published on Pythnet.
     pub publish_time: i64,
@@ -106,6 +109,7 @@ pub fn parse_price_update_v2(
         return Err(PythError::FeedMismatch);
     }
     let price = rd_i64(data, pm + 32)?;
+    let conf = rd_u64(data, pm + 40)?;
     let expo = rd_i32(data, pm + 48)?;
     let publish_time = rd_i64(data, pm + 52)?;
     let posted_slot = rd_u64(data, pm + 84)?;
@@ -114,10 +118,21 @@ pub fn parse_price_update_v2(
     }
     Ok(PythPrice {
         price,
+        conf,
         expo,
         publish_time,
         posted_slot,
     })
+}
+
+/// True if the price's confidence interval is within `max_bps` of the price
+/// (`conf / price <= max_bps / 10_000`). A wide band means a less certain price
+/// that a settlement crank should reject. A non-positive price is never ok.
+pub fn confidence_ok(price: i64, conf: u64, max_bps: u64) -> bool {
+    if price <= 0 {
+        return false;
+    }
+    (conf as u128) * 10_000 <= (price as u128) * (max_bps as u128)
 }
 
 /// Convert a Pyth `(price, expo)` to the OpenPerps mark scale: quote atoms per
@@ -169,11 +184,25 @@ mod tests {
         assert_eq!(d.len(), FULL_LEN);
         let p = parse_price_update_v2(&d, &feed()).unwrap();
         assert_eq!(p.price, 7_541_192_602);
+        assert_eq!(p.conf, 8_807_399);
         assert_eq!(p.expo, -8);
         assert_eq!(p.publish_time, 1_780_482_956);
         assert_eq!(p.posted_slot, 466_847_512);
         // $75.41192602 -> 6-decimal quote mark = 75_411_926 atoms.
         assert_eq!(price_to_mark(p.price, p.expo, 6).unwrap(), 75_411_926);
+        // The live SOL/USD band is ~11.7 bps, well inside a 2% gate.
+        assert!(confidence_ok(p.price, p.conf, 200));
+    }
+
+    #[test]
+    fn confidence_gate() {
+        // conf/price = 1% passes a 2% gate, fails a 0.5% gate.
+        assert!(confidence_ok(10_000, 100, 200));
+        assert!(!confidence_ok(10_000, 100, 50));
+        // exactly at the threshold is ok.
+        assert!(confidence_ok(10_000, 100, 100));
+        // non-positive price is never ok.
+        assert!(!confidence_ok(0, 0, 200));
     }
 
     #[test]
