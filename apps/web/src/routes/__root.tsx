@@ -59,7 +59,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 function RootComponent() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   // The marketing home (/) is a full-bleed standalone page with its own nav +
-  // footer — render it without the trading-app shell.
+  // footer, render it without the trading-app shell.
   if (pathname === "/") {
     return <Outlet />;
   }

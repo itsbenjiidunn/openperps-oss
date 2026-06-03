@@ -1,7 +1,7 @@
 /// Hyperliquid-style account panel for the connected wallet (bottom of the
 /// terminal). Tabs: Positions + Trade History are real (on-chain / indexer);
 /// Funding + Liquidations are placeholders until the indexer parses those
-/// events. No Balances / Open Orders / Order History — OpenPerps matches every
+/// events. No Balances / Open Orders / Order History, OpenPerps matches every
 /// order against the vault immediately, so there are no resting orders and
 /// "order history" == trade history.
 ///
@@ -56,7 +56,7 @@ export type AggPosition = DecodedPosition & {
 export function useGroups(owner: string, markets: Market[]): Group[] {
   // Portfolios are deterministic PDAs [PORTFOLIO_SEED, owner, market], so the
   // groups are simply DERIVED for the shared majors group + every custom market
-  // — identical on any device, no localStorage and no off-chain index needed.
+  //, identical on any device, no localStorage and no off-chain index needed.
   // The batched on-chain read (useAllPositions) drops the ones not initialized.
   // We additionally merge any indexer-reported portfolios that aren't at a
   // derived address, so LEGACY random-keypair accounts (pre-PDA) still resolve.
@@ -80,7 +80,7 @@ export function useGroups(owner: string, markets: Market[]): Group[] {
       byPortfolio.set(pf, { portfolio: pf, market: m });
     }
     // Legacy random-keypair accounts (created before the PDA migration) that the
-    // indexer saw — keep them visible so old positions/funds aren't orphaned.
+    // indexer saw, keep them visible so old positions/funds aren't orphaned.
     for (const d of discoveredQ.data ?? []) {
       if (byPortfolio.has(d.portfolio)) continue;
       if (d.market === sharedMarket) {
@@ -180,7 +180,7 @@ export function AccountTabs({ markets }: { markets: Market[] }) {
           <Empty>Connect your wallet to see your account.</Empty>
         ) : groups.length === 0 ? (
           <Empty>
-            No trading account yet —{" "}
+            No trading account yet -{" "}
             <Link to="/portfolio" className="text-neon underline">
               open one
             </Link>{" "}
@@ -312,8 +312,8 @@ function PositionsTab({
   );
 }
 
-/// One position row. Its mark comes from `useMarketMark(m)` — the SAME hook the
-/// market header uses — so for custom markets the position's Mark ticks in lock
+/// One position row. Its mark comes from `useMarketMark(m)`, the SAME hook the
+/// market header uses, so for custom markets the position's Mark ticks in lock
 /// step with the header (the realtime feed is shared per mint), instead of
 /// sitting on the slow on-chain `m.price`. PnL / liq derive from that live mark.
 const EMPTY_MARKET = { price: 0 } as const;
@@ -341,7 +341,7 @@ function PositionRow({
   // Entry priority: indexer VWAP (authoritative) → this device's local fill
   // price (stable, available instantly) → live mark (last resort). Falling back
   // to the local price instead of the mark stops the entry from tracking the
-  // mark — and PnL from sitting at 0 — in the minute before the indexer catches
+  // mark, and PnL from sitting at 0, in the minute before the indexer catches
   // up.
   const entry = indexedEntry ?? localEntry ?? (mark > 0 ? mark : null);
   const dir = p.side === 0 ? 1 : -1;
@@ -368,17 +368,17 @@ function PositionRow({
       </span>
       <span className="text-right font-mono tabular-nums">{fmt(size)}</span>
       <span className="text-right font-mono tabular-nums text-muted-foreground">
-        {entry ? fmt(entry) : "—"}
+        {entry ? fmt(entry) : "-"}
       </span>
-      <span className="text-right font-mono tabular-nums">{mark > 0 ? fmt(mark) : "—"}</span>
+      <span className="text-right font-mono tabular-nums">{mark > 0 ? fmt(mark) : "-"}</span>
       <span className="text-right font-mono tabular-nums text-danger/80">
-        {liq ? fmt(liq) : "—"}
+        {liq ? fmt(liq) : "-"}
       </span>
       <span
         className={`text-right font-mono tabular-nums ${upnl === null ? "text-muted-foreground" : up ? "text-success" : "text-danger"}`}
       >
         {upnl === null
-          ? "—"
+          ? "-"
           : `${up ? "+" : ""}${upnl.toLocaleString(undefined, { maximumFractionDigits: 2 })}${
               pct === null ? "" : ` (${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%)`
             }`}
@@ -488,7 +488,7 @@ function NeedsIndexer({ title, detail }: { title: string; detail: string }) {
     <div className="py-6 text-center">
       <p className="font-medium text-foreground">{title}</p>
       <p className="mt-1 text-[11px]">
-        Needs the indexer to parse {detail}. Not wired yet — shown for parity, no fabricated data.
+        Needs the indexer to parse {detail}. Not wired yet, shown for parity, no fabricated data.
       </p>
     </div>
   );

@@ -3,7 +3,7 @@
 //! We run fully `no_std`, which rules out pinocchio's `entrypoint!` shortcut
 //! (its `default_panic_handler!` only emits a hook and relies on `std` for the
 //! real `#[panic_handler]` lang item). The natural replacement,
-//! `nostd_panic_handler!`, puts `#[no_mangle]` on the `#[panic_handler]` — which
+//! `nostd_panic_handler!`, puts `#[no_mangle]` on the `#[panic_handler]`, which
 //! Rust 1.89 (the compiler shipped in Solana platform-tools v1.53) rejects as
 //! "`#[no_mangle]` cannot be used on internal language items". Pinocchio 0.9
 //! fixes this, but 0.9 requires edition2024 (Cargo ≥1.85), newer than our

@@ -3,7 +3,7 @@
 /// All markets quote against this single mint so a trader funds their
 /// wallet once (via the in-app Faucet) and trades every market. The mint
 /// authority is a throwaway keypair we bake into the frontend so the
-/// faucet can sign MintTo — worthless on devnet, never holds SOL.
+/// faucet can sign MintTo, worthless on devnet, never holds SOL.
 ///
 /// Run once:  tsx scripts/create-musdc.ts <payer-keypair.json>
 /// Prints the mint address + the authority secret to paste into the app.

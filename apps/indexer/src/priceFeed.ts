@@ -1,4 +1,4 @@
-/// PriceFeed Durable Object — ONE upstream Helius WebSocket per token, fanned
+/// PriceFeed Durable Object, ONE upstream Helius WebSocket per token, fanned
 /// out to every connected client. Collapses N user connections to 1 Helius
 /// connection per mint, so realtime price scales flat with users (credits are
 /// per-token, not per-user). Resolves the token's Raydium v4 / pumpswap pool,
@@ -77,7 +77,7 @@ async function solUsd(): Promise<number | null> {
 /// Candidate pool addresses for a mint, deepest first. GeckoTerminal first;
 /// DexScreener as a fallback (it's CORS-open and far less rate-limited than
 /// GeckoTerminal's free tier, which 429s the DO's direct server-side fetch and
-/// would otherwise leave the feed — price AND liquidity — silent).
+/// would otherwise leave the feed, price AND liquidity, silent).
 async function poolCandidates(mint: string): Promise<{ address: string; reserve_in_usd?: string }[]> {
   for (let i = 0; i < 3; i++) {
     try {
@@ -310,7 +310,7 @@ export class PriceFeed {
     this.st.last = usd;
     // Pool liquidity (USD) = value of BOTH sides ≈ 2× the quote side. Available
     // straight from the vault balances we already track, so a brand-new market
-    // shows liquidity instantly — before DexScreener/GeckoTerminal index the pool.
+    // shows liquidity instantly, before DexScreener/GeckoTerminal index the pool.
     const otherUsd = this.st.kind === "usd" ? other : other * this.st.solUsd;
     this.st.liq = otherUsd > 0 && Number.isFinite(otherUsd) ? otherUsd * 2 : 0;
     // Throttle fan-out to ~5/sec so a busy pool doesn't spam every client.

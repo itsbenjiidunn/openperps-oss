@@ -1,6 +1,6 @@
 /// Live on-chain data hooks. These intentionally only surface what the
-/// program actually knows about — market header, vault TokenAccount balance,
-/// portfolio capital — and leave display-only metrics (24h volume, funding
+/// program actually knows about, market header, vault TokenAccount balance,
+/// portfolio capital, and leave display-only metrics (24h volume, funding
 /// rate history, recent trades) `undefined` until an indexer or Pyth feed
 /// fills them in.
 
@@ -31,7 +31,7 @@ import { SHARED_MARKET, SHARED_SLOT_CAPACITY } from "./sharedMarket";
 import type { Market } from "./types";
 
 // Slots already synced to the relayer this session (so it knows the price
-// source) — fire-and-forget once per slot.
+// source), fire-and-forget once per slot.
 const registeredSlots = new Set<number>();
 function syncRelayer(m: Market): void {
   if (registeredSlots.has(m.assetIndex)) return;
@@ -47,7 +47,7 @@ function syncRelayer(m: Market): void {
 
 /// Returns the registry-known markets enriched with whatever live state we
 /// can decode from their on-chain accounts. Display-only fields stay
-/// `undefined` for components to render as "—".
+/// `undefined` for components to render as "-".
 export function useMarkets(): UseQueryResult<Market[]> {
   const { connection } = useConnection();
   return useQuery({
@@ -55,7 +55,7 @@ export function useMarkets(): UseQueryResult<Market[]> {
     queryFn: async () => {
       // Two sources of markets: the built-in official majors (SOL/BTC/ETH/JUP,
       // pinned to fixed slots and shown to everyone) and custom SPL launches.
-      // Official slots are authoritative — a custom registry entry can never
+      // Official slots are authoritative, a custom registry entry can never
       // shadow one. Custom own-group launches are discovered GLOBALLY from the
       // shared indexer (so every wallet/device sees the same list), merged with
       // this browser's local registry as a fallback.
@@ -120,7 +120,7 @@ function slotIsZero(data: Buffer, off: number): boolean {
   return true;
 }
 
-/// Account-data decode of a single market — returns engine vault / c_tot
+/// Account-data decode of a single market, returns engine vault / c_tot
 /// (u128) so callers can show the live collateral pool size.
 export function useMarketState(pubkey: string | undefined) {
   const { connection } = useConnection();
@@ -152,7 +152,7 @@ export function useVaultBalance(vault: string | undefined) {
 
 /// Portfolio header decode for the connected wallet's portfolio account.
 /// Caller supplies the portfolio pubkey (we don't yet have a registry of
-/// portfolios — that's wired in Phase 4 alongside InitPortfolio).
+/// portfolios, that's wired in Phase 4 alongside InitPortfolio).
 export function usePortfolioState(pubkey: string | undefined) {
   const { connection } = useConnection();
   return useQuery({
@@ -234,7 +234,7 @@ function registryToMarket(entry: RegistryEntry, data: Buffer | null): Market {
   const liveMark = data ? decodeSlotPriceUsd(data, entry.assetIndex) : null;
   const price = liveMark ?? entry.seedPriceUsd ?? 0;
   const openInterest = data ? decodeSlotOiUsd(data, entry.assetIndex, price) : 0;
-  // Reference CEX symbol (for the mirrored order book) — derived from the
+  // Reference CEX symbol (for the mirrored order book), derived from the
   // asset preset by ticker; majors have one, custom SPL don't.
   const cexSymbol = ASSET_PRESETS.find((p) => p.ticker === entry.base)?.cexSymbol;
   return {

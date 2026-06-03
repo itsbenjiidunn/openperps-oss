@@ -1,7 +1,7 @@
 import { PublicKey } from "@solana/web3.js";
 import { portfolioPda } from "@openperps/sdk";
 
-/// OpenPerps program ID — devnet deployment from commit 3daf907.
+/// OpenPerps program ID, devnet deployment from commit 3daf907.
 /// Override via `VITE_OPENPERPS_PROGRAM_ID` for a different cluster /
 /// upgraded program.
 const PROGRAM_ID_STRING =
@@ -10,7 +10,7 @@ const PROGRAM_ID_STRING =
 export const PROGRAM_ID = new PublicKey(PROGRAM_ID_STRING);
 
 /// The deterministic portfolio account for `(owner, market)` as a base58 string.
-/// One account per wallet per market group, derivable on any device — replaces
+/// One account per wallet per market group, derivable on any device, replaces
 /// the old random-keypair-in-localStorage lookup. The account may not exist
 /// on-chain yet (until the user inits it); callers that need existence check the
 /// account data (e.g. `usePortfolioState`) or the batched positions read.

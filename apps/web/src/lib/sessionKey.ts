@@ -1,6 +1,6 @@
 /// Session keys for popup-free trading. The owner authorizes a browser-held
 /// keypair once (SetDelegate, one wallet tx, also funds it with a little SOL
-/// for fees); afterwards PlaceOrder/Close sign with the session key locally —
+/// for fees); afterwards PlaceOrder/Close sign with the session key locally,
 /// no wallet popup per trade. The delegate can ONLY trade (never withdraw),
 /// so a leaked session key can't drain funds. Session secrets live in
 /// localStorage; clearing them or revoking on-chain disables 1-click trading.
@@ -43,7 +43,7 @@ export function delegatePda(portfolio: PublicKey): [PublicKey, number] {
 
 /// True if a session key exists locally AND can pay fees. NOTE: this does not
 /// check whether the key is actually authorized on-chain for a given portfolio
-/// — use [`sessionUsableFor`] before signing a trade.
+///, use [`sessionUsableFor`] before signing a trade.
 export async function sessionUsable(
   connection: Connection,
   owner: string,
@@ -58,7 +58,7 @@ export async function sessionUsable(
 /// DelegateAccount PDA layout is discriminator(8) + portfolio(32) + delegate(32);
 /// it must be program-owned and name this session key. A funded local session
 /// from a *different* portfolio (e.g. after re-bootstrapping the market) is NOT
-/// valid here — signing with it would fail PlaceOrder with MissingRequiredSignature.
+/// valid here, signing with it would fail PlaceOrder with MissingRequiredSignature.
 export async function delegateRegistered(
   connection: Connection,
   portfolio: PublicKey,

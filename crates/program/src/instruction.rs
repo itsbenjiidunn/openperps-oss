@@ -43,7 +43,7 @@ pub enum OpenPerpsInstruction {
     ///   0. `[writable]` market account (uninitialized, owned by this program,
     ///      sized for the chosen `asset_slot_capacity`)
     ///   1. `[signer]`   authority that will own the market group
-    ///   2. `[]`         quote_mint — the SPL mint accepted as collateral
+    ///   2. `[]`         quote_mint, the SPL mint accepted as collateral
     ///                    (just read for its pubkey; bound into the wrapper
     ///                    header. Vault token account is created by Phase B.)
     ///
@@ -69,7 +69,7 @@ pub enum OpenPerpsInstruction {
     /// Initialize a user's portfolio at the deterministic PDA
     /// `[PORTFOLIO_SEED, owner, market]`. The program creates the account itself
     /// (CPI to the System Program, signed by the PDA), so there is no client
-    /// keypair and exactly one account per (owner, market) — discoverable on any
+    /// keypair and exactly one account per (owner, market), discoverable on any
     /// device by re-deriving the address. `bump` is the canonical PDA bump.
     ///
     /// Accounts:
@@ -90,7 +90,7 @@ pub enum OpenPerpsInstruction {
     ///   1. `[writable]` portfolio account
     ///   2. `[signer]`   owner of the portfolio (also signs the SPL Transfer)
     ///   3. `[writable]` owner's SPL TokenAccount (source)
-    ///   4. `[writable]` vault SPL TokenAccount (destination — the PDA in wrapper.vault)
+    ///   4. `[writable]` vault SPL TokenAccount (destination, the PDA in wrapper.vault)
     ///   5. `[]`         SPL Token program
     Deposit { amount: u128 },
     /// Transition the asset slot at `asset_index` from Disabled to Active,
@@ -98,7 +98,7 @@ pub enum OpenPerpsInstruction {
     /// `Clock` sysvar at the handler.
     ///
     /// NOTE: For MVP the caller signs as "authority" but the wrapper does not
-    /// yet pin a specific authority pubkey in the market header — any signer
+    /// yet pin a specific authority pubkey in the market header, any signer
     /// can activate. A real oracle CPI (Pyth/Switchboard) replaces the trust
     /// model later; here we accept the price as authenticated by the signer.
     ///
@@ -140,8 +140,8 @@ pub enum OpenPerpsInstruction {
     /// Accounts:
     ///   0. `[]`         market account (read for wrapper.authority +
     ///                    wrapper.quote_mint + wrapper.vault verification)
-    ///   1. `[signer, writable]` authority — pays rent for the vault account
-    ///   2. `[writable]` vault — the PDA at `[VAULT_SEED, market.key()]`,
+    ///   1. `[signer, writable]` authority, pays rent for the vault account
+    ///   2. `[writable]` vault, the PDA at `[VAULT_SEED, market.key()]`,
     ///                    will be allocated by System and initialized as a
     ///                    TokenAccount by SPL Token
     ///   3. `[]`         quote_mint
@@ -201,8 +201,8 @@ pub enum OpenPerpsInstruction {
     ///
     /// Accounts:
     ///   0. `[writable]` market account (wrapper.house_bump gets written)
-    ///   1. `[signer, writable]` authority — pays rent for the portfolio
-    ///   2. `[writable]` house portfolio — PDA at `[HOUSE_SEED, market.key()]`
+    ///   1. `[signer, writable]` authority, pays rent for the portfolio
+    ///   2. `[writable]` house portfolio, PDA at `[HOUSE_SEED, market.key()]`
     ///   3. `[]`         system program
     CreateHouseVault { house_bump: u8 },
     /// Deposit collateral into the House Vault portfolio. Authority-only.
@@ -225,7 +225,7 @@ pub enum OpenPerpsInstruction {
     ///   0. `[writable]` market account
     ///   1. `[writable]` house portfolio
     ///   2. `[signer]`   authority
-    ///   3. `[writable]` vault SPL TokenAccount (source — signed by vault PDA)
+    ///   3. `[writable]` vault SPL TokenAccount (source, signed by vault PDA)
     ///   4. `[writable]` authority's SPL TokenAccount (destination)
     ///   5. `[]`         SPL Token program
     WithdrawHouseVault { amount: u128 },
@@ -263,7 +263,7 @@ pub enum OpenPerpsInstruction {
     },
     /// Move a mock pool's price by swapping against its constant product.
     /// `base_to_quote == 1` sells base (price down), `0` buys base (up).
-    /// Pure reserve math — no token custody; a devnet price toy.
+    /// Pure reserve math, no token custody; a devnet price toy.
     ///
     /// Accounts:
     ///   0. `[writable]` pool account
@@ -282,7 +282,7 @@ pub enum OpenPerpsInstruction {
     CrankOracle {
         asset_index: u32,
     },
-    /// Authorize (or revoke) a trading delegate — a session key that may sign
+    /// Authorize (or revoke) a trading delegate, a session key that may sign
     /// `PlaceOrder` for the owner's portfolio without a wallet popup. A zero
     /// `delegate` revokes. Only the portfolio owner can call. The delegate can
     /// never withdraw.
@@ -310,7 +310,7 @@ pub enum OpenPerpsInstruction {
     /// Settle a flat account's positive realized PnL into withdrawable
     /// `capital`, debiting the House (counterparty) symmetrically. Bridges
     /// percolator's separate `pnl` ledger so trading profit becomes
-    /// withdrawable. Permissionless — only credits the user's own profit into
+    /// withdrawable. Permissionless, only credits the user's own profit into
     /// the user's own portfolio.
     ///
     /// Accounts:

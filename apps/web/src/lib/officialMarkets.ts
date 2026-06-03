@@ -1,4 +1,4 @@
-/// The canonical first-class markets every visitor sees by default — SOL,
+/// The canonical first-class markets every visitor sees by default, SOL,
 /// BTC, ETH and JUP. Unlike user-launched markets (which live in this
 /// browser's localStorage `registry`), these are baked into the app and
 /// pinned to fixed asset slots in the shared market group, so they render
@@ -29,7 +29,7 @@ const OFFICIAL_SLOTS: Record<string, number> = {
   JUP: 4,
 };
 
-/// Asset slots reserved for official markets — the launcher must never hand
+/// Asset slots reserved for official markets, the launcher must never hand
 /// these out to custom SPL markets.
 export const OFFICIAL_SLOT_INDICES: number[] = Object.values(OFFICIAL_SLOTS);
 

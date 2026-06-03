@@ -2,7 +2,7 @@
 /// benchmarks TradingView shim (the same price source the on-chain relayer
 /// pushes as the mark), so the chart and the mark track the same market.
 /// Live updates fold the current mark into the forming candle. Markets with
-/// no Pyth symbol (custom devnet SPL) get no history — the chart builds bars
+/// no Pyth symbol (custom devnet SPL) get no history, the chart builds bars
 /// forward from the live mark instead of showing fabricated candles.
 
 import { candlesUrl } from "./indexer";
@@ -128,7 +128,7 @@ export async function fetch24hAgoPrice(market: {
 // ---------- mainnet token data (custom markets) ----------
 //
 // A launched market lists a real mainnet SPL by mint, so its chart + price come
-// from MAINNET data even though trading settles on devnet — you trade a real
+// from MAINNET data even though trading settles on devnet, you trade a real
 // token's price action against the devnet House. Majors keep using Pyth; custom
 // markets (a baseMint, not Pyth) read GeckoTerminal (free, CORS-ok) for OHLC and
 // Jupiter for the live price.
@@ -167,7 +167,7 @@ export async function fetchGeckoHistory(mint: string, interval: Interval): Promi
 }
 
 /// Load the candle history for a market+interval. Pyth for majors, GeckoTerminal
-/// (by mint) for custom mainnet tokens. Returns [] only when neither resolves —
+/// (by mint) for custom mainnet tokens. Returns [] only when neither resolves,
 /// the caller then seeds bars from the live mark.
 export async function loadHistory(
   market: { base: string; oracleKind?: string; baseMint?: string },

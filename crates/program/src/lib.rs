@@ -19,7 +19,7 @@ pub mod processor;
 pub mod state;
 
 // The pinocchio `entrypoint!` macro also installs a global allocator and a
-// panic handler. Those only make sense for — and only compile cleanly on —
+// panic handler. Those only make sense for, and only compile cleanly on,
 // the on-chain SBF target, so we gate the whole entrypoint there. Host builds
 // (and unit tests / shared codec) stay on std.
 #[cfg(all(target_os = "solana", not(feature = "no-entrypoint")))]

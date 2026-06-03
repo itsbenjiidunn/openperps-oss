@@ -46,7 +46,7 @@ import { fmtPubkey } from "@/lib/format";
 export const Route = createFileRoute("/launch")({
   head: () => ({
     meta: [
-      { title: "Launch Market — OpenPerps" },
+      { title: "Launch Market: OpenPerps" },
       {
         name: "description",
         content:
@@ -72,15 +72,15 @@ function txOrderFor(oracleKind: OracleKind): LaunchStepName[] {
 const TX_META: Record<LaunchStepName, { label: string; hint: string }> = {
   "init-group": {
     label: "Create market group",
-    hint: "InitMarket — a fresh isolated group (own vault + House), separate from the majors pool.",
+    hint: "InitMarket, a fresh isolated group (own vault + House), separate from the majors pool.",
   },
   "seed-house": {
     label: "Seed House (LP + insurance)",
-    hint: "CreateVault + CreateHouseVault + FundHouseVault — deposits your mUSDC as the market's backing.",
+    hint: "CreateVault + CreateHouseVault + FundHouseVault, deposits your mUSDC as the market's backing.",
   },
   "create-pool": {
     label: "Create + seed DEX pool",
-    hint: "A mock constant-product pool seeded at your price — the on-chain DEX-EWMA price source.",
+    hint: "A mock constant-product pool seeded at your price, the on-chain DEX-EWMA price source.",
   },
   activate: {
     label: "Activate the market",
@@ -185,7 +185,7 @@ function Launch() {
     [s.tierId],
   );
 
-  // Creator's mUSDC balance — the seed must come from it (faucet on devnet).
+  // Creator's mUSDC balance, the seed must come from it (faucet on devnet).
   const owner = wallet.publicKey?.toBase58() ?? "";
   const balanceQ = useQuery({
     queryKey: ["musdc-bal", owner, connection.rpcEndpoint],
@@ -216,7 +216,7 @@ function Launch() {
     // A DEX-backed custom market (real mint) MUST seed at the token's real live
     // price: after launch the keeper converges the on-chain mark to that price,
     // so a wrong seed (the old $1 default) craters the mark and liquidates
-    // anyone who traded at the seed. Require a resolved/typed price — never fall
+    // anyone who traded at the seed. Require a resolved/typed price, never fall
     // back to a placeholder default for these.
     if (effectiveOracleKind === "dex" && customMintValid) return null;
     return asset?.defaultPriceUsd ?? null;
@@ -445,7 +445,7 @@ function Launch() {
                 <div className="mt-3 rounded-md border border-danger/40 bg-danger/[0.06] px-3 py-2 text-[11px] text-danger">
                   {poolLiquidity == null
                     ? "Checking pool liquidity…"
-                    : `Pool liquidity too low ($${poolLiquidity.toLocaleString(undefined, { maximumFractionDigits: 0 })}). Minimum $${MIN_POOL_LIQUIDITY_USD.toLocaleString()} — a thin pool can be flash-loan-manipulated, so this market is blocked.`}
+                    : `Pool liquidity too low ($${poolLiquidity.toLocaleString(undefined, { maximumFractionDigits: 0 })}). Minimum $${MIN_POOL_LIQUIDITY_USD.toLocaleString()}, a thin pool can be flash-loan-manipulated, so this market is blocked.`}
                 </div>
               )}
 
@@ -614,7 +614,7 @@ function AssetStep({
     <div className="space-y-4">
       <StepHeader n={1} title="Custom SPL token" />
       <p className="text-xs text-muted-foreground">
-        SOL, BTC, ETH and JUP are already listed with live prices — no need to launch them. This
+        SOL, BTC, ETH and JUP are already listed with live prices, no need to launch them. This
         wizard lists any <span className="text-foreground">other SPL token</span> as a perp. Paste
         its mint and we auto-fill the ticker and price.
       </p>
@@ -719,7 +719,7 @@ function OracleStep({
         </div>
         <div className="text-[11px] text-muted-foreground mt-1">
           A mock constant-product pool is created and pinned at the seed price below. The mark is
-          its on-chain EWMA — anyone can crank, no keeper. On mainnet this would be a Raydium /
+          its on-chain EWMA, anyone can crank, no keeper. On mainnet this would be a Raydium /
           pumpswap pool.
         </div>
       </button>
@@ -737,7 +737,7 @@ function OracleStep({
           <span className="font-medium">Manual / devnet-simulated</span>
         </div>
         <div className="text-[11px] text-muted-foreground mt-1">
-          No pool — you set the price and refresh it via AccrueAsset on the Advanced page. Simplest,
+          No pool, you set the price and refresh it via AccrueAsset on the Advanced page. Simplest,
           least realistic.
         </div>
       </button>
@@ -814,7 +814,7 @@ function RiskStep({
 }) {
   const feePct = (() => {
     const n = parseInt(feeBps || "0", 10);
-    return Number.isFinite(n) ? (n / 100).toFixed(2) : "—";
+    return Number.isFinite(n) ? (n / 100).toFixed(2) : "-";
   })();
   const seedNum = Number(seedLp) || 0;
   return (
@@ -822,7 +822,7 @@ function RiskStep({
       <StepHeader n={3} title="Margin, fee & liquidity" />
       <p className="text-xs text-muted-foreground">
         Max leverage sets the trader's cap; the taker fee accrues to this market's House. You seed
-        that House with your own {QUOTE_SYMBOL} — it's the LP + insurance that backs every trade on
+        that House with your own {QUOTE_SYMBOL}, it's the LP + insurance that backs every trade on
         this isolated market.
       </p>
       <div className="space-y-2">
@@ -886,14 +886,14 @@ function RiskStep({
           <span className="text-[10px] text-muted-foreground font-mono">{QUOTE_SYMBOL}</span>
         </div>
         <p className="text-[11px] text-muted-foreground">
-          This funds the new market's House (LP + insurance). Trades match against it — risk is
+          This funds the new market's House (LP + insurance). Trades match against it, risk is
           isolated to this seed, never the majors pool. Min {MIN_SEED_LP} {QUOTE_SYMBOL}.
         </p>
         {!seedValid && seedNum > 0 && (
           <div className="text-[11px] text-danger">
             {seedNum < MIN_SEED_LP
               ? `Minimum seed is ${MIN_SEED_LP} ${QUOTE_SYMBOL}.`
-              : `Not enough ${QUOTE_SYMBOL} — you have ${walletMusdc.toLocaleString(undefined, { maximumFractionDigits: 2 })}. Get more from the Faucet.`}
+              : `Not enough ${QUOTE_SYMBOL}, you have ${walletMusdc.toLocaleString(undefined, { maximumFractionDigits: 2 })}. Get more from the Faucet.`}
           </div>
         )}
         {walletMusdc < MIN_SEED_LP && (
@@ -949,7 +949,7 @@ function ReviewStep({
         />
         <ReviewRow
           k="Seed price"
-          v={seedPriceUsd !== null ? `$${seedPriceUsd.toLocaleString()}` : "—"}
+          v={seedPriceUsd !== null ? `$${seedPriceUsd.toLocaleString()}` : "-"}
         />
         <ReviewRow k="Max leverage" v={`${tier.maxLeverage}×`} />
         <ReviewRow
@@ -967,7 +967,7 @@ function ReviewStep({
         <AlertCircle className="h-3.5 w-3.5 text-violet shrink-0 mt-0.5" />
         <span>
           Creates an <span className="text-foreground">isolated market group</span>: its own vault +
-          House, seeded with your {QUOTE_SYMBOL}. Trades match against this House only — risk never
+          House, seeded with your {QUOTE_SYMBOL}. Trades match against this House only, risk never
           touches the majors pool. ~3–4 signatures (group rent + your seed). You can withdraw unused
           House LP later (you're the authority).
         </span>
@@ -994,10 +994,10 @@ function SummaryAside({
       <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
         Market preview
       </div>
-      <div className="font-display text-xl font-semibold">{asset?.symbol ?? "—"}</div>
+      <div className="font-display text-xl font-semibold">{asset?.symbol ?? "-"}</div>
       <dl className="text-[11px] space-y-1 font-mono">
         <PreviewRow k="oracle" v={oracleKind} />
-        <PreviewRow k="seed" v={seedPriceUsd !== null ? `$${seedPriceUsd}` : "—"} />
+        <PreviewRow k="seed" v={seedPriceUsd !== null ? `$${seedPriceUsd}` : "-"} />
         <PreviewRow k="max lev" v={`${tier.maxLeverage}×`} />
         <PreviewRow k="group" v="isolated" />
       </dl>

@@ -3,7 +3,7 @@
 //! production zero-copy views.
 //!
 //! The tests call the same `state::*_buffer` helpers the on-chain handlers
-//! use, then drive the engine directly — bypassing only Pinocchio's
+//! use, then drive the engine directly, bypassing only Pinocchio's
 //! `AccountInfo` borrowing and the Clock sysvar.
 //!
 //! Wrapper-header fields (authority, quote_mint, vault) are dummied out here
@@ -500,7 +500,7 @@ fn withdraw_exceeding_capital_rejects() {
 
 #[test]
 fn withdraw_rejects_when_portfolio_has_active_leg() {
-    // Open a position then try to withdraw — engine refuses because
+    // Open a position then try to withdraw, engine refuses because
     // `active_bitmap` is non-empty.
     let mid = [0x4D; 32];
     let owner = [0x4E; 32];
@@ -557,7 +557,7 @@ fn liquidate_rejects_when_asset_index_out_of_range() {
     let (mut market_buf, mut pf_buf) = fresh_buffers();
     setup_market(&mut market_buf, mid);
     init_portfolio_buffer(&mut pf_buf, mid, pf_id, owner).unwrap();
-    // No need to deposit or trade — the engine's first check is config.
+    // No need to deposit or trade, the engine's first check is config.
     assert!(liquidate_buffer(&mut market_buf, &mut pf_buf, CAP, 1_000_000, 10).is_err());
 }
 

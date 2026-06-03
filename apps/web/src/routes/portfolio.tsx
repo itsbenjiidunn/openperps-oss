@@ -1,5 +1,5 @@
 /// Cross-margin account view, styled after the reference design. One account,
-/// one deposit — collateral backs every pair. Numbers shown are real on-chain
+/// one deposit, collateral backs every pair. Numbers shown are real on-chain
 /// values (collateral, PnL); metrics that need an indexer (equity history,
 /// realized PnL, 24h funding/fees) are labelled rather than fabricated.
 
@@ -46,7 +46,7 @@ import {
 export const Route = createFileRoute("/portfolio")({
   head: () => ({
     meta: [
-      { title: "Portfolio — OpenPerps" },
+      { title: "Portfolio: OpenPerps" },
       {
         name: "description",
         content:
@@ -65,7 +65,7 @@ function Portfolio() {
   const [tab, setTab] = useState<"deposit" | "withdraw" | null>(null);
   const [refresh, setRefresh] = useState(0);
   const ownerKey = wallet.publicKey?.toBase58();
-  // Main (majors) account is the deterministic PDA for (owner, SHARED_MARKET) —
+  // Main (majors) account is the deterministic PDA for (owner, SHARED_MARKET),
   // same address on every device. Existence is the on-chain state, not a local
   // registry. (Hook runs before the connect gate so hook order stays stable.)
   const mainPortfolio = ownerKey ? userPortfolio(ownerKey, SHARED_MARKET.toBase58()) : undefined;
@@ -180,7 +180,7 @@ function AccountsSummary({ markets }: { markets: Market[] }) {
         <div>
           <h2 className="font-display text-lg font-semibold">Your accounts</h2>
           <p className="text-[11px] text-muted-foreground">
-            {QUOTE_SYMBOL} is held per market — majors share one account, each custom market its
+            {QUOTE_SYMBOL} is held per market, majors share one account, each custom market its
             own.
           </p>
         </div>
@@ -248,11 +248,11 @@ function AccountView({
   const stateQ = usePortfolioState(portfolio);
   const capital = stateQ.data?.capital ?? null;
   const pnl = stateQ.data?.pnl ?? null;
-  const collateral = capital !== null ? atomsToHuman(capital, undefined, true) : "—";
+  const collateral = capital !== null ? atomsToHuman(capital, undefined, true) : "-";
   const realized =
-    pnl !== null ? `${pnl >= 0n ? "+" : ""}${atomsToHuman(pnl, undefined, true)}` : "—";
+    pnl !== null ? `${pnl >= 0n ? "+" : ""}${atomsToHuman(pnl, undefined, true)}` : "-";
   const equity =
-    capital !== null && pnl !== null ? atomsToHuman(capital + pnl, undefined, true) : "—";
+    capital !== null && pnl !== null ? atomsToHuman(capital + pnl, undefined, true) : "-";
 
   // Unrealized = Σ (mark − VWAP entry) × size × side across EVERY group the
   // wallet trades (majors + each custom market), entry resolved per (group,
@@ -308,10 +308,10 @@ function AccountView({
       <div className="grid md:grid-cols-4 gap-3">
         <Kpi label={`Balance (${QUOTE_SYMBOL})`} value={`$${equity}`} accent />
         <Kpi label="Withdrawable" value={`$${equity}`} />
-        <Kpi label="Margin ratio" value={pairs === 0 ? "—" : "0.0%"} />
+        <Kpi label="Margin ratio" value={pairs === 0 ? "-" : "0.0%"} />
         <Kpi
           label="Account health"
-          value={capital !== null && capital > 0n ? "100%" : "—"}
+          value={capital !== null && capital > 0n ? "100%" : "-"}
           className="text-success"
         />
       </div>
@@ -345,7 +345,7 @@ function AccountView({
               v={
                 unrealizedTotal != null
                   ? `${unrealizedTotal >= 0 ? "+" : ""}$${unrealizedTotal.toFixed(2)}`
-                  : "—"
+                  : "-"
               }
               cls={
                 unrealizedTotal == null
@@ -356,10 +356,10 @@ function AccountView({
               }
               muted={unrealizedTotal == null}
             />
-            <KV k="Net funding (24h)" v="—" muted />
+            <KV k="Net funding (24h)" v="-" muted />
             <KV
               k="Fees paid (24h)"
-              v={feesQ.data != null ? `$${feesQ.data.toFixed(2)} ${QUOTE_SYMBOL}` : "—"}
+              v={feesQ.data != null ? `$${feesQ.data.toFixed(2)} ${QUOTE_SYMBOL}` : "-"}
               muted={feesQ.data == null}
             />
           </div>
@@ -392,7 +392,7 @@ function EquityChart({ portfolio, fallbackEquity }: { portfolio: string; fallbac
       <div className="h-[260px] flex flex-col items-center justify-center text-center gap-2">
         <div className="font-mono text-2xl">${fallbackEquity}</div>
         <p className="text-[11px] text-muted-foreground max-w-xs">
-          Building equity history — the indexer snapshots your account every ~1 minute. The curve
+          Building equity history, the indexer snapshots your account every ~1 minute. The curve
           appears once there are a few points.
         </p>
       </div>
@@ -429,14 +429,14 @@ function EquityChart({ portfolio, fallbackEquity }: { portfolio: string; fallbac
 /// Every open leg the wallet holds, across the shared majors account AND each
 /// custom isolated-market account (each its own group/portfolio). Reads on-chain
 /// positions for all groups in one batched RPC, resolves entry per (group, slot)
-/// so custom markets — all on slot 0 — no longer collide, and routes Close back
+/// so custom markets, all on slot 0, no longer collide, and routes Close back
 /// to the group that backs each leg.
 function PositionsTable({ markets }: { markets: Market[] }) {
   const wallet = useWallet();
   const owner = wallet.publicKey?.toBase58();
   const { connection } = useConnection();
   const groups = useGroups(owner ?? "", markets);
-  // Majors-only slot map — see note above; custom legs carry their own market.
+  // Majors-only slot map, see note above; custom legs carry their own market.
   const bySlot = useMemo(
     () => new Map(markets.filter((m) => !m.ownGroup).map((m) => [m.assetIndex, m])),
     [markets],
@@ -465,7 +465,7 @@ function PositionsTable({ markets }: { markets: Market[] }) {
     const m = p.market;
     const mark = markOf(m);
     if (mark <= 0) {
-      setError("No live mark for this market — cannot close.");
+      setError("No live mark for this market, cannot close.");
       return;
     }
     setError(null);
@@ -513,7 +513,7 @@ function PositionsTable({ markets }: { markets: Market[] }) {
         <div className="py-8 text-center">
           <p className="text-sm text-foreground">No open positions</p>
           <p className="mt-1 text-[11px] text-muted-foreground">
-            Open a Long or Short from the Terminal — majors share one account, each custom market
+            Open a Long or Short from the Terminal, majors share one account, each custom market
             its own.
           </p>
         </div>
@@ -570,10 +570,10 @@ function PositionsTable({ markets }: { markets: Market[] }) {
                   <td className="text-right font-mono">
                     ${notional.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                   </td>
-                  <td className="text-right font-mono">{entry != null ? fmtP(entry) : "—"}</td>
-                  <td className="text-right font-mono">{mark > 0 ? fmtP(mark) : "—"}</td>
+                  <td className="text-right font-mono">{entry != null ? fmtP(entry) : "-"}</td>
+                  <td className="text-right font-mono">{mark > 0 ? fmtP(mark) : "-"}</td>
                   <td className="text-right font-mono text-danger">
-                    {liq != null ? fmtP(liq) : "—"}
+                    {liq != null ? fmtP(liq) : "-"}
                   </td>
                   <td
                     className={`text-right font-mono ${
@@ -582,7 +582,7 @@ function PositionsTable({ markets }: { markets: Market[] }) {
                   >
                     {unrealized != null
                       ? `${unrealized >= 0 ? "+" : ""}$${unrealized.toFixed(2)}`
-                      : "—"}
+                      : "-"}
                   </td>
                   <td className="text-right">
                     <button
@@ -604,7 +604,7 @@ function PositionsTable({ markets }: { markets: Market[] }) {
       {positions.length > 0 && (
         <p className="mt-3 text-[11px] text-muted-foreground">
           Size + mark are live from the engine; entry / liq / unrealized PnL are derived from your
-          indexed fills (VWAP entry). Includes every market account — majors and custom.
+          indexed fills (VWAP entry). Includes every market account, majors and custom.
         </p>
       )}
     </div>
@@ -637,7 +637,7 @@ function AccountFooter({
         shared vault TVL:{" "}
         {vaultQ.data !== undefined
           ? `${atomsToHuman(vaultQ.data, undefined, true)} ${QUOTE_SYMBOL}`
-          : "—"}
+          : "-"}
       </span>
     </div>
   );
@@ -660,7 +660,7 @@ function TransferModal({
   market: PublicKey;
   vault: PublicKey;
   assetSlotCapacity: number;
-  /// Null when the wallet has no account in this group yet — a deposit opens
+  /// Null when the wallet has no account in this group yet, a deposit opens
   /// one first (InitPortfolio), then deposits into it.
   portfolio: string | null;
   capital: bigint | null;
@@ -682,7 +682,7 @@ function TransferModal({
   const isDeposit = kind === "deposit";
   // Max = wallet balance (deposit) or equity = capital + realized PnL (withdraw).
   // The withdraw tx runs SettlePnl first, folding realized profit into capital,
-  // so the full equity is withdrawable — not just the pre-settle collateral.
+  // so the full equity is withdrawable, not just the pre-settle collateral.
   const equityAtoms = (capital ?? 0n) + (pnl ?? 0n);
   const withdrawMax = equityAtoms > 0n ? equityAtoms : 0n;
   const maxAtoms = isDeposit ? (balanceQ.data ?? 0n) : withdrawMax;
@@ -807,7 +807,7 @@ function TransferModal({
           <Line k="Network fee" v="~0.000005 SOL" />
           <Line
             k={isDeposit ? "New collateral" : "New withdrawable"}
-            v={newCollateral !== null ? `$${atomsToHuman(newCollateral, undefined, true)}` : "—"}
+            v={newCollateral !== null ? `$${atomsToHuman(newCollateral, undefined, true)}` : "-"}
           />
         </div>
 

@@ -1,6 +1,6 @@
 /// DEX-EWMA oracle control panel (devnet). For DEX-priced markets it shows the
 /// pinned pool's live spot price and the market's on-chain EWMA mark, and
-/// lets anyone move the pool (mock swaps) and crank a fresh mark — making
+/// lets anyone move the pool (mock swaps) and crank a fresh mark, making
 /// the "price comes from an on-chain pool, no keeper" mechanic tangible.
 
 import { useState } from "react";
@@ -77,12 +77,12 @@ export function OraclePanel({ market }: { market: Market }) {
         <div className="rounded-md border border-border/70 p-2">
           <div className="text-muted-foreground text-[10px]">Pool spot</div>
           <div className="text-sm">
-            {spotQ.data !== undefined && spotQ.data !== null ? `$${fmtUsd(spotQ.data)}` : "—"}
+            {spotQ.data !== undefined && spotQ.data !== null ? `$${fmtUsd(spotQ.data)}` : "-"}
           </div>
         </div>
         <div className="rounded-md border border-border/70 p-2">
           <div className="text-muted-foreground text-[10px]">Mark (EWMA)</div>
-          <div className="text-sm">{market.price > 0 ? `$${fmtUsd(market.price)}` : "—"}</div>
+          <div className="text-sm">{market.price > 0 ? `$${fmtUsd(market.price)}` : "-"}</div>
         </div>
       </div>
 
@@ -182,7 +182,7 @@ export function OraclePanel({ market }: { market: Market }) {
 
       <div className="text-[10px] text-muted-foreground">
         Pool {fmtPubkey(pool, 4, 4)}. Swaps move the pool; the EWMA (α=0.2) nudges the mark toward
-        spot each crank — anyone can crank.
+        spot each crank, anyone can crank.
       </div>
     </div>
   );

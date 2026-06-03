@@ -1,14 +1,14 @@
-/// Pure formatting helpers — no React, no chain.
+/// Pure formatting helpers, no React, no chain.
 
 export function fmtUsd(n: number, d = 2): string {
-  if (!Number.isFinite(n)) return "—";
+  if (!Number.isFinite(n)) return "-";
   if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
   if (n >= 1_000) return `$${(n / 1_000).toFixed(2)}k`;
   return `$${n.toFixed(d)}`;
 }
 
 export function fmtNum(n: number, d = 2): string {
-  if (!Number.isFinite(n)) return "—";
+  if (!Number.isFinite(n)) return "-";
   return n.toLocaleString(undefined, {
     maximumFractionDigits: d,
     minimumFractionDigits: d,
@@ -16,7 +16,7 @@ export function fmtNum(n: number, d = 2): string {
 }
 
 export function fmtPct(n: number, d = 2): string {
-  if (!Number.isFinite(n)) return "—";
+  if (!Number.isFinite(n)) return "-";
   return `${(n * 100).toFixed(d)}%`;
 }
 

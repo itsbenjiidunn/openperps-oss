@@ -57,7 +57,7 @@ function subscribe(cb: () => void): () => void {
 }
 
 /// VWAP entry of the current net position for `market` (symbol), replayed from
-/// THIS device's local fills — the same blend rule the indexer uses (increase
+/// THIS device's local fills, the same blend rule the indexer uses (increase
 /// blends, partial reduce keeps, flip resets). Used as a stable entry fallback
 /// the instant a position opens, before the indexer records the fill, so the
 /// entry shows the real execution price instead of tracking the live mark (which
@@ -74,7 +74,7 @@ export function localVwapEntry(market: string, trades: TradeRecord[]): number | 
       entry = newAbs > 0 ? (Math.abs(pos) * entry + Math.abs(signed) * r.price) / newAbs : 0;
       pos += signed;
     } else if (Math.abs(signed) < Math.abs(pos)) {
-      pos += signed; // partial close — entry unchanged
+      pos += signed; // partial close, entry unchanged
     } else {
       const rem = Math.abs(signed) - Math.abs(pos);
       pos = Math.sign(signed) * rem;

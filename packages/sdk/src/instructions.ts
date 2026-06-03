@@ -387,7 +387,7 @@ export function settlePnlIx(args: {
   });
 }
 
-/** The deterministic portfolio PDA for `(owner, market)` — matches Rust
+/** The deterministic portfolio PDA for `(owner, market)`, matches Rust
  *  `[PORTFOLIO_SEED, owner, market]`. One account per wallet per market group;
  *  derivable on any device, no stored keypair. */
 export function portfolioPda(

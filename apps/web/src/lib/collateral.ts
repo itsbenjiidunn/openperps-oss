@@ -7,7 +7,7 @@
 /// The mint authority secret below is intentionally public. It is a
 /// throwaway devnet keypair that only ever signs `MintTo` for the faucet;
 /// it holds no SOL and controls nothing of value. NEVER reuse this pattern
-/// on mainnet — there, collateral is real USDC with no app-held authority.
+/// on mainnet, there, collateral is real USDC with no app-held authority.
 
 import { Keypair, PublicKey } from "@solana/web3.js";
 

@@ -100,7 +100,7 @@ fn resolve_deposit_cap(
 /// Per-portfolio collateral ceiling (quote atoms, 6 decimals = $1,000) on a
 /// DEX-priced (memecoin) market. Caps the largest position any one account can
 /// hold (collateral × leverage), which bounds the profit an attacker can extract
-/// by manipulating the underlying thin pool — the economic backstop behind the
+/// by manipulating the underlying thin pool, the economic backstop behind the
 /// EWMA mark + per-slot move clamp. Majors (oracle_kind != DEX_EWMA) are exempt.
 /// Crude-but-safe global value; the precise form is a per-market cap scaled to
 /// live pool depth. Tune up as pools deepen.
@@ -432,7 +432,7 @@ fn process_activate_market(
     // Permissionless listing on the shared market group: any signer may claim
     // a free (Disabled) slot and activate it. The engine still allows the
     // Disabled→Active transition only once per slot, so no re-activation
-    // griefing. (No authority pin — see PinOraclePool / permissionless launch.)
+    // griefing. (No authority pin, see PinOraclePool / permissionless launch.)
     {
         let wrapper = crate::state::market_wrapper_header(&data)?;
         if !wrapper.is_initialized() {
@@ -473,7 +473,7 @@ fn process_accrue_asset(
         }
     }
     // ORACLE GATE (anti-manipulation): only the trusted oracle relayer may MOVE
-    // a market's mark. Any other signer is FORCED to a delta-0 accrual — we
+    // a market's mark. Any other signer is FORCED to a delta-0 accrual, we
     // ignore their requested price/funding and re-assert the current on-chain
     // effective_price. This keeps the permissionless stale-loss-lock clear the
     // trade flow prepends (it only needs to advance `slot_last`) working with no
@@ -556,7 +556,7 @@ fn process_crank_refresh(
     let [market, portfolio, cranker, ..] = accounts else {
         return Err(OpenPerpsError::InvalidInstruction.into());
     };
-    // Permissionless — any signer pays tx fee and drives progress.
+    // Permissionless, any signer pays tx fee and drives progress.
     if !cranker.is_signer() {
         return Err(OpenPerpsError::MissingRequiredSignature.into());
     }
@@ -671,7 +671,7 @@ fn process_withdraw(
 
     // Engine first: debit capital / vault / c_tot. If the portfolio still has
     // open positions or negative pnl the engine rejects before we ever move
-    // any tokens — clean atomic semantics.
+    // any tokens, clean atomic semantics.
     {
         let mut market_data = market
             .try_borrow_mut_data()
@@ -813,7 +813,7 @@ fn process_trade(
     // For MVP the same authority is the owner-of-record for both sides
     // (self-cross during testing). A real CLOB matches resting maker orders
     // against an incoming taker and verifies maker signatures via a separate
-    // path (delegated authority or pre-signed orders) — out of scope here.
+    // path (delegated authority or pre-signed orders), out of scope here.
     {
         let (l_header, _) = portfolio_split_mut(&mut long_data)?;
         if l_header.owner != *authority.key() {
@@ -1150,7 +1150,7 @@ fn process_withdraw_house_vault(
         .try_into()
         .map_err(|_| OpenPerpsError::ArithmeticOverflow)?;
 
-    // Engine first — engine refuses if the house has open positions.
+    // Engine first, engine refuses if the house has open positions.
     {
         let mut market_data = market
             .try_borrow_mut_data()
@@ -1233,7 +1233,7 @@ fn process_place_order(
     // Authorize the signer: either the portfolio owner, or a registered
     // trading delegate (session key). The delegate account (optional 5th
     // account) must be program-owned, bound to this portfolio, and name the
-    // signer. Delegates can only trade — never withdraw.
+    // signer. Delegates can only trade, never withdraw.
     {
         let (u_h, _) = portfolio_split_mut(&mut user_data)?;
         let owner = u_h.owner;
@@ -1289,7 +1289,7 @@ fn process_place_order(
 /// Settle a flat user account's positive realized PnL into withdrawable
 /// `capital`, debiting the verified House. Permissionless: it only moves the
 /// user's own profit into the user's own portfolio (the House is the gated
-/// counterparty PDA), so any signer may crank it — no owner signature needed.
+/// counterparty PDA), so any signer may crank it, no owner signature needed.
 fn process_settle_pnl(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
     // The new engine primitive converts the user's own released PnL to capital
     // and touches no other account, so the House is no longer passed in (the

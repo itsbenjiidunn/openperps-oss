@@ -21,7 +21,7 @@ import { SHARED_HOUSE, SHARED_VAULT } from "@/lib/sharedMarket";
 export const Route = createFileRoute("/vault")({
   head: () => ({
     meta: [
-      { title: "LP & Insurance Vault — OpenPerps" },
+      { title: "LP & Insurance Vault: OpenPerps" },
       {
         name: "description",
         content:
@@ -39,11 +39,11 @@ function VaultPage() {
   const tvlQ = useTokenBalance(connection, SHARED_VAULT.toBase58());
   const houseQ = usePortfolioState(SHARED_HOUSE.toBase58());
 
-  const tvl = tvlQ.data !== undefined ? atomsToHuman(tvlQ.data, undefined, true) : "—";
-  const houseCapital = houseQ.data ? atomsToHuman(houseQ.data.capital, undefined, true) : "—";
+  const tvl = tvlQ.data !== undefined ? atomsToHuman(tvlQ.data, undefined, true) : "-";
+  const houseCapital = houseQ.data ? atomsToHuman(houseQ.data.capital, undefined, true) : "-";
   const housePnl = houseQ.data
     ? `${houseQ.data.pnl >= 0n ? "+" : ""}${atomsToHuman(houseQ.data.pnl, undefined, true)}`
-    : "—";
+    : "-";
   const tvlNum = num(tvl);
   // Illustrative split (no indexer): treat 90% as LP, 10% as insurance buffer.
   const insurance = tvlNum * 0.1;

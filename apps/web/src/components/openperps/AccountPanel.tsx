@@ -30,7 +30,7 @@ export function AccountPanel({ market }: { market: Market }) {
   }
 
   const owner = wallet.publicKey!.toBase58();
-  // Deterministic PDA for (owner, market) — same address on any device.
+  // Deterministic PDA for (owner, market), same address on any device.
   const portfolio = userPortfolio(owner, market.pubkey);
 
   return (
@@ -124,7 +124,7 @@ function AccountBody({
   // profit in a separate `pnl` ledger; we fold it into the displayed Balance so
   // closing a winning trade visibly raises it. The Withdraw flow runs SettlePnl
   // first (the House pays it into `capital`), so this whole Balance is what you
-  // can actually withdraw — like a normal isolated-margin perp.
+  // can actually withdraw, like a normal isolated-margin perp.
   const capital = stateQ.data?.capital;
   const realized = stateQ.data?.pnl ?? 0n;
   const equity = capital !== undefined ? capital + realized : undefined;
@@ -162,7 +162,7 @@ function AccountBody({
           value={
             availableUsd !== undefined
               ? `${availableUsd.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${QUOTE_SYMBOL}`
-              : "—"
+              : "-"
           }
           accent
         />
@@ -171,14 +171,14 @@ function AccountBody({
           value={
             availableUsd !== undefined
               ? `${availableUsd.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${QUOTE_SYMBOL}`
-              : "—"
+              : "-"
           }
         />
         <Stat
           label="Unrealized PnL"
           value={
             unrealized === null
-              ? "—"
+              ? "-"
               : `${uPos ? "+" : ""}${unrealized.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${QUOTE_SYMBOL}`
           }
           className={unrealized === null ? "" : uPos ? "text-success" : "text-danger"}

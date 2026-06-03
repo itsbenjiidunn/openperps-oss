@@ -54,7 +54,7 @@ export async function initPortfolioFlow(args: {
   }
   const owner = wallet.publicKey;
   // Deterministic PDA [PORTFOLIO_SEED, owner, market]: one account per (wallet,
-  // market), derivable on any device — no client keypair, no localStorage
+  // market), derivable on any device, no client keypair, no localStorage
   // dependency. The program creates the account itself (it signs as the PDA).
   const [portfolio, bump] = portfolioPda(PROGRAM_ID, owner, params.marketPubkey);
 
@@ -128,7 +128,7 @@ export async function depositFlow(args: {
 }
 
 /// The on-chain per-account collateral cap on memecoin (DEX-priced) markets,
-/// in USD — must match the program's `MAX_CUSTOM_PORTFOLIO_CAPITAL`.
+/// in USD, must match the program's `MAX_CUSTOM_PORTFOLIO_CAPITAL`.
 export const MEMECOIN_COLLATERAL_CAP_USD = 1_000;
 
 /// Simulate a deposit and translate the program's cap rejection into a friendly
@@ -138,7 +138,7 @@ async function preflightDeposit(connection: Connection, tx: Transaction): Promis
   try {
     sim = await connection.simulateTransaction(tx);
   } catch {
-    return; // simulation unavailable — let the send path try.
+    return; // simulation unavailable, let the send path try.
   }
   const err = sim.value.err as { InstructionError?: [number, { Custom?: number }] } | null;
   const custom = err?.InstructionError?.[1]?.Custom;
@@ -200,7 +200,7 @@ export async function withdrawFlow(args: {
   // Realize positive PnL into withdrawable capital FIRST, so you withdraw the
   // profit too (percolator parks it in a separate `pnl` ledger that withdraw
   // ignores; SettlePnl, the House paying, folds it into `capital`). On some
-  // market states settle's validate raises LockActive — if the settle+withdraw
+  // market states settle's validate raises LockActive, if the settle+withdraw
   // bundle fails preflight, fall back to a plain withdraw so settling can never
   // BLOCK a withdrawal that would otherwise succeed.
   const { blockhash, lastValidBlockHeight } =

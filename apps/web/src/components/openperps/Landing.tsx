@@ -373,7 +373,7 @@ function SlotStat() {
   const slot = useSlot();
   return (
     <div className="bstat">
-      <div className="n">{slot ? slot.toLocaleString() : "—"}</div>
+      <div className="n">{slot ? slot.toLocaleString() : "-"}</div>
       <div className="l">live devnet block</div>
     </div>
   );

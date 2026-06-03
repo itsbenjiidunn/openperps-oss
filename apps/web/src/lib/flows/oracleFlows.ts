@@ -1,6 +1,6 @@
 /// DEX-EWMA oracle devnet controls: move a market's mock DEX pool (MockSwap) and
-/// pull a fresh EWMA mark from it (CrankOracle). Both are permissionless —
-/// any signer can call — which is the whole point: the price lives in the
+/// pull a fresh EWMA mark from it (CrankOracle). Both are permissionless,
+/// any signer can call, which is the whole point: the price lives in the
 /// pool, not with a trusted keeper.
 
 import { Connection, PublicKey, Transaction, type Commitment } from "@solana/web3.js";

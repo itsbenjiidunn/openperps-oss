@@ -1,7 +1,7 @@
-/// Market-first discovery view — the default Terminal state. Traders search /
+/// Market-first discovery view, the default Terminal state. Traders search /
 /// filter the listed pairs, then click one to open the chart + trade panels.
 /// Only the fields the protocol actually knows are shown as real data; metrics
-/// that need an indexer (24h volume, OI, change, trending rank) render "—" and
+/// that need an indexer (24h volume, OI, change, trending rank) render "-" and
 /// their sort tabs are disabled until the indexer lands.
 
 import { useMemo, useState } from "react";
@@ -28,7 +28,7 @@ const SORTS: { key: Sort; label: string; live: boolean }[] = [
 ];
 
 /// Live per-market metrics. 24h change + volume come from DexScreener (keyed by
-/// the token MINT) for every market that lists a real mainnet token — majors and
+/// the token MINT) for every market that lists a real mainnet token, majors and
 /// custom alike. This is the same source the chart and terminal header use, so
 /// the numbers line up, AND it sidesteps the devnet indexer's asset-slot
 /// collision: every custom group is asset slot 0 (as is SOL), so slot-keyed
@@ -235,7 +235,7 @@ export function MarketBrowser({
                   </div>
                   <div className="w-20 sm:w-24 text-right font-mono">
                     {px === 0
-                      ? "—"
+                      ? "-"
                       : px < 1
                         ? `$${px.toFixed(6)}`
                         : `$${px.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
@@ -243,16 +243,16 @@ export function MarketBrowser({
                   <div
                     className={`hidden md:block w-14 text-right font-mono ${ch === null ? "text-muted-foreground" : ch > 0 ? "text-success" : ch < 0 ? "text-danger" : "text-muted-foreground"}`}
                   >
-                    {ch === null ? "—" : `${ch >= 0 ? "+" : ""}${ch.toFixed(1)}%`}
+                    {ch === null ? "-" : `${ch >= 0 ? "+" : ""}${ch.toFixed(1)}%`}
                   </div>
                   <div className="hidden lg:block w-24 text-right font-mono text-muted-foreground">
-                    {vol > 0 ? fmtUsd(vol) : "—"}
+                    {vol > 0 ? fmtUsd(vol) : "-"}
                   </div>
                   <div className="hidden lg:block w-16 text-right font-mono text-muted-foreground">
-                    {m.openInterest === 0 ? "—" : fmtUsd(m.openInterest)}
+                    {m.openInterest === 0 ? "-" : fmtUsd(m.openInterest)}
                   </div>
                   <div className="w-10 text-right font-mono">
-                    {m.maxLeverage ? `${m.maxLeverage}x` : "—"}
+                    {m.maxLeverage ? `${m.maxLeverage}x` : "-"}
                   </div>
                   <div className="hidden sm:flex w-[84px] justify-end">
                     <OracleBadge kind={m.oracleKind} status={m.oracleStatus} />
@@ -322,7 +322,7 @@ function isNew(createdAt?: number): boolean {
 }
 
 function fmtAge(createdAt?: number): string {
-  if (!createdAt) return "—";
+  if (!createdAt) return "-";
   const s = Math.floor((Date.now() - createdAt) / 1000);
   if (s < 60) return `${s}s`;
   const m = Math.floor(s / 60);

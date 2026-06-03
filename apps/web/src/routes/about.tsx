@@ -5,12 +5,12 @@ import { Coins, Layers, Rocket, ArrowRight, ShieldCheck, Activity, Zap } from "l
 export const Route = createFileRoute("/about")({
   head: () => ({
     meta: [
-      { title: "OpenPerps — Permissionless perpetuals on Solana" },
+      { title: "OpenPerps: Permissionless perpetuals on Solana" },
       {
         name: "description",
         content: "Slab-free. Zero-copy. Quote-margined. Built on Percolator v16.",
       },
-      { property: "og:title", content: "OpenPerps — Permissionless perpetuals on Solana" },
+      { property: "og:title", content: "OpenPerps, Permissionless perpetuals on Solana" },
       {
         property: "og:description",
         content: "Slab-free. Zero-copy. Quote-margined. Built on Percolator v16.",

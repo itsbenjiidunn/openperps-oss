@@ -76,7 +76,7 @@
 :root {
   --radius: 0.5rem;
 
-  /* Backgrounds — terminal stack (matches the reference mockup) */
+  /* Backgrounds, terminal stack (matches the reference mockup) */
   --background: #05070a;
   --bg-2: #080b10;
   --foreground: #e8ecf2;

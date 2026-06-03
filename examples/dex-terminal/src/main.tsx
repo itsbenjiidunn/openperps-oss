@@ -1,4 +1,4 @@
-// Buffer polyfill — must run before any Solana dependency is evaluated.
+// Buffer polyfill, must run before any Solana dependency is evaluated.
 import "./polyfills";
 
 import { StrictMode } from "react";

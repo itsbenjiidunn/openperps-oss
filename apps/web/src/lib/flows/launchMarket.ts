@@ -1,7 +1,7 @@
 /// Launch a custom SPL perp as its OWN isolated market group (the
 /// mainnet-correct model): the creator creates a fresh group + vault + House
 /// and SEEDS the House with their own mUSDC. That seed is the LP + insurance
-/// backing the market — trades match against THIS group's House, never the
+/// backing the market, trades match against THIS group's House, never the
 /// shared majors pool, so a manipulable long-tail oracle can only drain the
 /// liquidity its creator put up, not everyone else's.
 ///

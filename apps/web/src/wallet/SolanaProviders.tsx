@@ -6,7 +6,7 @@ import type { Adapter } from "@solana/wallet-adapter-base";
 /// RPC endpoint. The fast Helius devnet host (with the API key) is supplied via
 /// the `VITE_OPENPERPS_RPC` env var from `.env.local` (gitignored) so the key is
 /// no longer hard-coded in source. If unset, we fall back to the public,
-/// keyless devnet host (heavily rate-limited — set the env var for real use).
+/// keyless devnet host (heavily rate-limited, set the env var for real use).
 /// NOTE: any value here is still inlined into the client bundle (a static dApp
 /// can't truly hide its RPC URL); route through the indexer Worker for that.
 const RPC_ENDPOINT = import.meta.env.VITE_OPENPERPS_RPC ?? "https://api.devnet.solana.com";

@@ -1,4 +1,4 @@
-/// DexScreener token stats for a mainnet SPL mint — real on-chain 24h volume,
+/// DexScreener token stats for a mainnet SPL mint, real on-chain 24h volume,
 /// liquidity, 24h change and FDV from the deepest pair. CORS-open and free
 /// (300 req/min), so we read it straight from the browser. Used for custom
 /// markets, whose numbers our devnet indexer can't report honestly (every
@@ -59,7 +59,7 @@ export function useDexStats(mint: string | undefined) {
 /// GeckoTerminal fallback for a single mint, via the indexer's CORS-safe,
 /// edge-cached `/gecko` proxy. GeckoTerminal often indexes a brand-new pool
 /// before DexScreener does, so a freshly launched market can still show 24h
-/// volume / change / liquidity instead of "—". Picks the deepest pool. Null
+/// volume / change / liquidity instead of "-". Picks the deepest pool. Null
 /// when GeckoTerminal has no pool for the mint yet either.
 export async function fetchGeckoStats(mint: string): Promise<DexStats | null> {
   try {
@@ -148,7 +148,7 @@ export async function fetchDexStatsMany(mints: string[]): Promise<Map<string, De
     }),
   );
   // Fill gaps from GeckoTerminal: mints DexScreener didn't return (or returned
-  // with no usable liquidity/price yet) — common right after a launch. One
+  // with no usable liquidity/price yet), common right after a launch. One
   // proxied request per missing mint; capped so a long list can't fan out.
   const missing = uniq
     .filter((m) => {

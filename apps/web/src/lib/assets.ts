@@ -1,16 +1,16 @@
 /// Underlying-asset presets for the market launcher. A perp market is
-/// `(underlying asset, oracle, USDC quote, risk config)` — NOT a freshly
+/// `(underlying asset, oracle, USDC quote, risk config)`, NOT a freshly
 /// minted token. These presets bind a ticker to its on-Solana SPL mint (if
 /// one exists) and its Pyth price-feed id, so the user picks "SOL-PERP",
 /// not "mint a random token".
 ///
 /// `baseMint` is intentionally optional: BTC and ETH have no SPL mint on
-/// Solana — they trade as *synthetic* perps off a price feed alone. BONK /
+/// Solana, they trade as *synthetic* perps off a price feed alone. BONK /
 /// JUP / SOL do have SPL mints, so the market can also reference the real
 /// token for display + future spot tie-ins.
 ///
 /// `pythFeedId` is the canonical Pyth pull-oracle feed id (hex). In Phase 5
-/// it is stored as metadata only — the on-chain price is still
+/// it is stored as metadata only, the on-chain price is still
 /// authority-set via ActivateMarket / AccrueAsset until the Pyth CPI lands
 /// (Phase 7). The UI labels a market "Pyth (CPI pending)" vs "Devnet
 /// simulated" accordingly.
@@ -31,7 +31,7 @@ export type AssetPreset = {
   pythFeedId?: string;
   /// Sensible USD seed price for the manual/devnet oracle path.
   defaultPriceUsd: number;
-  /// Whether the asset is a synthetic (no SPL mint) — for UI copy.
+  /// Whether the asset is a synthetic (no SPL mint), for UI copy.
   synthetic: boolean;
   /// Binance spot symbol (e.g. "BTCUSDT") for the *reference* order book the
   /// terminal mirrors. OpenPerps has no order book (matched-cross via vault),
@@ -91,8 +91,8 @@ export const ASSET_PRESETS: AssetPreset[] = [
 ];
 
 /// Risk tiers map to a max leverage the UI surfaces and (later) on-chain
-/// initial-margin bps. For Phase 5 they are display metadata — the engine
-/// uses its built-in config — but they shape the trader's mental model.
+/// initial-margin bps. For Phase 5 they are display metadata, the engine
+/// uses its built-in config, but they shape the trader's mental model.
 export type RiskTier = {
   id: string;
   label: string;

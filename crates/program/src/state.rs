@@ -33,7 +33,7 @@ const TRUE: u8 = 1;
 
 // ---------- OpenPerps wrapper header ----------
 
-/// Magic bytes at the start of a market account — distinguishes an OpenPerps
+/// Magic bytes at the start of a market account, distinguishes an OpenPerps
 /// market group from any other account that happens to live under this
 /// program, and from uninitialized (all-zero) data.
 pub const MARKET_DISCRIMINATOR: [u8; 8] = *b"OPMARKET";
@@ -46,7 +46,7 @@ pub const MARKET_DISCRIMINATOR: [u8; 8] = *b"OPMARKET";
 /// (the underlying asset's SPL mint, or zeros for a synthetic like BTC/ETH)
 /// and the oracle binding (`oracle_kind` + `oracle_feed_id`), and steals
 /// one of the two remaining pad bytes for `oracle_kind`. Header grows from
-/// 112 → 176 bytes. v4 appends `oracle_pool` (32) — the on-chain DEX pool
+/// 112 → 176 bytes. v4 appends `oracle_pool` (32), the on-chain DEX pool
 /// account whose EWMA prices the market (DEX-EWMA oracle). 176 → 208 bytes.
 pub const MARKET_HEADER_VERSION: u32 = 4;
 
@@ -59,7 +59,7 @@ pub mod oracle_kind {
     pub const PYTH: u8 = 1;
     /// Price is derived from an on-chain DEX pool's reserves, smoothed by an
     /// on-chain EWMA. `oracle_pool` names the pool account; any
-    /// signer can `CrankOracle` to pull a fresh price — no trusted keeper.
+    /// signer can `CrankOracle` to pull a fresh price, no trusted keeper.
     pub const DEX_EWMA: u8 = 2;
 }
 
@@ -73,7 +73,7 @@ pub const ORACLE_EWMA_ALPHA_BPS: u64 = 2_000;
 /// [`default_market_config`], or the engine rejects the accrual.
 pub const ORACLE_FUNDING_MAX_E9: i128 = 10;
 
-/// Fixed-point scale for prices: quote atoms per 1.0 base, 6 decimals —
+/// Fixed-point scale for prices: quote atoms per 1.0 base, 6 decimals,
 /// matches the shared mock-USDC mint.
 pub const PRICE_SCALE: u128 = 1_000_000;
 
@@ -93,8 +93,8 @@ pub const HOUSE_SEED: &[u8] = b"house";
 /// PDA seed prefix for a portfolio's trading delegate (session key). Full
 /// seeds: `[DELEGATE_SEED, portfolio.key()]`. Lets the owner authorize a
 /// browser-held session key to sign `PlaceOrder` (only) without a wallet
-/// popup per trade. The delegate can never withdraw — those paths still
-/// require the owner — so a leaked session key can trade but not drain funds.
+/// popup per trade. The delegate can never withdraw, those paths still
+/// require the owner, so a leaked session key can trade but not drain funds.
 pub const DELEGATE_SEED: &[u8] = b"delegate";
 
 /// PDA seed prefix for a market's oracle authority. Full seeds:
@@ -113,7 +113,7 @@ pub const DEPOSIT_CAP_SEED: &[u8] = b"depositcap";
 
 /// PDA seed prefix for a user's portfolio under a market. Full seed list is
 /// `[PORTFOLIO_SEED, owner.key(), market.key()]`. Makes a user's account on a
-/// given market group DETERMINISTIC — one account per (owner, market), derivable
+/// given market group DETERMINISTIC, one account per (owner, market), derivable
 /// on any device without a stored keypair or off-chain index. Replaces the old
 /// random-keypair-in-localStorage model so the same wallet sees the same
 /// accounts/positions on every browser.
@@ -307,11 +307,11 @@ pub struct OpenPerpsMarketHeader {
     /// derive from `[HOUSE_SEED, market.key()]` with the same bump.
     /// Zero until `CreateHouseVault` runs.
     pub house_bump: u8,
-    /// Oracle binding discriminant — see [`oracle_kind`]. `MANUAL` (0) or
+    /// Oracle binding discriminant, see [`oracle_kind`]. `MANUAL` (0) or
     /// `PYTH` (1). Identifies how `effective_price` should be sourced.
     pub oracle_kind: u8,
     pub _pad: [u8; 1],
-    /// Whoever signed `InitMarket` — only this key can activate / configure
+    /// Whoever signed `InitMarket`, only this key can activate / configure
     /// the market group later, including funding / withdrawing the House.
     pub authority: [u8; 32],
     /// SPL mint accepted as collateral. All deposits/withdrawals on this
@@ -322,7 +322,7 @@ pub struct OpenPerpsMarketHeader {
     pub vault: [u8; 32],
     /// SPL mint of the *underlying* asset this perp tracks (e.g. wrapped
     /// SOL, BONK, JUP). All-zero for a synthetic with no on-Solana mint
-    /// (BTC, ETH) — the market is then defined purely by its oracle feed.
+    /// (BTC, ETH), the market is then defined purely by its oracle feed.
     pub base_mint: [u8; 32],
     /// Pyth pull-oracle feed id (32-byte hex) when `oracle_kind == PYTH`;
     /// all-zero for manual markets. Read by the (future) oracle CPI.
@@ -356,7 +356,7 @@ impl OpenPerpsMarketHeader {
 /// provides exactly that with a layout we control.
 ///
 /// Reserves use the engine's `V16PodU64` (`[u8; 8]`, align 1) so the whole
-/// struct is alignment-1 and free of padding — Pod-safe for zero-copy.
+/// struct is alignment-1 and free of padding, Pod-safe for zero-copy.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Pod, Zeroable)]
 pub struct MockPoolHeader {
@@ -369,7 +369,7 @@ pub struct MockPoolHeader {
     pub reserve_base: V16PodU64,
     /// Quote-token reserve (mock-USDC atoms).
     pub reserve_quote: V16PodU64,
-    /// Whoever created the pool — can reseed reserves if ever needed.
+    /// Whoever created the pool, can reseed reserves if ever needed.
     pub authority: [u8; 32],
 }
 
@@ -443,7 +443,7 @@ pub fn mock_pool_spot_price(data: &[u8]) -> Result<u64, OpenPerpsError> {
 /// Execute a constant-product swap against the pool, mutating reserves.
 /// `base_to_quote == true` sells `amount_in` base for quote (pushes price
 /// down); `false` buys base with `amount_in` quote (pushes price up).
-/// Returns `amount_out`. Pure reserve math — no token CPI; this is a price
+/// Returns `amount_out`. Pure reserve math, no token CPI; this is a price
 /// toy for devnet, not a real custody pool.
 pub fn mock_pool_swap_buffer(
     buf: &mut [u8],
@@ -509,7 +509,7 @@ pub fn slot_oracle_pool(
 }
 
 /// Pin `pool` to asset slot `asset_index` by writing its wrapper. Pin-once:
-/// fails if the slot already has a non-zero pool. Permissionless — claiming a
+/// fails if the slot already has a non-zero pool. Permissionless, claiming a
 /// free slot's oracle is part of permissionless listing.
 pub fn set_slot_oracle_pool(
     buf: &mut [u8],
@@ -533,7 +533,7 @@ pub fn set_slot_oracle_pool(
 /// `effective_price` with the authenticated activation price, which the engine
 /// requires to be non-zero, so the first crank already smooths from that seed
 /// rather than from raw pool spot; the `old_ema == 0` branch below is a
-/// defensive fallback an active asset never reaches. Permissionless — the price
+/// defensive fallback an active asset never reaches. Permissionless, the price
 /// comes from the pool, so any signer may call.
 pub fn crank_oracle_buffer(
     market_buf: &mut [u8],
@@ -806,7 +806,7 @@ pub fn default_market_config(asset_slot_capacity: u32) -> V16ConfigAccount {
 ///
 /// `vault` is the PDA derived from `[VAULT_SEED, market.key()]`; the on-chain
 /// handler derives it (and records `vault_bump`) before calling this. In
-/// host tests it can be any 32 bytes — the engine doesn't touch the wrapper
+/// host tests it can be any 32 bytes, the engine doesn't touch the wrapper
 /// fields.
 pub fn init_market_buffer(
     buf: &mut [u8],
@@ -845,7 +845,7 @@ pub fn init_market_buffer(
     engine.market_group_id = market_group_id;
     engine.config = default_market_config(asset_slot_capacity);
     engine.asset_slot_capacity = V16PodU32::new(asset_slot_capacity);
-    // Slots stay at their zero / Disabled defaults — see ActivateMarket.
+    // Slots stay at their zero / Disabled defaults, see ActivateMarket.
     let _ = markets;
     engine.next_market_id = V16PodU64::new(1);
     Ok(())
@@ -867,7 +867,7 @@ pub fn init_portfolio_buffer(
     // that constructor returns a ~2.9KB struct by value, which blows the
     // SBF 4KB stack frame limit on `cargo build-sbf` (we saw a 5824-byte
     // frame warning). Instead we write the few non-zero fields directly
-    // into the account buffer — every field `try_empty` would have set to
+    // into the account buffer, every field `try_empty` would have set to
     // zero is *already* zero (Solana System Program zero-initializes fresh
     // account data, and our double-init guard above guarantees we got
     // here from that state). Then we re-encode each leg to the engine's
@@ -916,7 +916,7 @@ pub fn activate_market_buffer(
 ///
 /// **`raw_oracle_target_price` patch:** the engine's `accrue` updates
 /// `effective_price` and `fund_px_last` but deliberately leaves
-/// `raw_oracle_target_price` alone — that field is meant to be set by a
+/// `raw_oracle_target_price` alone, that field is meant to be set by a
 /// separately-attested oracle CPI (Pyth/Switchboard), and any mismatch makes
 /// `asset_has_target_effective_lag` return true, which blocks risk-increasing
 /// trades with `LockActive`. For the MVP trust model the signer *is* the
@@ -979,7 +979,7 @@ pub fn withdraw_buffer(
     mg.withdraw_not_atomic(&mut pv, amount)
 }
 
-/// Engine-only deposit helper — symmetric to [`withdraw_buffer`]. The
+/// Engine-only deposit helper, symmetric to [`withdraw_buffer`]. The
 /// handler is responsible for owner/authority checks and SPL token CPI;
 /// this just runs the engine math. Reused by both the user-facing
 /// `Deposit` instruction and the House Vault's `FundHouseVault`.
@@ -997,7 +997,7 @@ pub fn deposit_buffer(
 }
 
 /// Liquidate `close_q` of the active leg at `asset_index` on `account`.
-/// Permissionless from the engine's perspective — anyone can call — but
+/// Permissionless from the engine's perspective, anyone can call, but
 /// engine refuses unless the account's certified liquidation deficit is
 /// non-zero (`V16Error::NonProgress`). The wrapper handler just enforces
 /// signer/writability + that the engine returned an outcome.
@@ -1035,7 +1035,7 @@ pub fn resolve_market_buffer(
     mg.resolve_market_not_atomic(resolved_slot)
 }
 
-/// Permissionless crank with the `Refresh` action — re-certifies a
+/// Permissionless crank with the `Refresh` action, re-certifies a
 /// portfolio against fresh oracle and funding inputs. Used by keepers to
 /// keep account health up to date independent of user activity.
 ///
@@ -1069,7 +1069,7 @@ pub fn crank_refresh_buffer(
 }
 
 /// Cross a matched long/short trade through the engine. The engine is
-/// allergic to single-sided "open vs market maker" calls — every fill is a
+/// allergic to single-sided "open vs market maker" calls, every fill is a
 /// two-account cross. Both portfolios must be initialized against the same
 /// market group; a single authority signs in the on-chain handler.
 ///

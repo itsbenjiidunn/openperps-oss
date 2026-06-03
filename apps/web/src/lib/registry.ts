@@ -23,7 +23,7 @@ export type RegistryEntry = {
   oracleFeedId?: string;
   /// DEX pool account address when oracleKind === "dex".
   oraclePool?: string;
-  /// Max leverage from the chosen risk tier — display metadata for now.
+  /// Max leverage from the chosen risk tier, display metadata for now.
   maxLeverage?: number;
   /// Taker fee in bps set at launch; drives the default PlaceOrder fee.
   feeBps?: number;

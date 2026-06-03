@@ -47,7 +47,7 @@ export type ChartOverlay = {
 export type ChartMarker = { ts: number; side: number; price: number };
 
 function fmtUsd(p: number): string {
-  if (!Number.isFinite(p)) return "—";
+  if (!Number.isFinite(p)) return "-";
   return p < 1 ? p.toFixed(6) : p.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
@@ -344,7 +344,7 @@ export function TradingChart({
       {!loading && !hasHistory && (
         <div className="absolute bottom-2 left-2 text-[10px] text-muted-foreground">
           {hasPyth
-            ? "No history returned — building from live mark."
+            ? "No history returned, building from live mark."
             : "Custom market · building candles from the live on-chain mark."}
         </div>
       )}

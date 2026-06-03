@@ -1,9 +1,9 @@
 /// Data shape types shared across routes.
 ///
 /// `Market` deliberately keeps the price/volume/funding fields the Lovable
-/// design used, but they are now *optional* — the engine knows nothing about
+/// design used, but they are now *optional*, the engine knows nothing about
 /// 24h volume or oracle source until an indexer / Pyth CPI exposes them.
-/// Components render a "—" placeholder when these are undefined.
+/// Components render a "-" placeholder when these are undefined.
 
 export type OracleSource = "Pyth" | "Switchboard" | "Authority" | "DEX";
 export type OracleStatus = "live" | "stale" | "degraded";
@@ -65,7 +65,7 @@ export type Market = {
 
 /// Stable, unique key for a market across BOTH tiers. The shared majors all
 /// share one `pubkey` (SHARED_MARKET) and differ only by `assetIndex`, while
-/// every custom own-group launch has a unique `pubkey` but `assetIndex` 0 — so
+/// every custom own-group launch has a unique `pubkey` but `assetIndex` 0, so
 /// neither field alone is unique. The composite is. Used as the URL/selection
 /// key so clicking a custom market doesn't collide with the slot-0 major (SOL).
 export function marketKey(m: { pubkey: string; assetIndex: number }): string {

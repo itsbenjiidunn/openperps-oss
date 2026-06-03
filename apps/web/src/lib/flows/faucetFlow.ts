@@ -1,6 +1,6 @@
 /// Devnet faucet: mint shared mock-USDC into the connected wallet's ATA so
 /// it has collateral to deposit into any market. The mint authority is the
-/// app-baked throwaway keypair (see collateral.ts) — it co-signs the
+/// app-baked throwaway keypair (see collateral.ts), it co-signs the
 /// MintTo; the user's wallet pays fees and creates its ATA if missing.
 
 import { Connection, PublicKey, Transaction, type Commitment } from "@solana/web3.js";

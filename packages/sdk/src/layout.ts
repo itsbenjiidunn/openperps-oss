@@ -1,5 +1,5 @@
 // Byte sizes and field offsets of the OpenPerps wrapper + engine zero-copy
-// account structs. Mirror Rust at commit head — verified via
+// account structs. Mirror Rust at commit head, verified via
 //   cargo test -p openperps-program print_byte_sizes_for_sdk -- --nocapture
 // If you bump the engine or the OpenPerpsMarketHeader, re-run that test and
 // update here.
@@ -19,12 +19,12 @@ export const OFFSET_WRAPPER_BASE_MINT = 112; // [u8; 32]
 export const OFFSET_WRAPPER_ORACLE_FEED_ID = 144; // [u8; 32]
 export const OFFSET_WRAPPER_ORACLE_POOL = 176; // [u8; 32]
 
-/** oracle_kind discriminants — mirror Rust `state::oracle_kind`. */
+/** oracle_kind discriminants, mirror Rust `state::oracle_kind`. */
 export const ORACLE_KIND_MANUAL = 0;
 export const ORACLE_KIND_PYTH = 1;
 export const ORACLE_KIND_DEX_EWMA = 2;
 
-/** Mock-pool account size + price scale — mirror Rust `state`. */
+/** Mock-pool account size + price scale, mirror Rust `state`. */
 export const MOCK_POOL_SIZE = 120;
 export const PRICE_SCALE = 1_000_000n;
 
@@ -72,7 +72,7 @@ export function slotLastOffset(i: number): number {
 /// Slot 0 mark, kept for back-compat with single-slot readers.
 export const OFFSET_SLOT0_EFFECTIVE_PRICE = slotEffectivePriceOffset(0);
 
-// Portfolio account has no wrapper prefix — offsets are direct.
+// Portfolio account has no wrapper prefix, offsets are direct.
 export const OFFSET_CAPITAL = 132; // V16PodU128 ([u8; 16])
 export const OFFSET_PNL = 148; // V16PodI128 ([u8; 16])
 
@@ -130,20 +130,20 @@ export function portfolioAccountSize(assetSlotCapacity: number): number {
 // PDA seed prefixes. Encoded with TextEncoder (a global in both Node and the
 // browser) rather than `Buffer.from`, because these are module-level constants:
 // `Buffer` is a Node global that browsers lack, so a `Buffer.from` here throws
-// "Buffer is not defined" the instant a browser bundle imports this module —
+// "Buffer is not defined" the instant a browser bundle imports this module,
 // before any app-level polyfill can run. `findProgramAddressSync` accepts
 // `Uint8Array` seeds, so this is a drop-in.
 
-/** Vault PDA seed prefix — matches Rust `state::VAULT_SEED`. */
+/** Vault PDA seed prefix, matches Rust `state::VAULT_SEED`. */
 export const VAULT_SEED = new TextEncoder().encode("vault");
 
-/** House Vault PDA seed prefix — matches Rust `state::HOUSE_SEED`. */
+/** House Vault PDA seed prefix, matches Rust `state::HOUSE_SEED`. */
 export const HOUSE_SEED = new TextEncoder().encode("house");
 
-/** Trading-delegate PDA seed prefix — matches Rust `state::DELEGATE_SEED`. */
+/** Trading-delegate PDA seed prefix, matches Rust `state::DELEGATE_SEED`. */
 export const DELEGATE_SEED = new TextEncoder().encode("delegate");
 
-/** User-portfolio PDA seed prefix — matches Rust `state::PORTFOLIO_SEED`. */
+/** User-portfolio PDA seed prefix, matches Rust `state::PORTFOLIO_SEED`. */
 export const PORTFOLIO_SEED = new TextEncoder().encode("portfolio");
 
 /** Oracle-authority PDA seed prefix; matches Rust `state::ORACLE_SEED`. */

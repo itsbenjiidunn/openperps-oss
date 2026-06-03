@@ -35,7 +35,7 @@ import type { Market } from "@/lib/types";
 const DEFAULT_MARGIN_USDC = "100";
 
 function fmtPrice(p: number): string {
-  if (p <= 0) return "—";
+  if (p <= 0) return "-";
   return p < 1 ? p.toFixed(6) : p.toFixed(2);
 }
 
@@ -201,7 +201,7 @@ export function OrderPanel({ market }: { market: Market }) {
   };
 
   // Shared majors group: deposit is managed on the Portfolio page, so prompt to
-  // open the account there. Custom (own-group) markets fall through — their
+  // open the account there. Custom (own-group) markets fall through, their
   // funds are managed inline by AccountFundsBar (move to/from the main account),
   // which also opens the account on first use.
   if (!userPortfolio && !market.ownGroup) {
@@ -223,7 +223,7 @@ export function OrderPanel({ market }: { market: Market }) {
 
   return (
     <div className="panel p-3 space-y-3">
-      {/* Custom isolated market: manage this account's collateral inline — move
+      {/* Custom isolated market: manage this account's collateral inline, move
           in/out of the main account any time. */}
       {market.ownGroup && (
         <AccountFundsBar
@@ -325,7 +325,7 @@ export function OrderPanel({ market }: { market: Market }) {
         <Row k="Funding (1h)" v={`${(market.funding * 100).toFixed(4)}%`} />
       </div>
 
-      {/* 1-click trading (session key) — on/off switch */}
+      {/* 1-click trading (session key), on/off switch */}
       <div className="flex items-center justify-between gap-2 pt-2 border-t border-border/60">
         <span className="inline-flex items-center gap-1.5 min-w-0">
           <Zap
@@ -398,7 +398,7 @@ export function OrderPanel({ market }: { market: Market }) {
             <>Deposit to this account above to trade.</>
           ) : (
             <>
-              Account has no collateral —{" "}
+              Account has no collateral -{" "}
               <Link to="/portfolio" className="text-neon underline">
                 deposit
               </Link>{" "}
@@ -415,7 +415,7 @@ export function OrderPanel({ market }: { market: Market }) {
 /// visible in its order panel. Deposit collateral straight from the wallet and
 /// withdraw it back, any number of times. The account is opened on the first
 /// deposit. Withdraw requires the account to be flat (the engine won't release
-/// collateral backing an open position) — checked up front and surfaced clearly.
+/// collateral backing an open position), checked up front and surfaced clearly.
 function AccountFundsBar({
   market,
   customPortfolio,
@@ -444,7 +444,7 @@ function AccountFundsBar({
     },
   });
   const walletAtoms = walletBalQ.data ?? 0n;
-  // Withdraw needs the account flat — the engine won't release collateral while
+  // Withdraw needs the account flat, the engine won't release collateral while
   // it holds an open position.
   const customPosQ = usePortfolioPositions(customPortfolio ?? undefined);
 

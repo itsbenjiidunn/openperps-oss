@@ -2,7 +2,7 @@
 /// one group, many asset slots, one vault, one shared House Vault, and one
 /// portfolio per user. Bootstrapped once on devnet via
 /// `ts/sdk/scripts/bootstrap-shared-group.ts`. "Launching a market" no longer
-/// creates a group — it claims a free asset slot in THIS group.
+/// creates a group, it claims a free asset slot in THIS group.
 
 import { PublicKey } from "@solana/web3.js";
 
@@ -15,7 +15,7 @@ export const SHARED_SLOT_CAPACITY = 16;
 /// The group's `max_trading_fee_bps` as baked into the shared market's
 /// on-chain config (see `default_market_config` in the program). PlaceOrder
 /// passes a per-trade `fee_bps`, and the engine rejects any trade where
-/// `fee_bps > max_trading_fee_bps` with `InvalidConfig` — which the wallet
+/// `fee_bps > max_trading_fee_bps` with `InvalidConfig`, which the wallet
 /// surfaces as a generic "Unexpected error". Every per-trade fee MUST be
 /// clamped to this cap, and the launch UI must not advertise a higher fee.
 export const GROUP_MAX_FEE_BPS = 10;

@@ -115,7 +115,7 @@ const houseOf = (p: PlaceOrderParams) => p.housePortfolio ?? SHARED_HOUSE;
 /// The trade instruction. No CrankOracle: the on-chain mark is maintained by the
 /// relayer pushing the live mainnet price via AccrueAsset (plus the in-tx
 /// stale-clear). CrankOracle reads the SEEDED mock pool and would drag the mark
-/// back toward the seed price — a huge move that reverts the trade with
+/// back toward the seed price, a huge move that reverts the trade with
 /// InvalidConfig (0x3e8) once the relayer has converged the mark to the real
 /// price. `signer` is whoever pays/signs (wallet or session key).
 function tradeIxs(
@@ -153,9 +153,9 @@ const CONFIRM_COMMITMENT: Commitment = "confirmed";
 /// falls back to the raw log line).
 function tradeErrorMessage(code: number): string | null {
   switch (code) {
-    case 1000: // InvalidConfig — in the trade path this is the margin/leverage gate
-      return "Order too large for your collateral — it exceeds this market's max leverage. Lower the size or leverage and try again.";
-    case 1007: // LockActive — stale-loss lock / price refresh pending
+    case 1000: // InvalidConfig, in the trade path this is the margin/leverage gate
+      return "Order too large for your collateral, it exceeds this market's max leverage. Lower the size or leverage and try again.";
+    case 1007: // LockActive, stale-loss lock / price refresh pending
       return "Market is briefly locked while its price refreshes. Wait a few seconds and try again.";
     case 1001: // InvalidLeg / position shape
       return "This order can't be placed against your current position. Try closing first, or use a smaller size.";
@@ -172,7 +172,7 @@ export async function preflight(connection: Connection, tx: Transaction): Promis
   try {
     sim = await connection.simulateTransaction(tx);
   } catch {
-    return; // simulation itself unavailable — let the send path try.
+    return; // simulation itself unavailable, let the send path try.
   }
   if (!sim.value.err) return;
   // Translate the program's custom error code into friendly copy when we can.
@@ -205,7 +205,7 @@ export async function placeOrderFlow(args: {
 
   // 1-click path: only if a funded session key is registered on-chain as THIS
   // portfolio's delegate (otherwise PlaceOrder would fail with
-  // MissingRequiredSignature — e.g. a stale session from another portfolio).
+  // MissingRequiredSignature, e.g. a stale session from another portfolio).
   // Falls back to the wallet popup when not authorized.
   const session = await sessionUsableFor(connection, owner, params.userPortfolioPubkey);
   const signer = session ? session.publicKey : wallet.publicKey;

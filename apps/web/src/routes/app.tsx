@@ -30,7 +30,7 @@ type TerminalSearch = { market?: string };
 
 export const Route = createFileRoute("/app")({
   // Selected market is the composite `pubkey:assetIndex` key (see marketKey).
-  // assetIndex alone is NOT unique — every custom own-group launch is slot 0,
+  // assetIndex alone is NOT unique, every custom own-group launch is slot 0,
   // which collided with the slot-0 major (SOL) and redirected there. Persisting
   // the composite key in the URL makes refresh/share work for both tiers.
   validateSearch: (search: Record<string, unknown>): TerminalSearch => {
@@ -39,7 +39,7 @@ export const Route = createFileRoute("/app")({
   },
   head: () => ({
     meta: [
-      { title: "Trading Terminal — OpenPerps" },
+      { title: "Trading Terminal: OpenPerps" },
       {
         name: "description",
         content: "Trade permissionless Solana perpetuals with cross-margin USDC collateral.",
@@ -99,7 +99,7 @@ function Terminal() {
           <AccountTabs markets={markets} />
         </div>
 
-        {/* Order book / market trades — beside the chart */}
+        {/* Order book / market trades, beside the chart */}
         <div className="hidden lg:block">
           <RightRail market={m} />
         </div>
@@ -123,7 +123,7 @@ function NoMarketsState() {
         </div>
         <h1 className="font-display text-2xl font-semibold">No markets in your registry yet</h1>
         <p className="text-sm text-muted-foreground">
-          OpenPerps is permissionless — anyone can spin up a market against any SPL mint. Launch
+          OpenPerps is permissionless, anyone can spin up a market against any SPL mint. Launch
           your first one to start trading. The registry lives in your browser until an on-chain
           registry account ships.
         </p>
@@ -177,7 +177,7 @@ function MarketHeader({
   // rows all read from it.
   const livePrices = useLivePrices(markets.map((x) => x.oracleFeedId));
   // 24h change + volume from DexScreener (keyed by token mint) for every market
-  // with a real mint — majors and custom alike — so the header, the dropdown
+  // with a real mint, majors and custom alike, so the header, the dropdown
   // rows and the chart all agree and the asset-slot-0 collision (custom groups
   // + SOL all on slot 0) can't smear them together. Synthetic markets fall back
   // to the Pyth 24h-ago ref + indexed volume.
@@ -218,12 +218,12 @@ function MarketHeader({
   const vol = volOf(m);
   // Liquidity: aggregator first (DexScreener/Gecko), but fall back to the live
   // on-chain pool reserves (via the shared price-feed DO, same socket as the
-  // mark) so a just-launched market shows liquidity instantly instead of "—".
+  // mark) so a just-launched market shows liquidity instantly instead of "-".
   const onchainLiq = useMainnetLiquidity(isCustom ? m.baseMint : undefined);
   const liq = (m.baseMint ? (dexQ.data?.get(m.baseMint)?.liquidityUsd ?? 0) : 0) || onchainLiq;
   const fmtMark = (p: number) =>
     p <= 0
-      ? "—"
+      ? "-"
       : p < 1
         ? p.toFixed(6)
         : p.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -280,18 +280,18 @@ function MarketHeader({
         // The on-chain engine price PnL / liquidation actually settle at. The
         // relayer converges it toward the live Mark (above) within ~1%; it steps
         // every ~1–2 min, so it's shown secondary while Mark ticks live.
-        <Cell k="Engine" v={m.price > 0 ? fmtMark(m.price) : "—"} sub="on-chain · PnL/liq" />
+        <Cell k="Engine" v={m.price > 0 ? fmtMark(m.price) : "-"} sub="on-chain · PnL/liq" />
       ) : (
         <Cell k="Oracle" v={fmtMark(m.price)} sub={`Pyth · ${m.oracleStatus}`} />
       )}
       <Cell
         k="24h change"
-        v={change === null ? "—" : `${change >= 0 ? "+" : ""}${change.toFixed(2)}%`}
+        v={change === null ? "-" : `${change >= 0 ? "+" : ""}${change.toFixed(2)}%`}
         cls={change === null ? "" : change >= 0 ? "text-success" : "text-danger"}
       />
-      <Cell k="24h volume" v={vol > 0 ? fmtUsd(vol) : "—"} />
-      {isCustom && <Cell k="Liquidity" v={liq > 0 ? fmtUsd(liq) : "—"} />}
-      <Cell k="Open interest" v={m.openInterest > 0 ? fmtUsd(m.openInterest) : "—"} />
+      <Cell k="24h volume" v={vol > 0 ? fmtUsd(vol) : "-"} />
+      {isCustom && <Cell k="Liquidity" v={liq > 0 ? fmtUsd(liq) : "-"} />}
+      <Cell k="Open interest" v={m.openInterest > 0 ? fmtUsd(m.openInterest) : "-"} />
       <Cell
         k="Funding 1h"
         v={fmtPct(m.funding, 4)}
@@ -385,7 +385,7 @@ function MarketDropdown({
     .sort((a, b) => (metric(a, sort.key) - metric(b, sort.key)) * sort.dir);
 
   const fmtP = (p: number) =>
-    p <= 0 ? "—" : p < 1 ? p.toFixed(6) : p.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    p <= 0 ? "-" : p < 1 ? p.toFixed(6) : p.toLocaleString(undefined, { maximumFractionDigits: 2 });
   const onSort = (key: SortKey) =>
     setSort((s) => (s.key === key ? { key, dir: s.dir === 1 ? -1 : 1 } : { key, dir: -1 }));
   const arrow = (key: SortKey) => (sort.key === key ? (sort.dir === 1 ? " ↑" : " ↓") : "");
@@ -504,15 +504,15 @@ function MarketDropdown({
                 <span
                   className={`hidden sm:block text-right font-mono text-[12px] tabular-nums ${ch === null ? "text-muted-foreground" : ch >= 0 ? "text-success" : "text-danger"}`}
                 >
-                  {ch === null ? "—" : `${ch >= 0 ? "+" : ""}${ch.toFixed(2)}%`}
+                  {ch === null ? "-" : `${ch >= 0 ? "+" : ""}${ch.toFixed(2)}%`}
                 </span>
                 <span className="hidden md:block text-right font-mono text-[12px] tabular-nums text-muted-foreground">
-                  {volOf(m) > 0 ? fmtUsd(volOf(m)) : "—"}
+                  {volOf(m) > 0 ? fmtUsd(volOf(m)) : "-"}
                 </span>
                 <span
                   className={`hidden md:block text-right font-mono text-[12px] tabular-nums ${apr === 0 ? "text-muted-foreground" : apr >= 0 ? "text-success" : "text-danger"}`}
                 >
-                  {apr === 0 ? "—" : `${apr >= 0 ? "+" : ""}${apr.toFixed(2)}%`}
+                  {apr === 0 ? "-" : `${apr >= 0 ? "+" : ""}${apr.toFixed(2)}%`}
                 </span>
               </button>
             );
@@ -540,7 +540,7 @@ function saveFavs(s: Set<string>): void {
 }
 
 /// Right rail beside the chart: reference Order Book (Binance mirror) and the
-/// market's global Trades feed, as two tabs — like Hyperliquid.
+/// market's global Trades feed, as two tabs, like Hyperliquid.
 function RightRail({ market }: { market: Market }) {
   const [tab, setTab] = useState<"book" | "trades">(market.cexSymbol ? "book" : "trades");
   return (
@@ -586,7 +586,7 @@ function Cell({ k, v, cls, sub }: { k: string; v: string; cls?: string; sub?: st
 function ChartPanel({ market }: { market: Market }) {
   const wallet = useWallet();
   const owner = wallet.publicKey?.toBase58() ?? "";
-  // Deterministic PDA for (owner, market) — derivable on any device.
+  // Deterministic PDA for (owner, market), derivable on any device.
   const portfolioPk = owner ? userPortfolio(owner, market.pubkey) : undefined;
   const posQ = usePortfolioPositions(portfolioPk);
   const stateQ = usePortfolioState(portfolioPk);
@@ -652,7 +652,7 @@ function ChartPanel({ market }: { market: Market }) {
 
   // Native chart for EVERY market (majors + custom). History comes from the
   // token's real DEX pool for custom markets (GeckoTerminal OHLCV via the cached
-  // Worker proxy) and from Pyth for majors — see loadHistory(). The live candle
+  // Worker proxy) and from Pyth for majors, see loadHistory(). The live candle
   // folds in `live` (the same mark the header shows, so the chart never disagrees
   // with the displayed price / liquidation overlay).
   return (
@@ -680,7 +680,7 @@ function timeAgo(ms: number): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-/// Recent fills on this market — REAL trades on the OpenPerps program (indexer
+/// Recent fills on this market, REAL trades on the OpenPerps program (indexer
 /// global feed), so you see other wallets' activity, not just your own.
 function TradesFeed({ market }: { market: Market }) {
   const wallet = useWallet();

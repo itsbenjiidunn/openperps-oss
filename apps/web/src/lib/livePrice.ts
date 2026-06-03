@@ -1,10 +1,10 @@
 /// Continuous live price for the display layer. Streams Pyth Hermes
 /// (server-sent events, multiple ticks/sec) so the mark, chart and PnL move
-/// like a real perp DEX — instead of only stepping once a minute when the
+/// like a real perp DEX, instead of only stepping once a minute when the
 /// on-chain relayer pushes a new AccrueAsset. The on-chain `effective_price`
 /// remains the settlement/PnL anchor; this is purely the smooth display feed.
 ///
-/// Markets without a Pyth feed (custom devnet SPL) get no stream — the hook
+/// Markets without a Pyth feed (custom devnet SPL) get no stream, the hook
 /// just returns the on-chain fallback.
 
 import { useEffect, useRef, useState } from "react";
@@ -131,7 +131,7 @@ export function useTokenPrice(mint: string | undefined): number {
   return price;
 }
 
-/// The mark for ANY market — the live price the UI shows and marks PnL to:
+/// The mark for ANY market, the live price the UI shows and marks PnL to:
 ///   - majors      → Pyth Hermes stream (the relayer feeds effective_price from
 ///                   Pyth, so the live tick IS the settlement mark).
 ///   - custom SPL  → the live DEX spot (DexScreener / shared on-chain feed),
@@ -142,7 +142,7 @@ export function useTokenPrice(mint: string | undefined): number {
 /// relayer only pushes effective_price every ~1–2 min (clamped), which makes the
 /// number look FROZEN between pushes. The relayer continuously converges
 /// effective_price toward this same spot (kept within ~1%), and a close settles
-/// at effective_price — so what realizes tracks what's shown. On mainnet a
+/// at effective_price, so what realizes tracks what's shown. On mainnet a
 /// continuous oracle makes effective_price == spot exactly.
 /// One call site for the mark regardless of market type.
 export function useMarketMark(market: {
@@ -156,7 +156,7 @@ export function useMarketMark(market: {
   return spot > 0 ? spot : market.price;
 }
 
-/// The price to SIZE / EXECUTE an order at — the engine's settlement price, NOT
+/// The price to SIZE / EXECUTE an order at, the engine's settlement price, NOT
 /// the display spot. Sizing must match how the engine values the position
 /// (`size_q × effective_price`); using the live spot here over-sizes the
 /// position whenever spot ≠ effective_price (a not-yet-converged custom market),
@@ -169,7 +169,7 @@ export function useExecPrice(market: { oracleFeedId?: string; price: number }): 
   return market.price;
 }
 
-/// The realtime SPOT price of a custom market's token — the live DEX-pool price
+/// The realtime SPOT price of a custom market's token, the live DEX-pool price
 /// (shared on-chain feed → DexScreener), updating sub-second. This is purely
 /// informational ("what the token is worth right now"); it is NOT what the
 /// engine settles at. PnL / liquidation use the slower on-chain mark

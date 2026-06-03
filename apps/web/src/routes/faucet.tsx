@@ -1,4 +1,4 @@
-/// Devnet faucet — mint shared mock-USDC into your wallet so you have
+/// Devnet faucet, mint shared mock-USDC into your wallet so you have
 /// collateral to deposit into any market. This is deliberately separate
 /// from "Launch a market": minting test collateral is a setup step, not
 /// the act of creating a perp market.
@@ -19,7 +19,7 @@ import { atomsToHuman } from "@/lib/decimals";
 export const Route = createFileRoute("/faucet")({
   head: () => ({
     meta: [
-      { title: "Faucet — OpenPerps" },
+      { title: "Faucet: OpenPerps" },
       {
         name: "description",
         content: "Mint devnet mock-USDC collateral to deposit into any OpenPerps market.",
@@ -64,7 +64,7 @@ function Faucet() {
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
             Every OpenPerps market is margined in the same shared mock-USDC. Mint some here once,
-            then deposit it into any market's trading account. This is test collateral — not the
+            then deposit it into any market's trading account. This is test collateral, not the
             asset you trade.
           </p>
         </div>
@@ -149,7 +149,7 @@ function Faucet() {
               </a>
             </div>
             <p>
-              6 decimals. The mint authority is an app-held devnet keypair — fine here because the
+              6 decimals. The mint authority is an app-held devnet keypair, fine here because the
               token is worthless test collateral.
             </p>
           </div>

@@ -1,7 +1,7 @@
 //! Hand-rolled CPI helpers for the System program and SPL Token v1.
 //!
 //! We avoid `pinocchio-token` / `pinocchio-system` to keep our dependency
-//! tree under control — both have rolled their MSRVs past what our
+//! tree under control, both have rolled their MSRVs past what our
 //! Cargo.lock supports. The instruction layouts here are trivial (a few
 //! bytes each); reproducing them in-tree is cheaper than untangling
 //! edition2024 transitive constraints.

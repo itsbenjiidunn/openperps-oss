@@ -1,4 +1,4 @@
-/// OpenPerps indexer — a Cloudflare Worker that polls the program's recent
+/// OpenPerps indexer, a Cloudflare Worker that polls the program's recent
 /// transactions on a cron, parses PlaceOrder fills, and stores them in D1 so
 /// the frontend can show a real (global) trade feed plus 24h volume / open
 /// interest / fees. State that needs per-account history (equity curve,
@@ -19,7 +19,7 @@ export interface Env {
   /// Funded keypair (JSON secret-key array) that signs AccrueAsset price
   /// pushes. Devnet-only; AccrueAsset is permissionless on devnet.
   RELAYER_SECRET: string;
-  /// Mainnet RPC (Helius key) for the price-feed DO — pool reserves + SOL price.
+  /// Mainnet RPC (Helius key) for the price-feed DO, pool reserves + SOL price.
   MAINNET_RPC: string;
   /// Shared realtime price feed: one Helius WS per token, fanned out to clients.
   PRICE_FEED: DurableObjectNamespace;
@@ -40,7 +40,7 @@ const LIQUIDATE_TAG = 8;
 // each asset slot's `slot_last` and keep it caught up to the chain's current
 // slot. The percolator engine raises a group-wide stale-loss lock (blocking
 // new positions with LockActive) whenever a slot that has open interest lags
-// the current slot — and one AccrueAsset only advances slot_last by at most
+// the current slot, and one AccrueAsset only advances slot_last by at most
 // `max_accrual_dt_slots`, so a single push per cron tick can't keep up.
 const WRAPPER_HEADER_SIZE = 208;
 const MARKET_HEADER_SIZE = 638;
@@ -205,7 +205,7 @@ async function upsertTrade(env: Env, t: ParsedTrade): Promise<void> {
     .run();
 }
 
-/// Re-scan the latest `limit` signatures regardless of cursor and upsert —
+/// Re-scan the latest `limit` signatures regardless of cursor and upsert,
 /// used once to backfill the portfolio column on pre-v2 rows.
 async function backfill(env: Env, limit: number): Promise<number> {
   const sigs = await rpc<SigInfo[]>(env, "getSignaturesForAddress", [
@@ -446,10 +446,10 @@ async function geckoPrice(mint: string): Promise<number | null> {
   }
 }
 
-/// DexScreener USD price for a mint — the broadest memecoin coverage and far
+/// DexScreener USD price for a mint, the broadest memecoin coverage and far
 /// less rate-limited than GeckoTerminal's free tier (which 429s the Worker's
-/// shared egress IP, leaving the mark frozen while the UI's Spot — also
-/// DexScreener — keeps moving). Deepest Solana pair. Null on failure.
+/// shared egress IP, leaving the mark frozen while the UI's Spot, also
+/// DexScreener, keeps moving). Deepest Solana pair. Null on failure.
 async function dexScreenerPrice(mint: string): Promise<number | null> {
   try {
     const res = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${mint}`);
@@ -477,7 +477,7 @@ async function tokenPrice(mint: string): Promise<number | null> {
 }
 
 /// Top Solana pair's liquidity (USD) for a token, or `null` when there's no
-/// pair / the lookup failed — so we NEVER delist on a missing reading, only on a
+/// pair / the lookup failed, so we NEVER delist on a missing reading, only on a
 /// real low number.
 async function dexScreenerLiquidity(mint: string): Promise<number | null> {
   try {
@@ -500,7 +500,7 @@ async function dexScreenerLiquidity(mint: string): Promise<number | null> {
 /// Auto-delist custom markets whose token liquidity has collapsed below
 /// `DELIST_LIQUIDITY_USD`. A drained / rugged pool can no longer be priced or
 /// traded safely, so we drop it from `custom_markets` (the UI stops listing it;
-/// the on-chain account is left untouched). Launch needs >$25k, delist <$3k — a
+/// the on-chain account is left untouched). Launch needs >$25k, delist <$3k, a
 /// wide hysteresis so a market never flaps around one threshold. Only a REAL
 /// reading triggers it; a missing/failed liquidity lookup is skipped.
 const DELIST_LIQUIDITY_USD = 3_000;
@@ -511,7 +511,7 @@ async function pruneIlliquidMarkets(env: Env): Promise<{ removed: string[] }> {
   const removed: string[] = [];
   for (const m of results ?? []) {
     const liq = await dexScreenerLiquidity(m.base_mint);
-    if (liq === null) continue; // unknown liquidity — never delist on no reading
+    if (liq === null) continue; // unknown liquidity, never delist on no reading
     if (liq < DELIST_LIQUIDITY_USD) {
       await env.DB.prepare("DELETE FROM custom_markets WHERE pubkey = ?")
         .bind(m.pubkey)
@@ -619,7 +619,7 @@ async function activateSlot(
 
 /// Send one confirmed AccrueAsset for `assetIndex` at `priceAtoms`. Returns the
 /// signature, or null on failure. Confirmed (not fire-and-forget) so that a
-/// caller can chain several to advance `slot_last` step by step — each accrual
+/// caller can chain several to advance `slot_last` step by step, each accrual
 /// reads the previous one's updated state.
 async function accrueOnce(
   conn: Connection,
@@ -660,7 +660,7 @@ async function accrueOnce(
 /// Push real market prices on-chain AND keep each asset's `slot_last` caught up
 /// to the chain's current slot. For every registered market we fetch the live
 /// USD price (Pyth, then Jupiter) and send up to `maxStepsPerAsset` confirmed
-/// AccrueAsset calls — enough to advance `slot_last` past the elapsed slots so
+/// AccrueAsset calls, enough to advance `slot_last` past the elapsed slots so
 /// the engine's stale-loss lock never trips. `maxStepsPerAsset` is small for
 /// the 1-min cron (keep-up) and large for the manual /catchup burst (clear a
 /// backlog). Returns the number of accruals landed.
@@ -739,7 +739,7 @@ function rowToCustomMarket(r: any) {
 /// Each launch is its own group account, so we accrue against its own pubkey
 /// at its asset slot. Manual-oracle markets only (dex-pinned markets take their
 /// mark from the pinned pool); a real price needs the token to be on Jupiter.
-/// Best-effort — a missing price source or stale account just skips that one.
+/// Best-effort, a missing price source or stale account just skips that one.
 // Engine's per-slot price-move cap (default_market_config.max_price_move_bps_per_slot).
 const MAX_MOVE_BPS_PER_SLOT = 10;
 
@@ -759,7 +759,7 @@ async function relayCustomPrices(env: Env): Promise<number> {
   let pushed = 0;
   for (const m of results) {
     // A custom market lists a real MAINNET token, so we converge its on-chain
-    // mark to that token's live Jupiter price — you trade real mainnet price
+    // mark to that token's live Jupiter price, you trade real mainnet price
     // action against the devnet House. Each push moves the mark toward the live
     // price but CLAMPED to the engine's per-slot move cap (10 bps/slot * slots
     // advanced) so the accrual never exceeds the envelope and reverts. With the
@@ -776,7 +776,7 @@ async function relayCustomPrices(env: Env): Promise<number> {
     if (eff <= 0) continue; // slot not activated
     const slotLast = Number(data.readBigUInt64LE(slOff) as unknown as bigint);
     const behind = nowSlot - slotLast;
-    if (behind < 5) continue; // already fresh — moving now (dt~0) would revert
+    if (behind < 5) continue; // already fresh, moving now (dt~0) would revert
 
     // Target = live mainnet price (atoms); fall back to the current mark.
     let target = eff;
@@ -884,8 +884,8 @@ async function refreshCandles(env: Env, pool: string, tf: string): Promise<void>
 // ---------- liquidation keeper ----------
 
 // Attempt liquidation once a portfolio's equity drops below this fraction of its
-// open notional. The engine is the source of truth — it rejects a still-healthy
-// account with NonProgress — so this only needs to be a conservative trigger
+// open notional. The engine is the source of truth, it rejects a still-healthy
+// account with NonProgress, so this only needs to be a conservative trigger
 // (slightly ABOVE the real maintenance margin) to catch every unhealthy account
 // without missing bad debt. A too-eager attempt just wastes the relayer's tx fee.
 const LIQ_TRIGGER_BPS = 800; // 8% of notional
@@ -898,7 +898,7 @@ const POS_SCALE_F = 1_000_000;
 /// and its bad debt accumulates against the vault.
 async function liquidateUnhealthy(env: Env): Promise<number> {
   // All fills oldest-first, so we can replay each portfolio's VWAP entry and
-  // mark its OPEN legs to market (the loss on an open position is unrealized —
+  // mark its OPEN legs to market (the loss on an open position is unrealized,
   // it is NOT in the engine `pnl` field, so capital+pnl alone never trips the
   // trigger; we must add (mark − entry)·size).
   const { results } = await env.DB.prepare(
@@ -975,7 +975,7 @@ async function liquidateUnhealthy(env: Env): Promise<number> {
     if (notional <= 0) continue;
     const equity = capital + pnl + unrealized;
     const trigger = (notional * LIQ_TRIGGER_BPS) / 10_000;
-    if (equity >= trigger) continue; // healthy enough — skip
+    if (equity >= trigger) continue; // healthy enough, skip
 
     // Underwater: flatten each open leg. The engine still gatekeeps (rejects
     // NonProgress if it disagrees), so this is safe even on a stale read.
@@ -1004,7 +1004,7 @@ async function liquidateUnhealthy(env: Env): Promise<number> {
         );
         liquidated++;
       } catch {
-        /* engine rejected (still healthy / stale) or RPC hiccup — retry next tick */
+        /* engine rejected (still healthy / stale) or RPC hiccup, retry next tick */
       }
     }
   }
@@ -1017,15 +1017,15 @@ type HealthReport = {
   ts: number;
   accounts: number;
   totalEquityUsd: number;
-  badDebtUsd: number; // Σ of negative equity — should be ~0 if the keeper works
+  badDebtUsd: number; // Σ of negative equity, should be ~0 if the keeper works
   negativeAccounts: number;
   undercollateralized: { symbol: string; vault: number; cTot: number }[];
 };
 
 /// Two independent solvency signals:
-///  1. Bad debt — Σ negative equity across the latest per-portfolio snapshots.
+///  1. Bad debt, Σ negative equity across the latest per-portfolio snapshots.
 ///     Non-zero means an account went underwater without being liquidated.
-///  2. Per-market collateralization — the vault's real SPL balance must cover
+///  2. Per-market collateralization, the vault's real SPL balance must cover
 ///     the engine's recorded `c_tot` (total user capital). vault < c_tot means
 ///     the group can't honour withdrawals (a drain / accounting bug).
 async function healthCheck(env: Env): Promise<HealthReport> {
@@ -1118,14 +1118,14 @@ export default {
           await relayPrices(env);
           // Push custom marks repeatedly across the minute (~12s cadence) instead
           // of once, so the mark tracks the realtime token price closely. With a
-          // single push/min, a short hold sees no mark move and thus no PnL —
+          // single push/min, a short hold sees no mark move and thus no PnL,
           // making winning trades look like they only paid a fee.
           for (let i = 0; i < 5; i++) {
             await relayCustomPrices(env);
             if (i < 4) await sleep(12_000);
           }
           await liquidateUnhealthy(env);
-          // Delist rugged markets (LP < $3k) — every ~5 min, not every tick, to
+          // Delist rugged markets (LP < $3k), every ~5 min, not every tick, to
           // spare DexScreener and avoid acting on a momentary low reading.
           if (new Date(_event.scheduledTime).getUTCMinutes() % 5 === 0) {
             await pruneIlliquidMarkets(env);
@@ -1201,7 +1201,7 @@ export default {
 
       // Cached OHLCV candles for the native chart. Serves DEX-pool history from
       // D1 so GeckoTerminal is hit at most ~once per (pool, tf) per refresh
-      // window regardless of how many users watch — flat cost, and history
+      // window regardless of how many users watch, flat cost, and history
       // survives GeckoTerminal rate-limiting once seeded. Returns
       // { ohlcv_list: [[t,o,h,l,c,v], ...] } ascending (same shape the frontend
       // already parses). `tf` ∈ 1m|5m|15m|1h.
@@ -1260,7 +1260,7 @@ export default {
         return json({ pushed });
       }
 
-      // Manual auto-delist sweep — remove custom markets whose LP fell below
+      // Manual auto-delist sweep, remove custom markets whose LP fell below
       // $3k (the cron runs this every ~5 min too).
       if (path === "/prune") {
         return json(await pruneIlliquidMarkets(env));
@@ -1268,7 +1268,7 @@ export default {
 
       // Immediate single-tx ingest. The frontend fires this (fire-and-forget)
       // right after a trade confirms, so the fill is parsed + stored within
-      // seconds — on EVERY device, keyed by the wallet — instead of waiting for
+      // seconds, on EVERY device, keyed by the wallet, instead of waiting for
       // the 1-min cron. This makes the VWAP entry (/positions) and history
       // (/trades) durable + cross-browser fast; the client's localStorage log is
       // only a same-device instant cache, never the source of truth.
@@ -1407,7 +1407,7 @@ export default {
         return json({ backfilled: n, snapshots: snaps });
       }
 
-      // Every (portfolio, market) the wallet has traded — so positions/accounts
+      // Every (portfolio, market) the wallet has traded, so positions/accounts
       // are discoverable on ANY device, not just the browser that created the
       // portfolio (portfolios are random keypairs stored only in localStorage;
       // without this, a second browser can't see them). Parsed from on-chain

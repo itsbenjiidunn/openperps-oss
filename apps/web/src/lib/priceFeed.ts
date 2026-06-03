@@ -45,7 +45,7 @@ export async function fetchJupPrice(mint: string): Promise<number | null> {
   }
 }
 
-/// GeckoTerminal USD price for a mint — covers pump / long-tail SPL tokens that
+/// GeckoTerminal USD price for a mint, covers pump / long-tail SPL tokens that
 /// Jupiter's price API doesn't list. Null on failure.
 export async function fetchGeckoPrice(mint: string): Promise<number | null> {
   try {
@@ -63,7 +63,7 @@ export async function fetchGeckoPrice(mint: string): Promise<number | null> {
   }
 }
 
-/// DexScreener USD price for a mint — the most reliable source for brand-new
+/// DexScreener USD price for a mint, the most reliable source for brand-new
 /// pump.fun / long-tail SPL that Jupiter and GeckoTerminal haven't indexed yet.
 /// CORS-open, so the browser can call it directly. Null on failure.
 export async function fetchDexPrice(mint: string): Promise<number | null> {

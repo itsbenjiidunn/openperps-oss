@@ -26,7 +26,7 @@ import type { Market } from "@/lib/types";
 export const Route = createFileRoute("/crank")({
   head: () => ({
     meta: [
-      { title: "Keeper & Liquidations — OpenPerps" },
+      { title: "Keeper & Liquidations: OpenPerps" },
       {
         name: "description",
         content:
@@ -438,7 +438,7 @@ function PortfolioPicker({
   if (portfolios.length === 0) {
     return (
       <div className="text-[11px] text-muted-foreground">
-        No portfolios yet — open one on{" "}
+        No portfolios yet, open one on{" "}
         <Link to="/portfolio" className="text-neon underline">
           /portfolio
         </Link>{" "}

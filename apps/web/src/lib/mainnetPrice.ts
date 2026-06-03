@@ -4,7 +4,7 @@
 /// user/component sharing a mint rides one server feed instead of each opening
 /// its own Helius socket. In the browser we additionally share one DO connection
 /// per mint across components. Price/liquidity are 0 until the first tick (or
-/// when the token has no decodable AMM pool — the caller then falls back to the
+/// when the token has no decodable AMM pool, the caller then falls back to the
 /// GeckoTerminal/DexScreener poll).
 
 import { useEffect, useState } from "react";
@@ -95,7 +95,7 @@ export function useMainnetPrice(mint: string | undefined): number {
 }
 
 /// Latest on-chain pool liquidity (USD) for `mint`, computed from the live vault
-/// balances — available immediately, before DexScreener/GeckoTerminal index a
+/// balances, available immediately, before DexScreener/GeckoTerminal index a
 /// just-launched pool. 0 until the first tick or when there's no decodable pool.
 export function useMainnetLiquidity(mint: string | undefined): number {
   return useMainnetFeed(mint).liquidity;

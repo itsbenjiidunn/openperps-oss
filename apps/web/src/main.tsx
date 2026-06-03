@@ -1,7 +1,7 @@
 // Polyfill Node's Buffer in the browser. @solana/web3.js, @solana/spl-token,
 // and our own SDK all call `Buffer.from(...)` internally; without this
 // they explode at runtime with "Buffer is not defined". Vite does not
-// auto-polyfill it — keep this as the very first import.
+// auto-polyfill it, keep this as the very first import.
 import { Buffer } from "buffer";
 if (typeof window !== "undefined" && !window.Buffer) {
   (window as unknown as { Buffer: typeof Buffer }).Buffer = Buffer;
@@ -19,7 +19,7 @@ import { SolanaProviders } from "./wallet/SolanaProviders";
 
 // Defaults tuned so connecting a wallet stays snappy. `refetchOnWindowFocus`
 // (react-query's default) refetches EVERY active query whenever the tab regains
-// focus — which is exactly what happens when the Phantom/Solflare popup closes
+// focus, which is exactly what happens when the Phantom/Solflare popup closes
 // after approval. That refetch burst contends with the extension's postMessage
 // round-trip and drags out the "Connecting…" state. Components already poll via
 // their own `refetchInterval`, so focus-refetch buys nothing here. Cap retries

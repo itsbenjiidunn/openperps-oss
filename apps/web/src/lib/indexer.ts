@@ -22,14 +22,14 @@ export type IndexedTrade = {
 
 /// Proxy a GeckoTerminal request through the indexer Worker (server-side fetch
 /// + edge cache + CORS). `path` is everything after `/api/v2/`. The browser
-/// can't hit GeckoTerminal directly — its 429s drop CORS headers.
+/// can't hit GeckoTerminal directly, its 429s drop CORS headers.
 export function geckoProxy(path: string): string {
   return `${INDEXER_URL}/gecko?path=${encodeURIComponent(path)}`;
 }
 
 /// Cached OHLCV candles for a token's DEX pool, served from the indexer's D1
 /// (GeckoTerminal fetched server-side once per refresh window, shared by all
-/// users — so it doesn't 429 the way per-browser GeckoTerminal calls do).
+/// users, so it doesn't 429 the way per-browser GeckoTerminal calls do).
 /// `tf` ∈ 1m|5m|15m|1h. Returns `{ ohlcv_list: [[t,o,h,l,c,v], ...] }` ascending.
 export function candlesUrl(mint: string, tf: string): string {
   return `${INDEXER_URL}/candles?mint=${mint}&tf=${tf}`;
@@ -37,7 +37,7 @@ export function candlesUrl(mint: string, tf: string): string {
 
 /// Nudge the indexer to parse + store a just-confirmed trade immediately, so the
 /// VWAP entry (/positions) and history (/trades) are durable and available on
-/// EVERY device within seconds — instead of waiting up to a minute for the cron.
+/// EVERY device within seconds, instead of waiting up to a minute for the cron.
 /// Fire-and-forget: the cron still backstops it if this call fails. The browser
 /// localStorage log is only a same-device instant cache, not the source of truth.
 export function ingestTrade(signature: string): void {
@@ -98,7 +98,7 @@ export async function registerMarket(m: {
 
 /// Publish a launched custom market to the shared registry so every other
 /// wallet/device can discover it (not just this browser's localStorage).
-/// Fire-and-forget — local registry is still written as a fallback.
+/// Fire-and-forget, local registry is still written as a fallback.
 export async function postMarket(entry: Omit<RegistryEntry, "addedAt">): Promise<void> {
   try {
     await fetch(`${INDEXER_URL}/markets`, {
@@ -135,7 +135,7 @@ export function entryKey(market: string, assetIndex: number): string {
   return `${market}:${assetIndex}`;
 }
 
-/// Every (portfolio, market) the wallet has traded, from the indexer — keyed by
+/// Every (portfolio, market) the wallet has traded, from the indexer, keyed by
 /// the wallet on-chain, so positions/accounts are discoverable on ANY device.
 /// Portfolios are random keypairs the launcher stored only in the creating
 /// browser's localStorage; this is how a second browser finds them.

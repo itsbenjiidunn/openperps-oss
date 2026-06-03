@@ -4,7 +4,7 @@
 ///   - format helpers and type definitions moved to dedicated modules
 ///     (`format.ts`, `types.ts`) and are re-exported here for back-compat.
 ///   - activity feeds (`recentTrades`, `fundingEvents`, `liquidations`,
-///     `crankQueue`) are now empty arrays — honest no-indexer state until
+///     `crankQueue`) are now empty arrays, honest no-indexer state until
 ///     Phase 6 wires real RPC log scraping or a dedicated indexer.
 ///   - `markets` is exported empty by default; the Terminal route now sources
 ///     its data from `useMarkets()` (see `onchain.ts`). Anything still

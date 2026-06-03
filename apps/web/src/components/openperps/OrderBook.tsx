@@ -1,6 +1,6 @@
 /// Reference order book mirrored from Binance spot depth. OpenPerps itself has
-/// NO order book — trades match cross against the shared vault at the EWMA mark
-/// — so this depth is display-only and clearly labelled "Reference · Binance".
+/// NO order book, trades match cross against the shared vault at the EWMA mark
+///, so this depth is display-only and clearly labelled "Reference · Binance".
 /// It gives traders a familiar market-depth view for the majors; it is NOT the
 /// liquidity an OpenPerps order fills against.
 
@@ -23,7 +23,7 @@ export function OrderBook({ symbol, base }: { symbol: string; base: string }) {
     setBook(null);
     let ws: WebSocket | null = null;
     try {
-      // Partial book depth stream: a full 20-level snapshot every 100ms — no
+      // Partial book depth stream: a full 20-level snapshot every 100ms, no
       // local diff bookkeeping needed.
       ws = new WebSocket(`${WS_BASE}/${symbol.toLowerCase()}@depth20@100ms`);
     } catch {

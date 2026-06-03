@@ -43,7 +43,7 @@ export function Header() {
             <span className="text-muted-foreground">devnet</span>
             <span className="text-foreground/70">·</span>
             <span className="text-muted-foreground">slot</span>
-            <span className="text-foreground">{slot ? slot.toLocaleString() : "—"}</span>
+            <span className="text-foreground">{slot ? slot.toLocaleString() : "-"}</span>
           </div>
           <WalletButton />
         </div>
