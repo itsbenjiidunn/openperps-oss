@@ -31,7 +31,8 @@ hand-parses `PriceUpdateV2` (the receiver SDK is not pulled into the SBF build),
 with a golden unit test against a real devnet SOL/USD account, and
 `packages/sdk/scripts/devnet-pyth.ts` cranks the live feed on-chain. The design
 below is what was built, including the step 2 confidence-interval gate (reject
-`conf / price` above 2%); the open refinement is an EMA-divergence cross-check.
+`conf / price` above 2%) and a spot/EMA-divergence gate (reject a spike above
+10%). The remaining trustless work is Part B (DEX-EWMA).
 
 Pyth's Solana pull model: a permissionless crank posts a `PriceUpdateV2` account
 (owned by the Pyth Receiver program) holding a verified price for a feed id:

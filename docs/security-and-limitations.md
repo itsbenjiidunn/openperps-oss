@@ -38,8 +38,9 @@ independent third-party audit.
   upgrade, but a trusted key still sets the price; a trustless feed is the next
   production-hardening item.
 - DEX-EWMA has no pool-depth / TWAP check yet.
-- Pyth cranking (`CrankPyth`) checks owner, feed id, Full verification, freshness,
-  and a confidence-interval bound; it does not yet cross-check the Pyth EMA.
+- Pyth cranking (`CrankPyth`) validates owner, feed id, Full verification,
+  freshness, a confidence-interval bound, and spot/EMA divergence before it moves
+  the mark.
 - Custom SPL markets put more on the integrator: price-source quality, LP and
   insurance liquidity, and keeper reliability for liquidation safety.
 - Independent third-party review of the wrapper, SDK, and keeper is in scope and

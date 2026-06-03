@@ -58,6 +58,9 @@ pub struct PythPrice {
     /// Confidence interval (same scale as `price`); a wider band is a less
     /// certain price.
     pub conf: u64,
+    /// Pyth's exponentially-weighted moving average price (same scale as
+    /// `price`); a smoothed reference the spot should not diverge far from.
+    pub ema_price: i64,
     pub expo: i32,
     /// Unix seconds the price was published on Pythnet.
     pub publish_time: i64,
@@ -112,6 +115,7 @@ pub fn parse_price_update_v2(
     let conf = rd_u64(data, pm + 40)?;
     let expo = rd_i32(data, pm + 48)?;
     let publish_time = rd_i64(data, pm + 52)?;
+    let ema_price = rd_i64(data, pm + 68)?;
     let posted_slot = rd_u64(data, pm + 84)?;
     if price <= 0 {
         return Err(PythError::NonPositivePrice);
@@ -119,6 +123,7 @@ pub fn parse_price_update_v2(
     Ok(PythPrice {
         price,
         conf,
+        ema_price,
         expo,
         publish_time,
         posted_slot,
@@ -133,6 +138,18 @@ pub fn confidence_ok(price: i64, conf: u64, max_bps: u64) -> bool {
         return false;
     }
     (conf as u128) * 10_000 <= (price as u128) * (max_bps as u128)
+}
+
+/// True if the spot `price` is within `max_bps` of the `ema_price`
+/// (`|price - ema| / ema <= max_bps / 10_000`). A large gap is a single-tick
+/// spike or glitch that has not propagated to the smoothed EMA, which a
+/// settlement crank should reject. A non-positive price or ema is never ok.
+pub fn ema_divergence_ok(price: i64, ema_price: i64, max_bps: u64) -> bool {
+    if price <= 0 || ema_price <= 0 {
+        return false;
+    }
+    let diff = (price - ema_price).unsigned_abs() as u128;
+    diff * 10_000 <= (ema_price as u128) * (max_bps as u128)
 }
 
 /// Convert a Pyth `(price, expo)` to the OpenPerps mark scale: quote atoms per
@@ -185,6 +202,7 @@ mod tests {
         let p = parse_price_update_v2(&d, &feed()).unwrap();
         assert_eq!(p.price, 7_541_192_602);
         assert_eq!(p.conf, 8_807_399);
+        assert_eq!(p.ema_price, 7_504_504_500);
         assert_eq!(p.expo, -8);
         assert_eq!(p.publish_time, 1_780_482_956);
         assert_eq!(p.posted_slot, 466_847_512);
@@ -192,6 +210,8 @@ mod tests {
         assert_eq!(price_to_mark(p.price, p.expo, 6).unwrap(), 75_411_926);
         // The live SOL/USD band is ~11.7 bps, well inside a 2% gate.
         assert!(confidence_ok(p.price, p.conf, 200));
+        // The live spot/EMA gap is ~48 bps, well inside a 10% gate.
+        assert!(ema_divergence_ok(p.price, p.ema_price, 1_000));
     }
 
     #[test]
@@ -203,6 +223,20 @@ mod tests {
         assert!(confidence_ok(10_000, 100, 100));
         // non-positive price is never ok.
         assert!(!confidence_ok(0, 0, 200));
+    }
+
+    #[test]
+    fn ema_divergence_gate() {
+        // No gap passes; symmetric gaps measured against the ema.
+        assert!(ema_divergence_ok(10_000, 10_000, 1_000));
+        // +10% is exactly at a 10% gate; +20% is over it.
+        assert!(ema_divergence_ok(11_000, 10_000, 1_000));
+        assert!(!ema_divergence_ok(12_000, 10_000, 1_000));
+        // A downward spike is caught too.
+        assert!(!ema_divergence_ok(8_000, 10_000, 1_000));
+        // non-positive price or ema is never ok.
+        assert!(!ema_divergence_ok(0, 10_000, 1_000));
+        assert!(!ema_divergence_ok(10_000, 0, 1_000));
     }
 
     #[test]

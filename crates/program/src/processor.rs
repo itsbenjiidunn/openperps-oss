@@ -1449,6 +1449,10 @@ const MAX_PYTH_AGE_SECS: i64 = 60;
 /// price (in bps): a too-uncertain price. 200 bps = 2%.
 const MAX_PYTH_CONF_BPS: u64 = 200;
 
+/// Reject a Pyth price whose spot diverges from the EMA by more than this
+/// fraction (in bps): a single-tick spike or glitch. 1000 bps = 10%.
+const MAX_PYTH_EMA_DIVERGENCE_BPS: u64 = 1_000;
+
 /// Permissionless Pyth crank for a `PYTH` market: read a verified `PriceUpdateV2`
 /// account (owned by the receiver program), bind it to the market's feed id,
 /// check Full verification and freshness, convert the price to the mark scale,
@@ -1504,6 +1508,10 @@ fn process_crank_pyth(
         }
         // Reject a too-uncertain price (wide confidence band).
         if !crate::pyth::confidence_ok(pp.price, pp.conf, MAX_PYTH_CONF_BPS) {
+            return Err(OpenPerpsError::StalePythPrice.into());
+        }
+        // Reject a spot that diverges too far from the smoothed EMA (a spike).
+        if !crate::pyth::ema_divergence_ok(pp.price, pp.ema_price, MAX_PYTH_EMA_DIVERGENCE_BPS) {
             return Err(OpenPerpsError::StalePythPrice.into());
         }
         // PRICE_SCALE is 1e6, so the mark carries 6 quote decimals.
