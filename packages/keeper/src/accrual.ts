@@ -28,6 +28,10 @@ export function buildAccrualInstructions(args: {
   /// The market's `max_price_move_bps_per_slot`: caps how far each catch-up
   /// accrual may advance the price, so a large jump is split across steps.
   maxPriceMoveBpsPerSlot: number;
+  /// Optional per-market oracle authority PDA (from the SDK `oracleAuthorityPda`).
+  /// Passed through to each `AccrueAsset` so a market with a custom oracle
+  /// authority is priced by `authority`; omit for relayer-constant markets.
+  oracleAuthority?: PublicKey;
   maxSteps?: number;
 }): TransactionInstruction[] {
   const steps = planAccrualSteps({
@@ -48,6 +52,7 @@ export function buildAccrualInstructions(args: {
       assetIndex: args.assetIndex,
       effectivePrice: step.effectivePrice,
       fundingRateE9: args.fundingRateE9 ?? 0n,
+      oracleAuthority: args.oracleAuthority,
     }),
   );
 }

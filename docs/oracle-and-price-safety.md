@@ -6,8 +6,8 @@ source and chart data.
 Client-rendered prices, chart prices, and third-party frontend prices (Birdeye,
 DexScreener, GMGN) are for display and prefill only. Settlement, PnL, funding,
 and liquidation use the on-chain mark, advanced through the keeper/oracle path.
-The SDK takes the execution price as an explicit value sourced from on-chain mark
-state, never a chart price.
+The SDK's `fetchMarketState` reads the on-chain mark; use its `markPrice` as a
+trade's `executionPrice`, never a chart price.
 
 ## Price paths and their status
 

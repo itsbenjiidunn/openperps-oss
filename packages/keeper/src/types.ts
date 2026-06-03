@@ -10,6 +10,11 @@ export type KeeperMarket = {
   /// catch-up accrual may advance the price, so a large jump is split into steps
   /// that each clear the engine's per-slot move bound.
   maxPriceMoveBpsPerSlot: number;
+  /// When true, the keeper passes the market's `[ORACLE_SEED, market]` oracle
+  /// authority PDA to `AccrueAsset`, so a market that set a custom oracle
+  /// authority (via `SetOracleAuthority`) is priced by `deps.authority`. Omit
+  /// (or false) for markets that stay on the relayer constant.
+  useOracleAuthorityPda?: boolean;
 };
 
 export type KeeperLogLevel = "info" | "error";

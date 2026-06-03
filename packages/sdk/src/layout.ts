@@ -50,6 +50,10 @@ export const OFFSET_C_TOT = WRAPPER_HEADER_SIZE + ENGINE_OFFSET_C_TOT;
 // in-slot offset 57 (V16PodU64, [u8;8] LE). Verified via the byte-sizes test.
 const SLOT_EFFECTIVE_PRICE_IN_SLOT = 57;
 
+// `slot_last` within an engine slot, after the 32-byte slot wrapper: in-slot
+// offset 73 (V16PodU64, [u8;8] LE). Verified via the byte-sizes test.
+const SLOT_LAST_IN_SLOT = 73;
+
 /// Absolute byte offset of asset slot `i`'s start (its wrapper / pinned pool).
 export function slotOffset(i: number): number {
   return WRAPPER_HEADER_SIZE + MARKET_HEADER_SIZE + i * MARKET_SLOT_SIZE;
@@ -58,6 +62,11 @@ export function slotOffset(i: number): number {
 /// Absolute byte offset of asset slot `i`'s EWMA mark (effective_price).
 export function slotEffectivePriceOffset(i: number): number {
   return slotOffset(i) + SLOT_EFFECTIVE_PRICE_IN_SLOT;
+}
+
+/// Absolute byte offset of asset slot `i`'s `slot_last` (last-accrual slot).
+export function slotLastOffset(i: number): number {
+  return slotOffset(i) + SLOT_LAST_IN_SLOT;
 }
 
 /// Slot 0 mark, kept for back-compat with single-slot readers.

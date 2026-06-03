@@ -3,6 +3,7 @@ export * from "./instructions.ts";
 export * from "./config.ts";
 export * from "./intents.ts";
 export * from "./price.ts";
+export * from "./market-state.ts";
 export * from "./decoders.ts";
 export * from "./transactions.ts";
 export * from "./actions.ts";

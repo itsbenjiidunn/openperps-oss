@@ -36,8 +36,14 @@ oracle) instead of the static demo provider.
 
 ## Authority
 
-For `AccrueAsset`, the keeper `authority` keypair must match the market's pinned
-oracle authority. If it does not, the program rejects the oracle/funding update.
+For `AccrueAsset`, the keeper `authority` keypair must match the market's oracle
+authority. If it does not, the program rejects the oracle/funding update.
+
+By default that authority is the program's global relayer constant. A market
+authority can instead rotate it per market with the SDK's `setOracleAuthorityIx`
+(an `[ORACLE_SEED, market]` PDA). For such a market, set `useOracleAuthorityPda:
+true` on its `KeeperMarket` so the keeper passes the PDA to `AccrueAsset`, and
+run the keeper with the keypair you set as that market's oracle authority.
 
 ## Freshness
 

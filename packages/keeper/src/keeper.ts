@@ -6,6 +6,7 @@
 import { PublicKey, Transaction } from "@solana/web3.js";
 import {
   liquidateIx,
+  oracleAuthorityPda,
   readU64LE,
   slotEffectivePriceOffset,
   slotOffset,
@@ -70,6 +71,10 @@ export async function crankMarketOnce(
       deps.connection.getSlot("confirmed"),
     ]);
 
+    const oracleAuthority = market.useOracleAuthorityPda
+      ? oracleAuthorityPda(programId, marketAccount)[0]
+      : undefined;
+
     const instructions = buildAccrualInstructions({
       programId,
       market: marketAccount,
@@ -81,6 +86,7 @@ export async function crankMarketOnce(
       nowSlot,
       maxAccrualDtSlots: market.maxAccrualDtSlots,
       maxPriceMoveBpsPerSlot: market.maxPriceMoveBpsPerSlot,
+      oracleAuthority,
     });
 
     const tx = new Transaction().add(...instructions);
