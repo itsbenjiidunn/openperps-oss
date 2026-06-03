@@ -9,11 +9,11 @@
 /// JUP / SOL do have SPL mints, so the market can also reference the real
 /// token for display + future spot tie-ins.
 ///
-/// `pythFeedId` is the canonical Pyth pull-oracle feed id (hex). In Phase 5
-/// it is stored as metadata only, the on-chain price is still
-/// authority-set via ActivateMarket / AccrueAsset until the Pyth CPI lands
-/// (Phase 7). The UI labels a market "Pyth (CPI pending)" vs "Devnet
-/// simulated" accordingly.
+/// `pythFeedId` is the canonical Pyth pull-oracle feed id (hex). The program can
+/// price a `PYTH` market from the feed via `CrankPyth` (reads the receiver's
+/// `PriceUpdateV2` account); markets without a feed are authority-set via
+/// ActivateMarket / AccrueAsset. The UI labels a market "Pyth" vs "Manual"
+/// accordingly.
 
 export type OracleKind = "pyth" | "manual" | "dex";
 

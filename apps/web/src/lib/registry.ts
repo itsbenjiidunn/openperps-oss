@@ -16,8 +16,8 @@ export type RegistryEntry = {
   /// SPL mint of the underlying asset, if it is tokenized on Solana.
   /// Undefined for synthetics (BTC, ETH) traded off a price feed alone.
   baseMint?: string;
-  /// "dex" → priced from a DEX pool's on-chain EWMA; "pyth" → a
-  /// Pyth feed bound (CPI pending); "manual" → authority-set price.
+  /// "dex" → priced from a DEX pool's on-chain EWMA; "pyth" → priced from a
+  /// bound Pyth feed via CrankPyth; "manual" → authority-set price.
   oracleKind?: "pyth" | "manual" | "dex";
   /// Pyth price-feed id (hex) when oracleKind === "pyth".
   oracleFeedId?: string;

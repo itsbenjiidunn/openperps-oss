@@ -26,8 +26,8 @@ export type Market = {
   assetIndex: number;
   /// SPL mint of the underlying asset, if tokenized on Solana.
   baseMint?: string;
-  /// Oracle binding: "dex" (DEX-pool EWMA), "pyth" (feed bound,
-  /// CPI pending) or "manual".
+  /// Oracle binding: "dex" (DEX-pool EWMA), "pyth" (feed priced via CrankPyth)
+  /// or "manual" (authority-set).
   oracleKind?: "pyth" | "manual" | "dex";
   /// Pyth price-feed id (hex) when oracleKind === "pyth".
   oracleFeedId?: string;

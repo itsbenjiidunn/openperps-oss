@@ -942,7 +942,7 @@ function ReviewStep({
             oracleKind === "dex"
               ? "DEX pool (EWMA)"
               : oracleKind === "pyth"
-                ? "Pyth (CPI pending)"
+                ? "Pyth feed"
                 : "Manual"
           }
         />

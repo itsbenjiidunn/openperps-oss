@@ -14,7 +14,9 @@ Who may call each instruction, verified against the program handlers.
 | `CrankRefresh` | Permissionless | Re-certifies a portfolio against fresh oracle/funding inputs. |
 | `ActivateMarket` | Permissionless | Any signer claims a free (Disabled) slot and activates it with an authenticated price. |
 | `AccrueAsset` | Oracle authority moves the mark; any other signer is forced to a delta-0 (stale-clear only) accrual | Only the pinned oracle relayer key may change the price. |
-| `CrankOracle` | Permissionless | Reads the slot's pinned pool spot and EWMA-updates the mark (DEX-EWMA markets). |
+| `CrankOracle` | Permissionless | Reads the slot's pinned pool spot and EWMA-updates the mark; the pinned pool is the token-less mock (DEX-EWMA markets). |
+| `CrankDexSpot` | Permissionless | Reads the pinned pool's two SPL vault reserves, rejects a pool below the depth floor (`PoolTooThin`), and EWMA-updates the mark (DEX-priced markets). |
+| `CrankPyth` | Permissionless | Reads a Pyth `PriceUpdateV2` account (owner, feed id, Full verification, freshness, confidence, and EMA-divergence checked) and accrues the mark (PYTH markets). |
 | `PinOraclePool` | Permissionless, pin-once | Binds a pool to an asset slot; fails if the slot already has one. |
 | `ResolveMarket` | Market authority | Checks the header authority; one-way. |
 | `CreateVault` | Market authority | Allocates the vault token account at the vault PDA. |
@@ -25,6 +27,7 @@ Who may call each instruction, verified against the program handlers.
 | `SettlePnl` | Permissionless | Converts the user's own released PnL into capital; touches no other account. |
 | `SetOracleAuthority` | Market authority | Sets or rotates the market's oracle authority PDA (a zero key revokes to the constant). |
 | `SetDepositCap` | Market authority | Raises the per-portfolio deposit cap on a DEX-priced market above the program floor. |
+| `SetDexPool` | Market authority | Binds a DEX-priced market's pool: the two reserve vaults, base decimals, and minimum quote depth (`[DEXPOOL_SEED, market]` PDA). |
 | `CreateMockPool` / `MockSwap` | Permissionless | Token-less demo price source; gated behind the `devnet` cargo feature. |
 
 ## Oracle authority
@@ -37,7 +40,8 @@ may move the mark. Any other signer is forced to a delta-0 accrual: it can
 advance freshness (`slot_last`) but cannot change the price. Markets that never
 set a PDA keep working on the relayer constant.
 
-This makes the oracle key rotatable per market without a program upgrade, which
-is an operational improvement. It does not make the price trustless: a trusted
-key still sets the price. A trustless path is DEX-EWMA with pool-depth checks, or
-a real Pyth CPI (see [`oracle-and-price-safety.md`](oracle-and-price-safety.md)).
+This makes the oracle key rotatable per market without a program upgrade. It is an
+operator-controlled path: the pinned key sets the price. The verifiable paths are
+`CrankPyth` (reads a Pyth `PriceUpdateV2` account) and `CrankDexSpot` (a real
+constant-product pool with a depth floor); see
+[`oracle-and-price-safety.md`](oracle-and-price-safety.md).
