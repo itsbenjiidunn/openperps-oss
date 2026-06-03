@@ -31,5 +31,5 @@ real users.
 
 - [ ] Confirm the collateral SPL mint and vault PDAs.
 - [ ] Review the program wrapper, the SDK build path, and the keeper for your config.
-- [ ] Test the full lifecycle on devnet: create market, fund House, trade,
+- [ ] Test the full lifecycle on a test cluster: create market, fund House, trade,
       close/settle, withdraw.

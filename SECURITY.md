@@ -22,14 +22,15 @@ Engine findings belong upstream; this repo does not modify it.
 Verified: the Percolator risk engine (market isolation, margin, and settlement
 math) is formally verified upstream and vendored unmodified.
 
-Not verified: everything OpenPerps OSS adds around it. The program wrapper (SPL
-custody, vault PDAs, the House vault, `PlaceOrder` / `Withdraw` / `Liquidate`,
-oracle cranks, market metadata), the SDK, and the keeper have not had an
-independent third-party audit.
+In review scope: everything OpenPerps OSS adds around the engine. The program
+wrapper (SPL custody, vault PDAs, the House vault, `PlaceOrder` / `Withdraw` /
+`Liquidate`, oracle cranks, market metadata), the SDK, and the keeper are the
+target of independent review; their review status and the hardening in place are
+tracked in [`docs/security-and-limitations.md`](docs/security-and-limitations.md).
 
 Owned by the integrator: a deployment configures its own oracle source, keeper
-operator, liquidity and risk parameters, and market registry. Putting a
-deployment in front of real users is the deploying team's decision and review.
+operator, liquidity and risk parameters, market registry, and cluster. Taking a
+deployment to production is the deploying team's decision and review.
 
 See [`docs/security-and-limitations.md`](docs/security-and-limitations.md),
 [`docs/oracle-and-price-safety.md`](docs/oracle-and-price-safety.md), and

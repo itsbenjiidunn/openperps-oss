@@ -28,7 +28,7 @@ CreateVault
 CreateHouseVault
 FundHouseVault        (only when lpVault.initialDeposit is provided)
 ActivateMarket
-CreateMockPool        (optional, devnet/demo only)
+CreateMockPool        (optional, demo price source)
 oracle binding
 ```
 

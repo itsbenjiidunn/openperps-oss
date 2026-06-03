@@ -1,10 +1,10 @@
 /// node-create-market: build a custom OpenPerps market from a creation intent,
 /// register it in a local JSON registry, and print the plan and addresses.
 ///
-/// Configured for Solana devnet. By default it builds and registers without sending (so it
-/// runs without a funded key). To actually create the market on-chain, fund the
-/// authority, supply a real quote mint, and send `build.instructions` signed by
-/// [authority, market].
+/// Uses a sample Solana cluster configuration. It builds and registers a market
+/// locally without sending (so it runs without a funded key). To create the market
+/// on-chain, fund the authority, supply a real quote mint, and send
+/// `build.instructions` signed by [authority, market].
 
 import { writeFileSync } from "node:fs";
 import { Connection, Keypair, PublicKey } from "@solana/web3.js";

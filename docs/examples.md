@@ -1,7 +1,7 @@
 # Examples
 
-OpenPerps examples are organized by integration surface. Each example is
-configured for Solana devnet and can be adapted by integrators.
+OpenPerps examples are organized by integration surface. Each example uses sample
+Solana cluster configuration and can be adapted for each integrator's deployment.
 
 ## SDK-only
 

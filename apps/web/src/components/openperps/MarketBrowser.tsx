@@ -344,7 +344,7 @@ function EmptyState({ filtered }: { filtered: boolean }) {
       <p className="text-sm text-muted-foreground max-w-md mx-auto">
         {filtered
           ? "Try clearing the filters or search. "
-          : "OpenPerps is permissionless on devnet. Spin up a perp market against any SPL mint. "}
+          : "OpenPerps is permissionless. Spin up a perp market against any SPL mint. "}
         Launch your first one to start trading.
       </p>
       <Link

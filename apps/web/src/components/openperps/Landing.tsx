@@ -12,7 +12,7 @@ import "./landing.css";
 const PROGRAM_ID = "4zZDZaAEWmVdc6phAKCbpe5CgvZJZosLtpiJUEHnxNzy";
 const EXPLORER = `https://explorer.solana.com/address/${PROGRAM_ID}?cluster=devnet`;
 
-// Sample markets for the moving ticker (illustrative, devnet).
+// Sample markets for the moving ticker (illustrative).
 const TICKER: [string, string, string][] = [
   ["SOL-PERP", "150.00", "live"],
   ["BTC-PERP", "95,000.00", "live"],
@@ -58,7 +58,7 @@ export function Landing() {
         <div>
           <span className="eyebrow">
             <span className="d" />
-            LIVE ON DEVNET
+            LIVE MARKET STACK
           </span>
           <h1 className="hero-h">
             Any Solana token.
@@ -300,7 +300,7 @@ export function Landing() {
             <br />
             No permission.
           </h2>
-          <p>Connect a wallet and try the devnet market flow with test collateral.</p>
+          <p>Connect a wallet and try the market flow with test collateral.</p>
           <div className="row">
             <Link to="/app" className="btn btn-teal btn-lg">
               Start trading →
@@ -349,7 +349,7 @@ export function Landing() {
         </div>
         <div className="foot-bot">
           <span>© 2026 OpenPerps</span>
-          <span>Open source · Solana devnet</span>
+          <span>Open source · Solana</span>
         </div>
       </footer>
     </div>
@@ -374,7 +374,7 @@ function SlotStat() {
   return (
     <div className="bstat">
       <div className="n">{slot ? slot.toLocaleString() : "-"}</div>
-      <div className="l">live devnet block</div>
+      <div className="l">live block height</div>
     </div>
   );
 }

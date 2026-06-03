@@ -9,7 +9,7 @@ Who may call each instruction, verified against the program handlers.
 | `Deposit` | Portfolio owner signer | Moves SPL collateral into the vault; engine credits capital. |
 | `Withdraw` | Portfolio owner signer | Engine debits first; the vault PDA signs the token transfer out. |
 | `PlaceOrder` | Portfolio owner or registered delegate | Production trade path: user vs the market's House PDA. |
-| `Trade` | Single authority owning both portfolios | Raw two-account self-cross. Devnet-only: gated out of mainnet builds. |
+| `Trade` | Single authority owning both portfolios | Raw two-account self-cross. Gated behind the `devnet` cargo feature. |
 | `Liquidate` | Permissionless | Engine rejects a healthy account (`NonProgress`). |
 | `CrankRefresh` | Permissionless | Re-certifies a portfolio against fresh oracle/funding inputs. |
 | `ActivateMarket` | Permissionless | Any signer claims a free (Disabled) slot and activates it with an authenticated price. |
@@ -25,7 +25,7 @@ Who may call each instruction, verified against the program handlers.
 | `SettlePnl` | Permissionless | Converts the user's own released PnL into capital; touches no other account. |
 | `SetOracleAuthority` | Market authority | Sets or rotates the market's oracle authority PDA (a zero key revokes to the constant). |
 | `SetDepositCap` | Market authority | Raises the per-portfolio deposit cap on a DEX-priced market above the program floor. |
-| `CreateMockPool` / `MockSwap` | Permissionless, devnet-only | Token-less price toy; gated out of mainnet builds. |
+| `CreateMockPool` / `MockSwap` | Permissionless | Token-less demo price source; gated behind the `devnet` cargo feature. |
 
 ## Oracle authority
 

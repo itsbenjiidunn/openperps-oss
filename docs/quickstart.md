@@ -1,6 +1,7 @@
 # Quickstart
 
-OpenPerps examples use Solana devnet configuration.
+OpenPerps examples use sample Solana cluster configuration and can be adapted for
+each integrator's deployment.
 
 The fastest integration path is:
 
@@ -10,6 +11,7 @@ The fastest integration path is:
 4. use SDK build-only helpers for wallet apps or send-ready actions for Node scripts
 5. run a keeper against the same market config
 
-Mainnet-capable means SDK/config/program flows can target `mainnet-beta`. The
-authority-pushed oracle path is the next production-hardening item; the trustless
-price paths are designed in [`oracle-integration.md`](oracle-integration.md).
+The SDK, config, and program flows are cluster-configurable: an integrator points
+them at the cluster they deploy to. The oracle source, keeper operator, and
+liquidity are integrator-owned; the verifiable oracle paths are described in
+[`oracle-integration.md`](oracle-integration.md).

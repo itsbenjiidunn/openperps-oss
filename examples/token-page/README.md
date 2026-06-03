@@ -15,12 +15,11 @@ npm install
 npm run dev      # or: npm run build
 ```
 
-Open the printed URL, connect a devnet wallet, and you get the chart, a
-Long/Short widget, and your position, all from `@openperps/react` against one
-market config. [`src/App.tsx`](src/App.tsx) is the whole integration. A trade
-needs an initialized, funded portfolio; deposit devnet USDC through
-`@openperps/sdk` first.
+Open the printed URL, connect a wallet, and you get the chart, a Long/Short
+widget, and your position, all from `@openperps/react` against one market config.
+[`src/App.tsx`](src/App.tsx) is the whole integration. A trade needs an
+initialized, funded portfolio; deposit collateral through `@openperps/sdk` first.
 
 ## Boundaries
 
-This example targets Solana devnet.
+This example uses a sample Solana cluster configuration and can be adapted for your deployment.

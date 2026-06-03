@@ -22,7 +22,7 @@ export const Route = createFileRoute("/faucet")({
       { title: "Faucet: OpenPerps" },
       {
         name: "description",
-        content: "Mint devnet mock-USDC collateral to deposit into any OpenPerps market.",
+        content: "Mint mock-USDC test collateral to deposit into any OpenPerps market.",
       },
     ],
   }),
@@ -60,7 +60,7 @@ function Faucet() {
         </div>
         <div>
           <h1 className="font-display text-2xl font-semibold tracking-tight">
-            Devnet collateral faucet
+            Test collateral faucet
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
             Every OpenPerps market is margined in the same shared mock-USDC. Mint some here once,
@@ -149,8 +149,8 @@ function Faucet() {
               </a>
             </div>
             <p>
-              6 decimals. The mint authority is an app-held devnet keypair, fine here because the
-              token is worthless test collateral.
+              6 decimals. The mint authority is an app-held keypair, fine here because the token is
+              worthless test collateral.
             </p>
           </div>
         </div>

@@ -26,4 +26,4 @@ mint, and sign and send `build.instructions` with `[authority, market]`.
 
 ## Boundaries
 
-This example targets Solana devnet.
+This example uses a sample Solana cluster configuration and can be adapted for your deployment.

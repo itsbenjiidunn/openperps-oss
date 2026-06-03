@@ -8,7 +8,7 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "List a perp market for any Solana token and trade it long or short. No permission. No admin keys. Live on devnet.",
+          "List a perp market for any Solana token and trade it long or short. No permission. No admin keys. Built for Solana token markets.",
       },
     ],
   }),

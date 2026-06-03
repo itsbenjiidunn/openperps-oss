@@ -375,7 +375,7 @@ function Launch() {
             live. Use this to list <span className="text-foreground">any other SPL token</span> as a
             perp in its <span className="text-foreground">own isolated market</span>: you create the
             group and seed its House (LP) with your {QUOTE_SYMBOL}. Risk stays contained to that
-            seed. Runs on Solana devnet.
+            seed.
           </p>
         </div>
       </header>
@@ -653,8 +653,7 @@ function AssetStep({
 
         {customMintValid && !detecting && !detected && (
           <div className="text-[11px] text-muted-foreground">
-            Not in Jupiter's registry (devnet mint?). Enter the ticker and seed price manually
-            below.
+            Not in Jupiter's registry. Enter the ticker and seed price manually below.
           </div>
         )}
 
@@ -719,8 +718,8 @@ function OracleStep({
         </div>
         <div className="text-[11px] text-muted-foreground mt-1">
           A mock constant-product pool is created and pinned at the seed price below. The mark is
-          its on-chain EWMA, anyone can crank, no keeper. On mainnet this would be a Raydium /
-          pumpswap pool.
+          its on-chain EWMA, anyone can crank, no keeper. With a real pool this is a Raydium /
+          pumpswap pair.
         </div>
       </button>
 
@@ -734,7 +733,7 @@ function OracleStep({
       >
         <div className="flex items-center gap-2">
           <Radio className="h-4 w-4 text-violet" />
-          <span className="font-medium">Manual / devnet-simulated</span>
+          <span className="font-medium">Manual / simulated pool</span>
         </div>
         <div className="text-[11px] text-muted-foreground mt-1">
           No pool, you set the price and refresh it via AccrueAsset on the Advanced page. Simplest,
@@ -944,7 +943,7 @@ function ReviewStep({
               ? "DEX pool (EWMA)"
               : oracleKind === "pyth"
                 ? "Pyth (CPI pending)"
-                : "Manual / devnet"
+                : "Manual"
           }
         />
         <ReviewRow

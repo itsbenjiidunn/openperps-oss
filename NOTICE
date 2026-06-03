@@ -17,7 +17,8 @@ synced 2026-06-01). They are not hand-modified. Only crates/program is
 OpenPerps's own wrapper, adapted to the engine's current API. Wrapper-specific
 adaptations are documented in docs/engine-upstream.md.
 
-UPSTREAM DISCLAIMER (preserved from Percolator):
+The following disclaimer is preserved verbatim from upstream Percolator and
+applies to the vendored research engine in crates/engine, not to OpenPerps OSS:
   EDUCATIONAL RESEARCH PROJECT — NOT PRODUCTION READY. NOT AUDITED.
   Do NOT use with real funds.
 

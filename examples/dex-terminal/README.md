@@ -21,4 +21,4 @@ npm run dev      # or: npm run build
 
 ## Boundaries
 
-This example targets Solana devnet.
+This example uses a sample Solana cluster configuration and can be adapted for your deployment.

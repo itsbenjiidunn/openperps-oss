@@ -25,4 +25,4 @@ signs and submits from their own wallet. The bot never holds user funds.
 
 ## Boundaries
 
-This example targets Solana devnet.
+This example uses a sample Solana cluster configuration and can be adapted for your deployment.

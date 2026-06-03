@@ -1,12 +1,13 @@
 # Oracle Integration (design)
 
-Design and integration plan for the trustless oracle paths. Part A (Pyth) is
-implemented and validated on devnet; Part B (depth- and TWAP-aware DEX-EWMA) is
-still a spec. This moves settlement pricing from the trusted relayer key to
-verifiable, per-tier sources, intentionally concrete so each part is built and
-validated against real accounts.
+Design and integration notes for the verifiable oracle paths. Part A (Pyth) and
+Part B (a real constant-product reader with a depth gate) are implemented and
+validated against live accounts; the program-side TWAP for Part B is the next
+layer. This moves settlement pricing from the operator-controlled relayer key to
+verifiable, per-tier sources, kept concrete so each part is built and validated
+against real accounts.
 
-For current oracle status (what is live / stub / future) see
+For the current per-path status see
 [`oracle-and-price-safety.md`](oracle-and-price-safety.md).
 
 ## Baseline (today)
@@ -14,7 +15,8 @@ For current oracle status (what is live / stub / future) see
 - `oracle_kind`: `MANUAL(0)`, `PYTH(1)`, `DEX_EWMA(2)`.
 - Authority relayer (`AccrueAsset`) is live; the oracle authority is rotatable
   per market (`SetOracleAuthority`). `PYTH` is implemented via `CrankPyth` (Part A).
-  `DEX_EWMA` reads a devnet mock pool (gated out of mainnet).
+  `DEX_EWMA` prices from a real constant-product pool via `CrankDexSpot` (Part B);
+  the token-less mock source stays behind the `devnet` cargo feature.
 - The engine already enforces a per-slot price-move bound, a freshness window,
   and an EWMA (alpha 0.2). The per-portfolio deposit cap (`SetDepositCap`) bounds
   the profit extractable by manipulating a thin pool.
@@ -26,13 +28,13 @@ economic cap (done).
 
 ## Part A: Pyth pull-oracle (majors: SOL / BTC / ETH)
 
-**Status: implemented and validated on devnet.** `crates/program/src/pyth.rs`
-hand-parses `PriceUpdateV2` (the receiver SDK is not pulled into the SBF build),
-with a golden unit test against a real devnet SOL/USD account, and
-`packages/sdk/scripts/devnet-pyth.ts` cranks the live feed on-chain. The design
-below is what was built, including the step 2 confidence-interval gate (reject
-`conf / price` above 2%) and a spot/EMA-divergence gate (reject a spike above
-10%). The remaining trustless work is Part B (DEX-EWMA).
+**Status: implemented and validated against a live account.**
+`crates/program/src/pyth.rs` hand-parses `PriceUpdateV2` (the receiver SDK is not
+pulled into the SBF build), with a golden unit test against a real SOL/USD account
+snapshot, and `packages/sdk/scripts/devnet-pyth.ts` cranks a live feed on-chain.
+The design below is what was built, including the step 2 confidence-interval gate
+(reject `conf / price` above 2%) and a spot/EMA-divergence gate (reject a spike
+above 10%).
 
 Pyth's Solana pull model: a permissionless crank posts a `PriceUpdateV2` account
 (owned by the Pyth Receiver program) holding a verified price for a feed id:
@@ -61,9 +63,17 @@ Hard parts / validation needs:
   ema_conf} + posted_slot). Hand-parsing **requires a real account to validate**.
 - **Scale conversion** is fixed-point and must be overflow-safe and exact.
 - A wrong parse or conversion mis-prices every settlement → unit-test the math,
-  and validate parsing against a **real devnet `PriceUpdateV2`**.
+  and validate parsing against a **real `PriceUpdateV2` account**.
 
 ## Part B: DEX-EWMA with pool depth + TWAP (custom SPL tokens)
+
+**Status: reader + depth gate implemented and validated on-chain.**
+`crates/program/src/dexamm.rs` reads the two reserve vaults as standard SPL token
+accounts (AMM-agnostic), derives the spot, and gates on quote-side depth.
+`SetDexPool` pins the vaults, base decimals, and floor; `CrankDexSpot` folds the
+spot into the EWMA mark. `packages/sdk/scripts/devnet-dex.ts` validates it against
+real token accounts. The program-side TWAP (step 3) ships as pure helpers in
+`dexamm`; the PDA wiring is the next layer.
 
 Goal: price a custom token from a real on-chain AMM, manipulation-resistant.
 
@@ -86,7 +96,8 @@ Design:
 Hard parts / validation needs:
 
 - **AMM layout parsing** is AMM- and version-specific; a wrong parse mis-prices.
-  Validate against a **real devnet pool account**.
+  Reading the stable SPL vault layout (done) sidesteps this; validate against
+  **real token accounts**.
 - **TWAP storage:** prefer a TWAP-state PDA over a slot-layout change.
 - **Depth floor + window** are per-market config (a config PDA, same pattern as
   `SetDepositCap`).
@@ -105,22 +116,21 @@ and test this stale-lock path.
   TWAP accumulation, depth-gate, and staleness / confidence logic as pure
   functions with unit tests. These can ship as a library before the account
   wiring.
-- **Needs devnet validation:** the account parsing (`PriceUpdateV2`, AMM layout)
-  and the cranks. Build against real accounts and validate before shipping.
-- **Pairs with audit:** this is the highest-risk code in the repo; do the account
-  wiring in the audit window.
+- **Validated against live accounts (done):** the account parsing (`PriceUpdateV2`,
+  the SPL vault reserves) and the cranks, exercised on-chain by the scripts above.
+- **Pairs with review:** this is the highest-risk code in the repo; it is part of
+  the independent-review scope.
 
-## Environment / decisions required
+## Environment / decisions (made)
 
-- A devnet Pyth feed with a posted `PriceUpdateV2` (majors).
-- A real devnet AMM pool for the SPL path; decide the AMM target (Raydium CPMM
-  recommended first).
-- Confirm `pyth-solana-receiver-sdk` builds under Pinocchio/SBF, or commit to
-  hand-parsing `PriceUpdateV2`.
+- Pyth: read the receiver's `PriceUpdateV2` account directly (hand-parsed, no
+  receiver SDK in the SBF build), validated against a live SOL/USD feed account.
+- SPL path: read the pool's two SPL reserve vaults rather than a version-specific
+  AMM layout, so the reader is AMM-agnostic (works for Raydium CPMM and similar).
 
 ## Backward compatibility
 
 All new state uses PDAs (TWAP-state, per-market oracle config) following the
 established pattern, so there is no market-header layout change and existing
 markets are unaffected. New cranks are new instructions; the relayer
-`AccrueAsset` path stays for `MANUAL` and devnet markets.
+`AccrueAsset` path stays for `MANUAL` markets.

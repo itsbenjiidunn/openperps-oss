@@ -13,9 +13,9 @@ trade's `executionPrice`, never a chart price.
 
 | Path | How it prices | Status |
 | --- | --- | --- |
-| Authority relayer (`AccrueAsset`) | An off-chain relayer signs and pushes the mark on-chain; the engine enforces a per-slot move bound and a freshness window. | **Live on devnet.** The price-setting key defaults to a single pinned relayer constant; a market authority can rotate it per market with `SetOracleAuthority` (a `[ORACLE_SEED, market]` PDA), without a program upgrade. Still a trusted price-setter, not a trustless feed. |
-| DEX-EWMA (`CrankOracle`) | A permissionless crank reads a pinned on-chain pool's spot price and folds it into the mark via an EWMA (alpha 0.2), bounded by the per-slot move cap and freshness window. | **Partial.** EWMA, move bound, and freshness exist. The devnet pool is a token-less mock (`CreateMockPool` / `MockSwap`, gated out of mainnet builds). A real AMM reader plus pool-depth / TWAP checks are not implemented yet. |
-| Pyth (`oracle_kind = PYTH`) | A Pyth feed id is bound to the market. | **Live on devnet.** `CrankPyth` reads the Pyth receiver's `PriceUpdateV2` account, checks its owner, feed id, Full verification, freshness, confidence interval, and spot/EMA divergence, then accrues the mark, bounded by the per-slot clamp. Validated end to end against the live devnet SOL/USD feed (`7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE`). A decentralized feed (Wormhole guardian quorum), not a single app key. |
+| Authority relayer (`AccrueAsset`) | An off-chain relayer signs and pushes the mark on-chain; the engine enforces a per-slot move bound and a freshness window. | Operator-controlled. The price-setting key defaults to a pinned relayer constant; a market authority rotates it per market with `SetOracleAuthority` (a `[ORACLE_SEED, market]` PDA), without a program upgrade. A verifiable per-asset feed is on the roadmap. |
+| DEX-EWMA (`CrankDexSpot`) | A permissionless crank reads a real constant-product pool's two SPL vault reserves, derives the spot, and folds it into the mark via an EWMA (alpha 0.2), bounded by the per-slot move cap and freshness window. | Implemented. `CrankDexSpot` prices from the pinned vaults and rejects a pool below a per-market depth floor (`PoolTooThin`). A program-side TWAP is the next layer. The token-less `CreateMockPool` / `MockSwap` demo source stays behind the `devnet` cargo feature. |
+| Pyth (`oracle_kind = PYTH`) | A Pyth feed id is bound to the market. | Implemented. `CrankPyth` reads the Pyth receiver's `PriceUpdateV2` account, checks its owner, feed id, Full verification, freshness, confidence interval, and spot/EMA divergence, then accrues the mark, bounded by the per-slot clamp. Validated against a live Pyth SOL/USD `PriceUpdateV2` account (`7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE`). A decentralized feed (Wormhole guardian quorum), not a single app key. |
 
 ## Already enforced
 
@@ -24,16 +24,16 @@ trade's `executionPrice`, never a chart price.
 - Freshness window (`max_accrual_dt_slots`): a stale slot locks risk-increasing
   trades until it is cranked forward.
 - A per-portfolio collateral cap on DEX-priced markets bounds the profit an
-  attacker can extract by manipulating a thin pool. This is a coarse backstop,
-  not a substitute for pool-depth checks.
+  attacker can extract by manipulating a thin pool. `CrankDexSpot` adds a
+  per-market quote-depth floor on top.
 
-## Known gaps
+## Roadmap
 
-- The authority relayer is a trusted key. It is now rotatable per market via
-  `SetOracleAuthority`, but a trusted key still sets the price; this is not a
-  trustless feed.
-- DEX-EWMA has no pool-depth or TWAP check yet: a thin or Sybil-funded pool can
-  still be pushed within the per-slot bound.
+- The operator-controlled relayer path (`AccrueAsset`) sets the mark from a pinned
+  key, rotatable per market via `SetOracleAuthority`. A verifiable feed for every
+  asset is the next layer; the Pyth path already provides one for supported feeds.
+- DEX-EWMA gates on pool depth; a program-side TWAP, so a manipulator must sustain
+  a move across a window, is the next layer.
 
-Depth- and TWAP-aware DEX-EWMA for custom tokens is designed in
+Depth- and TWAP-aware DEX-EWMA for custom tokens is detailed in
 [`oracle-integration.md`](oracle-integration.md).
