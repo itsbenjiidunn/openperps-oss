@@ -4,7 +4,7 @@
 import { PublicKey, SystemProgram, TransactionInstruction } from "@solana/web3.js";
 import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 
-import { PORTFOLIO_SEED } from "./layout.ts";
+import { ORACLE_SEED, PORTFOLIO_SEED } from "./layout.ts";
 
 export { TOKEN_PROGRAM_ID };
 
@@ -30,6 +30,7 @@ export const Tag = {
   PinOraclePool: 18,
   SetDelegate: 19,
   SettlePnl: 20,
+  SetOracleAuthority: 21,
 } as const;
 
 /// Side encoding for `PlaceOrder`.
@@ -451,13 +452,21 @@ export function accrueAssetIx(args: {
   assetIndex: number;
   effectivePrice: bigint;
   fundingRateE9: bigint;
+  /** Optional per-market oracle authority PDA from `oracleAuthorityPda`. Pass it
+   *  for a market that set a custom oracle authority via `setOracleAuthorityIx`;
+   *  omit it for markets that stay on the relayer constant. */
+  oracleAuthority?: PublicKey;
 }): TransactionInstruction {
+  const keys = [
+    { pubkey: args.market, isSigner: false, isWritable: true },
+    { pubkey: args.authority, isSigner: true, isWritable: false },
+    ...(args.oracleAuthority
+      ? [{ pubkey: args.oracleAuthority, isSigner: false, isWritable: false }]
+      : []),
+  ];
   return new TransactionInstruction({
     programId: args.programId,
-    keys: [
-      { pubkey: args.market, isSigner: false, isWritable: true },
-      { pubkey: args.authority, isSigner: true, isWritable: false },
-    ],
+    keys,
     data: encodeAccrueAsset(args.assetIndex, args.effectivePrice, args.fundingRateE9),
   });
 }
@@ -774,5 +783,48 @@ export function setDelegateIx(args: {
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
     ],
     data: encodeSetDelegate(args.delegate.toBytes(), args.bump),
+  });
+}
+
+/** The per-market oracle authority PDA; matches Rust `[ORACLE_SEED, market]`. */
+export function oracleAuthorityPda(
+  programId: PublicKey,
+  market: PublicKey,
+): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync([ORACLE_SEED, market.toBuffer()], programId);
+}
+
+export function encodeSetOracleAuthority(authority: Uint8Array, bump: number): Buffer {
+  expect32(authority, "authority");
+  const data = new Uint8Array(1 + 32 + 1);
+  data[0] = Tag.SetOracleAuthority;
+  data.set(authority, 1);
+  data[33] = bump;
+  return Buffer.from(data);
+}
+
+/// Set or rotate a market's oracle authority (the key allowed to move the mark
+/// via AccrueAsset). Market-authority-signed; the all-zero pubkey revokes back
+/// to the program constant. The PDA is created on first use.
+export function setOracleAuthorityIx(args: {
+  programId: PublicKey;
+  /** The PDA from `oracleAuthorityPda(programId, market)`. */
+  oracleAuthorityPda: PublicKey;
+  market: PublicKey;
+  /** The market authority (signer; pays PDA rent on first set). */
+  authority: PublicKey;
+  /** The new oracle authority key (all-zero to revoke to the constant). */
+  newAuthority: PublicKey;
+  bump: number;
+}): TransactionInstruction {
+  return new TransactionInstruction({
+    programId: args.programId,
+    keys: [
+      { pubkey: args.oracleAuthorityPda, isSigner: false, isWritable: true },
+      { pubkey: args.market, isSigner: false, isWritable: false },
+      { pubkey: args.authority, isSigner: true, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    data: encodeSetOracleAuthority(args.newAuthority.toBytes(), args.bump),
   });
 }

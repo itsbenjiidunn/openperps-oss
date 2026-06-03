@@ -20,10 +20,11 @@ use crate::{
         accrue_asset_buffer, activate_market_buffer, crank_oracle_buffer, crank_refresh_buffer,
         deposit_buffer, init_market_buffer, init_portfolio_buffer,
         liquidate_buffer, market_engine_split_mut, market_header, market_wrapper_header,
-        delegate_of, mock_pool_spot_price, portfolio_account_size,
-        portfolio_split_mut, resolve_market_buffer, set_delegate_buffer, set_slot_oracle_pool,
+        delegate_of, mock_pool_spot_price, oracle_authority_of, portfolio_account_size,
+        portfolio_split_mut, resolve_market_buffer, set_delegate_buffer,
+        set_oracle_authority_buffer, set_slot_oracle_pool,
         settle_pnl_buffer, slot_oracle_pool, trade_buffer, withdraw_buffer, DelegateAccount,
-        DELEGATE_SEED,
+        DELEGATE_SEED, OracleAuthorityAccount, ORACLE_SEED,
         HOUSE_SEED, PORTFOLIO_SEED, VAULT_SEED,
     },
 };
@@ -45,6 +46,32 @@ const ORACLE_AUTHORITY: Pubkey = [
     106, 217, 250, 24, 98, 232, 106, 23, 98, 81, 231, 177, 129, 19, 153, 186, 245, 127, 20, 230,
     67, 118, 117, 89, 222, 228, 165, 212, 72, 230, 40, 138,
 ];
+
+/// Resolve the oracle authority for a market's `AccrueAsset` price gate. If the
+/// optional per-market oracle authority PDA (account index 2) is present, owned
+/// by this program, initialized, bound to this market, and non-zero, that key
+/// governs; otherwise the global relayer constant does. A valid such account can
+/// only exist at the canonical `[ORACLE_SEED, market]` PDA (SetOracleAuthority
+/// creates it there under the market authority), so a discriminator + market
+/// match is enough to trust it. Markets that never set one stay on the relayer.
+fn resolve_oracle_authority(
+    program_id: &Pubkey,
+    accounts: &[AccountInfo],
+    market_key: &Pubkey,
+) -> Pubkey {
+    if let Some(acc) = accounts.get(2) {
+        if unsafe { acc.owner() } == program_id {
+            if let Ok(data) = acc.try_borrow_data() {
+                if let Ok((mkt, auth)) = oracle_authority_of(&data) {
+                    if mkt == *market_key && auth != [0u8; 32] {
+                        return auth;
+                    }
+                }
+            }
+        }
+    }
+    ORACLE_AUTHORITY
+}
 
 /// Per-portfolio collateral ceiling (quote atoms, 6 decimals = $1,000) on a
 /// DEX-priced (memecoin) market. Caps the largest position any one account can
@@ -208,6 +235,9 @@ pub fn process_instruction(
             process_set_delegate(program_id, accounts, delegate, bump)
         }
         OpenPerpsInstruction::SettlePnl => process_settle_pnl(program_id, accounts),
+        OpenPerpsInstruction::SetOracleAuthority { authority, bump } => {
+            process_set_oracle_authority(program_id, accounts, authority, bump)
+        }
     }
 }
 
@@ -426,7 +456,7 @@ fn process_accrue_asset(
     // the client reading it and the tx landing. (Devnet/early-mainnet trust
     // model: a pinned relayer key; the trustless variant sources the price from
     // the on-chain DEX pool via CrankOracle.)
-    let is_oracle = *authority.key() == ORACLE_AUTHORITY;
+    let is_oracle = *authority.key() == resolve_oracle_authority(program_id, accounts, market.key());
     let (effective_price, funding_rate_e9) = if is_oracle {
         (effective_price, funding_rate_e9)
     } else {
@@ -1475,5 +1505,83 @@ fn process_set_delegate(
         .try_borrow_mut_data()
         .map_err(|_| OpenPerpsError::InvalidAccountData)?;
     set_delegate_buffer(&mut data, portfolio_key, delegate)?;
+    Ok(())
+}
+
+/// Set or rotate the market's oracle authority. Only the market authority (the
+/// key in the wrapper header) may call. The per-market PDA at
+/// `[ORACLE_SEED, market]` is created on first use; once set, its key is the
+/// only one allowed to move the mark via `AccrueAsset` (a zero key revokes back
+/// to the program constant). This removes the global single-key trust point for
+/// markets that opt in, without changing the header layout or breaking markets
+/// that stay on the relayer constant.
+fn process_set_oracle_authority(
+    program_id: &Pubkey,
+    accounts: &[AccountInfo],
+    new_authority: [u8; 32],
+    bump: u8,
+) -> ProgramResult {
+    let [oracle_pda, market, authority, _system_program, ..] = accounts else {
+        return Err(OpenPerpsError::InvalidInstruction.into());
+    };
+    if !authority.is_signer() {
+        return Err(OpenPerpsError::MissingRequiredSignature.into());
+    }
+    if !oracle_pda.is_writable() {
+        return Err(OpenPerpsError::InvalidAccountData.into());
+    }
+    if unsafe { market.owner() } != program_id {
+        return Err(OpenPerpsError::InvalidAccountOwner.into());
+    }
+
+    // Only the market authority may set or rotate the oracle authority.
+    let market_key = *market.key();
+    {
+        let data = market
+            .try_borrow_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        let wrapper = market_wrapper_header(&data)?;
+        if !wrapper.is_initialized() {
+            return Err(OpenPerpsError::UninitializedAccount.into());
+        }
+        if wrapper.authority != *authority.key() {
+            return Err(OpenPerpsError::MissingRequiredSignature.into());
+        }
+    }
+
+    // Verify the PDA address, then create it on first use.
+    let derived = create_program_address(
+        &[ORACLE_SEED, market_key.as_ref(), &[bump]],
+        program_id,
+    )
+    .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    if *oracle_pda.key() != derived {
+        return Err(OpenPerpsError::InvalidAccountData.into());
+    }
+
+    if unsafe { oracle_pda.owner() } != program_id {
+        let rent = Rent::get()?;
+        let lamports = rent.minimum_balance(OracleAuthorityAccount::LEN);
+        let bump_arr = [bump];
+        let seeds = [
+            Seed::from(ORACLE_SEED),
+            Seed::from(market_key.as_ref()),
+            Seed::from(bump_arr.as_ref()),
+        ];
+        let signer = Signer::from(seeds.as_ref());
+        system_create_account(
+            authority,
+            oracle_pda,
+            lamports,
+            OracleAuthorityAccount::LEN as u64,
+            program_id,
+            &[signer],
+        )?;
+    }
+
+    let mut data = oracle_pda
+        .try_borrow_mut_data()
+        .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    set_oracle_authority_buffer(&mut data, market_key, new_authority)?;
     Ok(())
 }

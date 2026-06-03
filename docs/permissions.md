@@ -23,11 +23,20 @@ Who may call each instruction, verified against the program handlers.
 | `WithdrawHouseVault` | Market authority | Engine refuses while the House holds open positions. |
 | `SetDelegate` | Portfolio owner signer | Authorizes a session key that can trade but never withdraw. |
 | `SettlePnl` | Permissionless | Converts the user's own released PnL into capital; touches no other account. |
+| `SetOracleAuthority` | Market authority | Sets or rotates the market's oracle authority PDA (a zero key revokes to the constant). |
 | `CreateMockPool` / `MockSwap` | Permissionless, devnet-only | Token-less price toy; gated out of mainnet builds. |
 
 ## Oracle authority
 
-In v1 a single pinned relayer key (a program constant) is the only key that may
-move a market's mark via `AccrueAsset`. Any other signer is forced to a delta-0
-accrual: it can advance freshness (`slot_last`) but cannot change the price.
-Making this a rotatable, per-market authority is on the roadmap.
+By default a single pinned relayer key (a program constant) is the only key that
+may move a market's mark via `AccrueAsset`. A market authority can override this
+per market with `SetOracleAuthority`, which writes a `[ORACLE_SEED, market]` PDA;
+when that PDA is passed to `AccrueAsset` and names a non-zero key, only that key
+may move the mark. Any other signer is forced to a delta-0 accrual: it can
+advance freshness (`slot_last`) but cannot change the price. Markets that never
+set a PDA keep working on the relayer constant.
+
+This makes the oracle key rotatable per market without a program upgrade, which
+is an operational improvement. It does not make the price trustless: a trusted
+key still sets the price. A trustless path is DEX-EWMA with pool-depth checks, or
+a real Pyth CPI (see [`oracle-and-price-safety.md`](oracle-and-price-safety.md)).

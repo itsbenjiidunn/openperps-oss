@@ -137,8 +137,14 @@ export const DELEGATE_SEED = new TextEncoder().encode("delegate");
 /** User-portfolio PDA seed prefix — matches Rust `state::PORTFOLIO_SEED`. */
 export const PORTFOLIO_SEED = new TextEncoder().encode("portfolio");
 
+/** Oracle-authority PDA seed prefix; matches Rust `state::ORACLE_SEED`. */
+export const ORACLE_SEED = new TextEncoder().encode("oracle");
+
 /** DelegateAccount size: discriminator(8) + portfolio(32) + delegate(32). */
 export const DELEGATE_ACCOUNT_SIZE = 72;
+
+/** OracleAuthorityAccount size: discriminator(8) + market(32) + authority(32). */
+export const ORACLE_AUTHORITY_ACCOUNT_SIZE = 72;
 
 // MockPoolHeader offsets: discriminator(8) + base_mint(32) + quote_mint(32)
 // + reserve_base(8) + reserve_quote(8) + authority(32).

@@ -97,6 +97,13 @@ pub const HOUSE_SEED: &[u8] = b"house";
 /// require the owner — so a leaked session key can trade but not drain funds.
 pub const DELEGATE_SEED: &[u8] = b"delegate";
 
+/// PDA seed prefix for a market's oracle authority. Full seeds:
+/// `[ORACLE_SEED, market.key()]`. Optional, per-market, owner-rotatable: when
+/// set, its key overrides the global relayer constant for that market's
+/// `AccrueAsset` price gate. Markets that never set one fall back to the
+/// constant, so the existing relayer keeps working unchanged.
+pub const ORACLE_SEED: &[u8] = b"oracle";
+
 /// PDA seed prefix for a user's portfolio under a market. Full seed list is
 /// `[PORTFOLIO_SEED, owner.key(), market.key()]`. Makes a user's account on a
 /// given market group DETERMINISTIC — one account per (owner, market), derivable
@@ -107,6 +114,9 @@ pub const PORTFOLIO_SEED: &[u8] = b"portfolio";
 
 /// Magic bytes for a [`DelegateAccount`].
 pub const DELEGATE_DISCRIMINATOR: [u8; 8] = *b"OPDELEGT";
+
+/// Magic bytes for an [`OracleAuthorityAccount`].
+pub const ORACLE_AUTHORITY_DISCRIMINATOR: [u8; 8] = *b"OPORAUTH";
 
 /// Tiny PDA holding the session key authorized to place orders for one
 /// portfolio. Owner-set; all-zero `delegate` means revoked. `portfolio` binds
@@ -168,6 +178,58 @@ pub fn delegate_of(buf: &[u8]) -> Result<([u8; 32], [u8; 32]), OpenPerpsError> {
         return Ok(([0u8; 32], [0u8; 32]));
     }
     Ok((acc.portfolio, acc.delegate))
+}
+
+/// Per-market oracle authority PDA. Optional and owner-rotatable: when present,
+/// its `authority` is the only key allowed to MOVE this market's mark via
+/// `AccrueAsset`, overriding the global relayer constant. `market` binds it to
+/// one market group so the gate can trust it by discriminator + market match.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Pod, Zeroable)]
+pub struct OracleAuthorityAccount {
+    pub discriminator: [u8; 8],
+    pub market: [u8; 32],
+    pub authority: [u8; 32],
+}
+
+impl OracleAuthorityAccount {
+    pub const LEN: usize = core::mem::size_of::<Self>();
+    pub fn is_initialized(&self) -> bool {
+        self.discriminator == ORACLE_AUTHORITY_DISCRIMINATOR
+    }
+}
+
+/// Write/overwrite a market's oracle authority PDA (market-authority-authorized).
+/// A zero `authority` revokes it: the gate then falls back to the constant.
+pub fn set_oracle_authority_buffer(
+    buf: &mut [u8],
+    market: [u8; 32],
+    authority: [u8; 32],
+) -> Result<(), OpenPerpsError> {
+    if buf.len() < OracleAuthorityAccount::LEN {
+        return Err(OpenPerpsError::AccountDataTooSmall);
+    }
+    let acc: &mut OracleAuthorityAccount =
+        pod_from_bytes_mut(&mut buf[..OracleAuthorityAccount::LEN])?;
+    acc.discriminator = ORACLE_AUTHORITY_DISCRIMINATOR;
+    acc.market = market;
+    acc.authority = authority;
+    Ok(())
+}
+
+/// Read `(market, authority)` from an oracle authority PDA; both zero if
+/// uninitialized.
+pub fn oracle_authority_of(buf: &[u8]) -> Result<([u8; 32], [u8; 32]), OpenPerpsError> {
+    if buf.len() < OracleAuthorityAccount::LEN {
+        return Err(OpenPerpsError::AccountDataTooSmall);
+    }
+    let acc: &OracleAuthorityAccount =
+        bytemuck::try_from_bytes(&buf[..OracleAuthorityAccount::LEN])
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    if !acc.is_initialized() {
+        return Ok(([0u8; 32], [0u8; 32]));
+    }
+    Ok((acc.market, acc.authority))
 }
 
 /// OpenPerps-owned prefix at the start of a market-group account, in front
@@ -1070,6 +1132,18 @@ mod tests {
         let (pf, del) = delegate_of(&buf).unwrap();
         assert_eq!(pf, [7u8; 32]);
         assert_eq!(del, [0u8; 32]);
+    }
+
+    #[test]
+    fn oracle_authority_buffer_roundtrip() {
+        let mut buf = vec![0u8; OracleAuthorityAccount::LEN];
+        // uninitialized → zeros
+        assert_eq!(oracle_authority_of(&buf).unwrap(), ([0u8; 32], [0u8; 32]));
+        set_oracle_authority_buffer(&mut buf, [3u8; 32], [9u8; 32]).unwrap();
+        assert_eq!(oracle_authority_of(&buf).unwrap(), ([3u8; 32], [9u8; 32]));
+        // revoke (zero authority): market stays, authority clears → const fallback
+        set_oracle_authority_buffer(&mut buf, [3u8; 32], [0u8; 32]).unwrap();
+        assert_eq!(oracle_authority_of(&buf).unwrap(), ([3u8; 32], [0u8; 32]));
     }
 
     #[test]

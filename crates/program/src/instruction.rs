@@ -30,6 +30,7 @@ pub mod tag {
     pub const PIN_ORACLE_POOL: u8 = 18;
     pub const SET_DELEGATE: u8 = 19;
     pub const SETTLE_PNL: u8 = 20;
+    pub const SET_ORACLE_AUTHORITY: u8 = 21;
 }
 
 /// Decoded OpenPerps instruction.
@@ -317,6 +318,20 @@ pub enum OpenPerpsInstruction {
     ///   2. `[writable]` House portfolio (the market's House Vault PDA)
     ///   3. `[signer]`   any signer (pays fee)
     SettlePnl,
+    /// Set or rotate a market's oracle authority (the key allowed to move the
+    /// mark via `AccrueAsset`). A zero `authority` revokes it, and the gate
+    /// falls back to the program constant. Only the market authority may call;
+    /// the PDA is created on first use.
+    ///
+    /// Accounts:
+    ///   0. `[writable]`         oracle authority PDA at `[ORACLE_SEED, market.key()]`
+    ///   1. `[]`                 market account (read for wrapper.authority)
+    ///   2. `[signer, writable]` market authority (pays PDA rent on first set)
+    ///   3. `[]`                 system program
+    SetOracleAuthority {
+        authority: [u8; 32],
+        bump: u8,
+    },
 }
 
 impl OpenPerpsInstruction {
@@ -436,6 +451,13 @@ impl OpenPerpsInstruction {
                 Ok(Self::SetDelegate { delegate, bump })
             }
             tag::SETTLE_PNL => Ok(Self::SettlePnl),
+            tag::SET_ORACLE_AUTHORITY => {
+                let authority = read_pubkey(rest, 0)?;
+                let bump = *rest
+                    .get(32)
+                    .ok_or(OpenPerpsError::InvalidInstructionData)?;
+                Ok(Self::SetOracleAuthority { authority, bump })
+            }
             _ => Err(OpenPerpsError::InvalidInstruction),
         }
     }
@@ -684,6 +706,20 @@ mod tests {
         assert_eq!(
             OpenPerpsInstruction::unpack(&data),
             Err(OpenPerpsError::InvalidInstructionData)
+        );
+    }
+
+    #[test]
+    fn unpack_set_oracle_authority() {
+        let mut data = vec![tag::SET_ORACLE_AUTHORITY];
+        data.extend_from_slice(&[8u8; 32]);
+        data.push(253);
+        assert_eq!(
+            OpenPerpsInstruction::unpack(&data).unwrap(),
+            OpenPerpsInstruction::SetOracleAuthority {
+                authority: [8u8; 32],
+                bump: 253,
+            }
         );
     }
 }
