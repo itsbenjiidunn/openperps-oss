@@ -32,6 +32,7 @@ export const Tag = {
   SettlePnl: 20,
   SetOracleAuthority: 21,
   SetDepositCap: 22,
+  CrankPyth: 23,
 } as const;
 
 /// Side encoding for `PlaceOrder`.
@@ -343,6 +344,35 @@ export function crankOracleIx(args: {
       { pubkey: args.signer, isSigner: true, isWritable: false },
     ],
     data: encodeCrankOracle(args.assetIndex),
+  });
+}
+
+export function encodeCrankPyth(assetIndex: number): Buffer {
+  const data = new Uint8Array(1 + 4);
+  data[0] = Tag.CrankPyth;
+  writeU32LE(data, 1, assetIndex);
+  return Buffer.from(data);
+}
+
+/// Permissionless crank for a PYTH market: pull a fresh mark from a Pyth
+/// `PriceUpdateV2` account (owned by the receiver program, bound to the market's
+/// feed id). `priceUpdate` is the sponsored feed account, for example the devnet
+/// SOL/USD account 7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE. Any signer.
+export function crankPythIx(args: {
+  programId: PublicKey;
+  market: PublicKey;
+  priceUpdate: PublicKey;
+  signer: PublicKey;
+  assetIndex: number;
+}): TransactionInstruction {
+  return new TransactionInstruction({
+    programId: args.programId,
+    keys: [
+      { pubkey: args.market, isSigner: false, isWritable: true },
+      { pubkey: args.priceUpdate, isSigner: false, isWritable: false },
+      { pubkey: args.signer, isSigner: true, isWritable: false },
+    ],
+    data: encodeCrankPyth(args.assetIndex),
   });
 }
 

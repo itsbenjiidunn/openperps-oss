@@ -1,9 +1,10 @@
 # Oracle Integration (design)
 
-Design and integration plan for the trustless oracle paths. **Not implemented
-yet.** This is the spec for moving settlement pricing from the trusted relayer
-key to verifiable, per-tier sources. It is intentionally concrete so it can be
-built and validated against real accounts, ideally in the audit window.
+Design and integration plan for the trustless oracle paths. Part A (Pyth) is
+implemented and validated on devnet; Part B (depth- and TWAP-aware DEX-EWMA) is
+still a spec. This moves settlement pricing from the trusted relayer key to
+verifiable, per-tier sources, intentionally concrete so each part is built and
+validated against real accounts.
 
 For current oracle status (what is live / stub / future) see
 [`oracle-and-price-safety.md`](oracle-and-price-safety.md).
@@ -12,7 +13,7 @@ For current oracle status (what is live / stub / future) see
 
 - `oracle_kind`: `MANUAL(0)`, `PYTH(1)`, `DEX_EWMA(2)`.
 - Authority relayer (`AccrueAsset`) is live; the oracle authority is rotatable
-  per market (`SetOracleAuthority`). `PYTH` is a stub (feed id stored, no CPI).
+  per market (`SetOracleAuthority`). `PYTH` is implemented via `CrankPyth` (Part A).
   `DEX_EWMA` reads a devnet mock pool (gated out of mainnet).
 - The engine already enforces a per-slot price-move bound, a freshness window,
   and an EWMA (alpha 0.2). The per-portfolio deposit cap (`SetDepositCap`) bounds
@@ -24,6 +25,13 @@ the price source is missing: **(1) a manipulation-resistant price source**
 economic cap (done).
 
 ## Part A: Pyth pull-oracle (majors: SOL / BTC / ETH)
+
+**Status: implemented and validated on devnet.** `crates/program/src/pyth.rs`
+hand-parses `PriceUpdateV2` (the receiver SDK is not pulled into the SBF build),
+with a golden unit test against a real devnet SOL/USD account, and
+`packages/sdk/scripts/devnet-pyth.ts` cranks the live feed on-chain. The design
+below is what was built; the open refinement is the confidence-interval gate in
+step 2.
 
 Pyth's Solana pull model: a permissionless crank posts a `PriceUpdateV2` account
 (owned by the Pyth Receiver program) holding a verified price for a feed id:

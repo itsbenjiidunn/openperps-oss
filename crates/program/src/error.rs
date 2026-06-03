@@ -31,6 +31,9 @@ pub enum OpenPerpsError {
     /// Deposit would push a memecoin (DEX-priced) account's collateral past the
     /// per-portfolio cap that bounds manipulation exposure.
     DepositCapExceeded = 10,
+    /// A Pyth price update was malformed, bound to the wrong feed, not fully
+    /// verified, or too stale to crank the mark from.
+    StalePythPrice = 11,
 }
 
 impl From<OpenPerpsError> for ProgramError {

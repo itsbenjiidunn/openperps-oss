@@ -265,6 +265,9 @@ pub fn process_instruction(
         OpenPerpsInstruction::SetDepositCap { max_capital, bump } => {
             process_set_deposit_cap(program_id, accounts, max_capital, bump)
         }
+        OpenPerpsInstruction::CrankPyth { asset_index } => {
+            process_crank_pyth(program_id, accounts, asset_index)
+        }
     }
 }
 
@@ -1435,6 +1438,75 @@ fn process_crank_oracle(
         .try_borrow_mut_data()
         .map_err(|_| OpenPerpsError::InvalidAccountData)?;
     crank_oracle_buffer(&mut m_data, asset_index, spot, now_slot).map_v16()?;
+    Ok(())
+}
+
+/// Reject a Pyth price published more than this many seconds from the on-chain
+/// clock (either stale or implausibly ahead).
+const MAX_PYTH_AGE_SECS: i64 = 60;
+
+/// Permissionless Pyth crank for a `PYTH` market: read a verified `PriceUpdateV2`
+/// account (owned by the receiver program), bind it to the market's feed id,
+/// check Full verification and freshness, convert the price to the mark scale,
+/// and accrue the mark, bounded by the per-slot move clamp like the authority
+/// relayer. The price comes from the verified account, not the signer, so any
+/// signer may crank.
+fn process_crank_pyth(
+    program_id: &Pubkey,
+    accounts: &[AccountInfo],
+    asset_index: u32,
+) -> ProgramResult {
+    let [market, price_update, signer, ..] = accounts else {
+        return Err(OpenPerpsError::InvalidInstruction.into());
+    };
+    if !signer.is_signer() {
+        return Err(OpenPerpsError::MissingRequiredSignature.into());
+    }
+    if !market.is_writable() {
+        return Err(OpenPerpsError::InvalidAccountData.into());
+    }
+    if unsafe { market.owner() } != program_id {
+        return Err(OpenPerpsError::InvalidAccountOwner.into());
+    }
+    // The price update must be owned by the Pyth receiver program (not us).
+    if unsafe { price_update.owner() } != &crate::pyth::PYTH_RECEIVER {
+        return Err(OpenPerpsError::InvalidAccountOwner.into());
+    }
+
+    let clock = Clock::get()?;
+    let now_slot = clock.slot;
+    let now_unix = clock.unix_timestamp;
+
+    let mark = {
+        let m_data = market
+            .try_borrow_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        let wrapper = market_wrapper_header(&m_data)?;
+        if !wrapper.is_initialized() {
+            return Err(OpenPerpsError::UninitializedAccount.into());
+        }
+        if wrapper.oracle_kind != crate::state::oracle_kind::PYTH {
+            return Err(OpenPerpsError::InvalidAccountData.into());
+        }
+        let feed_id = wrapper.oracle_feed_id;
+        let pu_data = price_update
+            .try_borrow_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        let pp = crate::pyth::parse_price_update_v2(&pu_data, &feed_id)
+            .map_err(|_| OpenPerpsError::StalePythPrice)?;
+        let age = now_unix.saturating_sub(pp.publish_time);
+        if age > MAX_PYTH_AGE_SECS || age < -MAX_PYTH_AGE_SECS {
+            return Err(OpenPerpsError::StalePythPrice.into());
+        }
+        // PRICE_SCALE is 1e6, so the mark carries 6 quote decimals.
+        crate::pyth::price_to_mark(pp.price, pp.expo, 6).map_err(|_| OpenPerpsError::StalePythPrice)?
+    };
+
+    let mut m_data = market
+        .try_borrow_mut_data()
+        .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    accrue_asset_buffer(&mut m_data, asset_index, now_slot, mark, 0, /* protective */ true)
+        .map_v16()?;
     Ok(())
 }
 

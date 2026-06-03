@@ -32,6 +32,7 @@ pub mod tag {
     pub const SETTLE_PNL: u8 = 20;
     pub const SET_ORACLE_AUTHORITY: u8 = 21;
     pub const SET_DEPOSIT_CAP: u8 = 22;
+    pub const CRANK_PYTH: u8 = 23;
 }
 
 /// Decoded OpenPerps instruction.
@@ -347,6 +348,18 @@ pub enum OpenPerpsInstruction {
         max_capital: u128,
         bump: u8,
     },
+    /// Permissionless: pull a fresh mark from a Pyth pull-oracle `PriceUpdateV2`
+    /// account for a `PYTH` market, bounded by the per-slot move clamp. The
+    /// price comes from the verified Pyth account (owner = receiver program,
+    /// feed id bound to the market, Full verification, fresh), not the signer.
+    ///
+    /// Accounts:
+    ///   0. `[writable]` market account
+    ///   1. `[]`         Pyth `PriceUpdateV2` account (owned by the receiver)
+    ///   2. `[signer]`   any signer (pays fee)
+    CrankPyth {
+        asset_index: u32,
+    },
 }
 
 impl OpenPerpsInstruction {
@@ -480,6 +493,9 @@ impl OpenPerpsInstruction {
                     .ok_or(OpenPerpsError::InvalidInstructionData)?;
                 Ok(Self::SetDepositCap { max_capital, bump })
             }
+            tag::CRANK_PYTH => Ok(Self::CrankPyth {
+                asset_index: read_u32(rest, 0)?,
+            }),
             _ => Err(OpenPerpsError::InvalidInstruction),
         }
     }
@@ -756,6 +772,16 @@ mod tests {
                 max_capital: 50_000_000_000,
                 bump: 252,
             }
+        );
+    }
+
+    #[test]
+    fn unpack_crank_pyth() {
+        let mut data = vec![tag::CRANK_PYTH];
+        data.extend_from_slice(&3u32.to_le_bytes());
+        assert_eq!(
+            OpenPerpsInstruction::unpack(&data).unwrap(),
+            OpenPerpsInstruction::CrankPyth { asset_index: 3 }
         );
     }
 }

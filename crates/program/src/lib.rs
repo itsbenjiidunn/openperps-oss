@@ -16,6 +16,7 @@ pub mod cpi;
 pub mod error;
 pub mod instruction;
 pub mod processor;
+pub mod pyth;
 pub mod state;
 
 // The pinocchio `entrypoint!` macro also installs a global allocator and a

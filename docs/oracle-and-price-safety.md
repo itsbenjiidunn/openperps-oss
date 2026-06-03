@@ -15,7 +15,7 @@ trade's `executionPrice`, never a chart price.
 | --- | --- | --- |
 | Authority relayer (`AccrueAsset`) | An off-chain relayer signs and pushes the mark on-chain; the engine enforces a per-slot move bound and a freshness window. | **Live on devnet.** The price-setting key defaults to a single pinned relayer constant; a market authority can rotate it per market with `SetOracleAuthority` (a `[ORACLE_SEED, market]` PDA), without a program upgrade. Still a trusted price-setter, not a trustless feed. |
 | DEX-EWMA (`CrankOracle`) | A permissionless crank reads a pinned on-chain pool's spot price and folds it into the mark via an EWMA (alpha 0.2), bounded by the per-slot move cap and freshness window. | **Partial.** EWMA, move bound, and freshness exist. The devnet pool is a token-less mock (`CreateMockPool` / `MockSwap`, gated out of mainnet builds). A real AMM reader plus pool-depth / TWAP checks are not implemented yet. |
-| Pyth (`oracle_kind = PYTH`) | A Pyth feed id is bound to the market. | **Stub.** The feed id is stored, but the on-chain Pyth CPI is not implemented; price is still authority-seeded. Do not rely on it for settlement. |
+| Pyth (`oracle_kind = PYTH`) | A Pyth feed id is bound to the market. | **Live on devnet.** `CrankPyth` reads the Pyth receiver's `PriceUpdateV2` account, checks its owner, feed id, Full verification, and freshness, then accrues the mark, bounded by the per-slot clamp. Validated end to end against the live devnet SOL/USD feed (`7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE`). A decentralized feed (Wormhole guardian quorum), not a single app key. |
 
 ## Already enforced
 
@@ -34,7 +34,8 @@ trade's `executionPrice`, never a chart price.
   trustless feed.
 - DEX-EWMA has no pool-depth or TWAP check yet: a thin or Sybil-funded pool can
   still be pushed within the per-slot bound.
-- Pyth settlement is not wired.
+- Pyth cranking accrues the verified price but does not yet gate on the price
+  confidence interval or a large EMA divergence.
 
-The trustless paths (Pyth CPI for majors, depth- and TWAP-aware DEX-EWMA for
-custom tokens) are designed in [`oracle-integration.md`](oracle-integration.md).
+Depth- and TWAP-aware DEX-EWMA for custom tokens is designed in
+[`oracle-integration.md`](oracle-integration.md).
