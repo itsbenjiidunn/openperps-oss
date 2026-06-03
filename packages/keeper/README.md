@@ -61,7 +61,30 @@ rejected for moving the price too far too fast. See
 
 `liquidatePortfolio` submits a permissionless `Liquidate` for a candidate
 portfolio; the engine rejects a healthy account, so it is safe to attempt.
-Discovering which portfolios are unhealthy is integrator-provided in v1.
+`scanLiquidations` attempts a whole candidate list and returns the signatures
+that landed. Discovering which portfolios are unhealthy is integrator-provided
+in v1.
+
+## Monitoring
+
+Create a `KeeperHealth` and pass it on `deps.health`; the runner records, per
+market, the last crank, how many slots behind the chain it was, whether it is
+stale (behind its freshness window), the last error, and a failure streak, plus
+running totals. Read it live and serve it from your own endpoint:
+
+```ts
+import { createKeeperHealth, summarizeHealth, runKeeper } from "@openperps/keeper";
+
+const health = createKeeperHealth();
+void runKeeper({ connection, authority, priceProvider, health }, markets, { intervalMs: 60_000 });
+
+// in your HTTP handler:
+//   res.json({ ...summarizeHealth(health), totals: health.totals });
+```
+
+`summarizeHealth` returns `{ healthy, staleMarkets, failingMarkets }` for a
+one-glance `/health` check. The pure helpers `marketBehind` and `isMarketStale`
+are available if you want to compute freshness yourself.
 
 ## License
 

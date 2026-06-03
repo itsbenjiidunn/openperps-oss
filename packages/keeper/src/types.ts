@@ -1,5 +1,6 @@
 import type { Connection, Keypair } from "@solana/web3.js";
 import type { OpenPerpsMarketConfig, PriceProvider } from "@openperps/sdk";
+import type { KeeperHealth } from "./health.ts";
 
 export type KeeperMarket = {
   config: OpenPerpsMarketConfig;
@@ -25,5 +26,9 @@ export type KeeperDeps = {
   /// authority, or `AccrueAsset` is rejected by the program.
   authority: Keypair;
   priceProvider: PriceProvider;
+  /// Optional mutable health/metrics record (from `createKeeperHealth`). When
+  /// provided, the runner records per-market crank / stale / error state and
+  /// totals; read it live to serve a `/health` endpoint.
+  health?: KeeperHealth;
   log?: (level: KeeperLogLevel, message: string, extra?: unknown) => void;
 };

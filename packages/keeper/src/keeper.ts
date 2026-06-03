@@ -12,6 +12,13 @@ import {
   slotOffset,
 } from "@openperps/sdk";
 import { buildAccrualInstructions } from "./accrual.ts";
+import {
+  isMarketStale,
+  marketBehind,
+  recordCrankError,
+  recordCrankOk,
+  recordLiquidations,
+} from "./health.ts";
 import type { KeeperDeps, KeeperMarket } from "./types.ts";
 
 // `slot_last` byte offset within one engine market slot (32-byte wrapper +
@@ -71,6 +78,15 @@ export async function crankMarketOnce(
       deps.connection.getSlot("confirmed"),
     ]);
 
+    const behindSlots = marketBehind(slot.slotLast, nowSlot);
+    const stale = isMarketStale(behindSlots, market.maxAccrualDtSlots);
+    if (stale) {
+      log(
+        "error",
+        `crank ${market.config.id}: stale, ${behindSlots} slots behind (> ${market.maxAccrualDtSlots})`,
+      );
+    }
+
     const oracleAuthority = market.useOracleAuthorityPda
       ? oracleAuthorityPda(programId, marketAccount)[0]
       : undefined;
@@ -104,8 +120,18 @@ export async function crankMarketOnce(
       "info",
       `crank ${market.config.id}: ${signature} (price ${price.price}, ${instructions.length} accrual(s))`,
     );
+    if (deps.health) {
+      recordCrankOk(deps.health, market.config.id, {
+        slotLast: slot.slotLast,
+        behindSlots,
+        stale,
+        signature,
+        accruals: instructions.length,
+      });
+    }
     return signature;
   } catch (e) {
+    if (deps.health) recordCrankError(deps.health, market.config.id, e);
     log("error", `crank ${market.config.id} failed`, e);
     return null;
   }
@@ -148,6 +174,27 @@ export async function liquidatePortfolio(
     log("error", `liquidate ${market.config.id} ${portfolio.toBase58()} failed`, e);
     return null;
   }
+}
+
+/// Attempt a permissionless `Liquidate` for each candidate portfolio. The engine
+/// rejects healthy accounts (NonProgress), so attempting all candidates is safe.
+/// Candidate discovery is integrator-provided. Returns the signatures that
+/// landed, and records the count against `deps.health` when present.
+export async function scanLiquidations(
+  deps: KeeperDeps,
+  market: KeeperMarket,
+  candidates: PublicKey[],
+  args: { closeQ: bigint; feeBps?: bigint },
+): Promise<string[]> {
+  const signatures: string[] = [];
+  for (const portfolio of candidates) {
+    const sig = await liquidatePortfolio(deps, market, portfolio, args);
+    if (sig) signatures.push(sig);
+  }
+  if (deps.health && signatures.length > 0) {
+    recordLiquidations(deps.health, signatures.length);
+  }
+  return signatures;
 }
 
 export type RunKeeperOptions = {
