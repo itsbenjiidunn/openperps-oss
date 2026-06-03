@@ -13,13 +13,7 @@ Telegram bot, a wallet, or an analytics dashboard. One shared risk core, one SDK
 one keeper path, reused across all of them.
 
 It is built on [Percolator](https://github.com/aeyakovenko/percolator) v16, the
-formally-verified risk engine by Anatoly Yakovenko (@toly). Percolator is the
-pure risk brain and ships no program, decoder, or deployment. OpenPerps OSS adds
-no risk logic of its own: it vendors Percolator unmodified and supplies the body
-around it, the Solana program, the client SDK, the UI kit, and the keeper, so any
-app can put markets on that one verified core instead of building a perp engine
-of its own.
-
+formally-verified risk engine by Anatoly Yakovenko (@toly). Percolator provides the verified risk-engine foundation. OpenPerps OSS keeps that risk core upstream and packages the surrounding Solana integration layer: program wrapper, SDK, React kit, keeper, account decoders, examples, and deployment docs.
 **This repo.** OpenPerps OSS is that open layer: the program, SDK, keeper, React
 components, examples, and docs, open and self-hostable, so integrators run their
 own stack rather than routing through a middleman.
