@@ -14,6 +14,7 @@ one keeper path, reused across all of them.
 
 It is built on [Percolator](https://github.com/aeyakovenko/percolator) v16, the
 formally-verified risk engine by Anatoly Yakovenko (@toly). Percolator provides the verified risk-engine foundation. OpenPerps OSS keeps that risk core upstream and packages the surrounding Solana integration layer: program wrapper, SDK, React kit, keeper, account decoders, examples, and deployment docs.
+
 **This repo.** OpenPerps OSS is that open layer: the program, SDK, keeper, React
 components, examples, and docs, open and self-hostable, so integrators run their
 own stack rather than routing through a middleman.
