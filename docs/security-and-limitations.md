@@ -25,7 +25,10 @@ independent third-party audit.
 - The market header carries a version; a header from an older or future layout
   reads as uninitialized instead of being mis-decoded against stale padding.
 - `InitMarket` rejects a `quote_mint` not owned by the SPL Token program.
-- DEX-priced markets enforce a per-portfolio collateral cap.
+- DEX-priced markets enforce a per-portfolio collateral cap. The program floor is
+  always enforced; a market authority can raise it per market via `SetDepositCap`
+  for a market whose pool depth supports larger positions (it can never lower the
+  floor, so the backstop cannot be bypassed).
 
 ## Known limitations
 

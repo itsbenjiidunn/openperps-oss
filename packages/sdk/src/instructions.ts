@@ -4,7 +4,7 @@
 import { PublicKey, SystemProgram, TransactionInstruction } from "@solana/web3.js";
 import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 
-import { ORACLE_SEED, PORTFOLIO_SEED } from "./layout.ts";
+import { DEPOSIT_CAP_SEED, ORACLE_SEED, PORTFOLIO_SEED } from "./layout.ts";
 
 export { TOKEN_PROGRAM_ID };
 
@@ -31,6 +31,7 @@ export const Tag = {
   SetDelegate: 19,
   SettlePnl: 20,
   SetOracleAuthority: 21,
+  SetDepositCap: 22,
 } as const;
 
 /// Side encoding for `PlaceOrder`.
@@ -496,17 +497,25 @@ export function depositIx(args: {
   userToken: PublicKey;
   vaultToken: PublicKey;
   amount: bigint;
+  /// Optional deposit-cap PDA (from `depositCapPda`). Pass it on a DEX-priced
+  /// market that raised its cap via `setDepositCapIx` to deposit above the
+  /// default floor; omit it to use the floor.
+  depositCap?: PublicKey;
 }): TransactionInstruction {
+  const keys = [
+    { pubkey: args.market, isSigner: false, isWritable: true },
+    { pubkey: args.portfolio, isSigner: false, isWritable: true },
+    { pubkey: args.owner, isSigner: true, isWritable: false },
+    { pubkey: args.userToken, isSigner: false, isWritable: true },
+    { pubkey: args.vaultToken, isSigner: false, isWritable: true },
+    { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+    ...(args.depositCap
+      ? [{ pubkey: args.depositCap, isSigner: false, isWritable: false }]
+      : []),
+  ];
   return new TransactionInstruction({
     programId: args.programId,
-    keys: [
-      { pubkey: args.market, isSigner: false, isWritable: true },
-      { pubkey: args.portfolio, isSigner: false, isWritable: true },
-      { pubkey: args.owner, isSigner: true, isWritable: false },
-      { pubkey: args.userToken, isSigner: false, isWritable: true },
-      { pubkey: args.vaultToken, isSigner: false, isWritable: true },
-      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
-    ],
+    keys,
     data: encodeDeposit(args.amount),
   });
 }
@@ -826,5 +835,47 @@ export function setOracleAuthorityIx(args: {
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
     ],
     data: encodeSetOracleAuthority(args.newAuthority.toBytes(), args.bump),
+  });
+}
+
+/** The per-market deposit-cap PDA; matches Rust `[DEPOSIT_CAP_SEED, market]`. */
+export function depositCapPda(
+  programId: PublicKey,
+  market: PublicKey,
+): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync([DEPOSIT_CAP_SEED, market.toBuffer()], programId);
+}
+
+export function encodeSetDepositCap(maxCapital: bigint, bump: number): Buffer {
+  const data = new Uint8Array(1 + 16 + 1);
+  data[0] = Tag.SetDepositCap;
+  writeU128LE(data, 1, maxCapital);
+  data[17] = bump;
+  return Buffer.from(data);
+}
+
+/// Set a DEX-priced market's per-portfolio deposit cap. Market-authority-signed.
+/// `maxCapital` only raises the cap above the program floor; the floor is always
+/// enforced. The PDA is created on first use.
+export function setDepositCapIx(args: {
+  programId: PublicKey;
+  /** The PDA from `depositCapPda(programId, market)`. */
+  depositCapPda: PublicKey;
+  market: PublicKey;
+  /** The market authority (signer; pays PDA rent on first set). */
+  authority: PublicKey;
+  /** Per-portfolio collateral cap in quote atoms (only raises above the floor). */
+  maxCapital: bigint;
+  bump: number;
+}): TransactionInstruction {
+  return new TransactionInstruction({
+    programId: args.programId,
+    keys: [
+      { pubkey: args.depositCapPda, isSigner: false, isWritable: true },
+      { pubkey: args.market, isSigner: false, isWritable: false },
+      { pubkey: args.authority, isSigner: true, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    data: encodeSetDepositCap(args.maxCapital, args.bump),
   });
 }

@@ -104,6 +104,13 @@ pub const DELEGATE_SEED: &[u8] = b"delegate";
 /// constant, so the existing relayer keeps working unchanged.
 pub const ORACLE_SEED: &[u8] = b"oracle";
 
+/// PDA seed prefix for a market's deposit-cap override. Full seeds:
+/// `[DEPOSIT_CAP_SEED, market.key()]`. Optional, per-market: when set above the
+/// program floor, it raises the per-portfolio collateral cap for a DEX-priced
+/// market whose pool depth supports larger positions. It can only raise the cap;
+/// the program floor is always enforced.
+pub const DEPOSIT_CAP_SEED: &[u8] = b"depositcap";
+
 /// PDA seed prefix for a user's portfolio under a market. Full seed list is
 /// `[PORTFOLIO_SEED, owner.key(), market.key()]`. Makes a user's account on a
 /// given market group DETERMINISTIC — one account per (owner, market), derivable
@@ -117,6 +124,9 @@ pub const DELEGATE_DISCRIMINATOR: [u8; 8] = *b"OPDELEGT";
 
 /// Magic bytes for an [`OracleAuthorityAccount`].
 pub const ORACLE_AUTHORITY_DISCRIMINATOR: [u8; 8] = *b"OPORAUTH";
+
+/// Magic bytes for a [`DepositCapAccount`].
+pub const DEPOSIT_CAP_DISCRIMINATOR: [u8; 8] = *b"OPDEPCAP";
 
 /// Tiny PDA holding the session key authorized to place orders for one
 /// portfolio. Owner-set; all-zero `delegate` means revoked. `portfolio` binds
@@ -230,6 +240,55 @@ pub fn oracle_authority_of(buf: &[u8]) -> Result<([u8; 32], [u8; 32]), OpenPerps
         return Ok(([0u8; 32], [0u8; 32]));
     }
     Ok((acc.market, acc.authority))
+}
+
+/// Per-market deposit-cap override PDA. Optional: `max_capital` raises the
+/// per-portfolio collateral cap on a DEX-priced market above the program floor.
+/// `market` binds it so the cap can be trusted by discriminator + market match.
+/// `max_capital` is a little-endian u128 stored as bytes to keep the struct
+/// alignment-1 and free of padding (Pod-safe).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Pod, Zeroable)]
+pub struct DepositCapAccount {
+    pub discriminator: [u8; 8],
+    pub market: [u8; 32],
+    pub max_capital: [u8; 16],
+}
+
+impl DepositCapAccount {
+    pub const LEN: usize = core::mem::size_of::<Self>();
+    pub fn is_initialized(&self) -> bool {
+        self.discriminator == DEPOSIT_CAP_DISCRIMINATOR
+    }
+}
+
+/// Write/overwrite a market's deposit-cap override PDA (market-authority-authorized).
+pub fn set_deposit_cap_buffer(
+    buf: &mut [u8],
+    market: [u8; 32],
+    max_capital: u128,
+) -> Result<(), OpenPerpsError> {
+    if buf.len() < DepositCapAccount::LEN {
+        return Err(OpenPerpsError::AccountDataTooSmall);
+    }
+    let acc: &mut DepositCapAccount = pod_from_bytes_mut(&mut buf[..DepositCapAccount::LEN])?;
+    acc.discriminator = DEPOSIT_CAP_DISCRIMINATOR;
+    acc.market = market;
+    acc.max_capital = max_capital.to_le_bytes();
+    Ok(())
+}
+
+/// Read `(market, max_capital)` from a deposit-cap PDA; both zero if uninitialized.
+pub fn deposit_cap_of(buf: &[u8]) -> Result<([u8; 32], u128), OpenPerpsError> {
+    if buf.len() < DepositCapAccount::LEN {
+        return Err(OpenPerpsError::AccountDataTooSmall);
+    }
+    let acc: &DepositCapAccount = bytemuck::try_from_bytes(&buf[..DepositCapAccount::LEN])
+        .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    if !acc.is_initialized() {
+        return Ok(([0u8; 32], 0));
+    }
+    Ok((acc.market, u128::from_le_bytes(acc.max_capital)))
 }
 
 /// OpenPerps-owned prefix at the start of a market-group account, in front
@@ -1144,6 +1203,15 @@ mod tests {
         // revoke (zero authority): market stays, authority clears → const fallback
         set_oracle_authority_buffer(&mut buf, [3u8; 32], [0u8; 32]).unwrap();
         assert_eq!(oracle_authority_of(&buf).unwrap(), ([3u8; 32], [0u8; 32]));
+    }
+
+    #[test]
+    fn deposit_cap_buffer_roundtrip() {
+        let mut buf = vec![0u8; DepositCapAccount::LEN];
+        // uninitialized → zeros
+        assert_eq!(deposit_cap_of(&buf).unwrap(), ([0u8; 32], 0));
+        set_deposit_cap_buffer(&mut buf, [4u8; 32], 50_000_000_000).unwrap();
+        assert_eq!(deposit_cap_of(&buf).unwrap(), ([4u8; 32], 50_000_000_000));
     }
 
     #[test]

@@ -31,6 +31,7 @@ pub mod tag {
     pub const SET_DELEGATE: u8 = 19;
     pub const SETTLE_PNL: u8 = 20;
     pub const SET_ORACLE_AUTHORITY: u8 = 21;
+    pub const SET_DEPOSIT_CAP: u8 = 22;
 }
 
 /// Decoded OpenPerps instruction.
@@ -332,6 +333,20 @@ pub enum OpenPerpsInstruction {
         authority: [u8; 32],
         bump: u8,
     },
+    /// Set a market's per-portfolio deposit cap for DEX-priced markets.
+    /// `max_capital` only raises the cap above the program floor (a deeper pool
+    /// supports larger positions); the floor is always enforced. Only the market
+    /// authority may call; the PDA is created on first use.
+    ///
+    /// Accounts:
+    ///   0. `[writable]`         deposit cap PDA at `[DEPOSIT_CAP_SEED, market.key()]`
+    ///   1. `[]`                 market account (read for wrapper.authority)
+    ///   2. `[signer, writable]` market authority (pays PDA rent on first set)
+    ///   3. `[]`                 system program
+    SetDepositCap {
+        max_capital: u128,
+        bump: u8,
+    },
 }
 
 impl OpenPerpsInstruction {
@@ -457,6 +472,13 @@ impl OpenPerpsInstruction {
                     .get(32)
                     .ok_or(OpenPerpsError::InvalidInstructionData)?;
                 Ok(Self::SetOracleAuthority { authority, bump })
+            }
+            tag::SET_DEPOSIT_CAP => {
+                let max_capital = read_u128(rest, 0)?;
+                let bump = *rest
+                    .get(16)
+                    .ok_or(OpenPerpsError::InvalidInstructionData)?;
+                Ok(Self::SetDepositCap { max_capital, bump })
             }
             _ => Err(OpenPerpsError::InvalidInstruction),
         }
@@ -719,6 +741,20 @@ mod tests {
             OpenPerpsInstruction::SetOracleAuthority {
                 authority: [8u8; 32],
                 bump: 253,
+            }
+        );
+    }
+
+    #[test]
+    fn unpack_set_deposit_cap() {
+        let mut data = vec![tag::SET_DEPOSIT_CAP];
+        data.extend_from_slice(&50_000_000_000u128.to_le_bytes());
+        data.push(252);
+        assert_eq!(
+            OpenPerpsInstruction::unpack(&data).unwrap(),
+            OpenPerpsInstruction::SetDepositCap {
+                max_capital: 50_000_000_000,
+                bump: 252,
             }
         );
     }

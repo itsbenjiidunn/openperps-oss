@@ -20,11 +20,11 @@ use crate::{
         accrue_asset_buffer, activate_market_buffer, crank_oracle_buffer, crank_refresh_buffer,
         deposit_buffer, init_market_buffer, init_portfolio_buffer,
         liquidate_buffer, market_engine_split_mut, market_header, market_wrapper_header,
-        delegate_of, mock_pool_spot_price, oracle_authority_of, portfolio_account_size,
-        portfolio_split_mut, resolve_market_buffer, set_delegate_buffer,
-        set_oracle_authority_buffer, set_slot_oracle_pool,
+        delegate_of, deposit_cap_of, mock_pool_spot_price, oracle_authority_of,
+        portfolio_account_size, portfolio_split_mut, resolve_market_buffer, set_delegate_buffer,
+        set_deposit_cap_buffer, set_oracle_authority_buffer, set_slot_oracle_pool,
         settle_pnl_buffer, slot_oracle_pool, trade_buffer, withdraw_buffer, DelegateAccount,
-        DELEGATE_SEED, OracleAuthorityAccount, ORACLE_SEED,
+        DELEGATE_SEED, DepositCapAccount, DEPOSIT_CAP_SEED, OracleAuthorityAccount, ORACLE_SEED,
         HOUSE_SEED, PORTFOLIO_SEED, VAULT_SEED,
     },
 };
@@ -71,6 +71,30 @@ fn resolve_oracle_authority(
         }
     }
     ORACLE_AUTHORITY
+}
+
+/// Resolve the per-portfolio collateral cap for a DEX-priced market. If the
+/// optional deposit-cap PDA (account index 6) is present, program-owned, bound to
+/// this market, and names a cap above the floor, it raises the cap; otherwise the
+/// floor `MAX_CUSTOM_PORTFOLIO_CAPITAL` applies. The PDA can only raise the cap,
+/// never lower it, so the floor cannot be bypassed by omitting the account.
+fn resolve_deposit_cap(
+    program_id: &Pubkey,
+    accounts: &[AccountInfo],
+    market_key: &Pubkey,
+) -> u128 {
+    if let Some(acc) = accounts.get(6) {
+        if unsafe { acc.owner() } == program_id {
+            if let Ok(data) = acc.try_borrow_data() {
+                if let Ok((mkt, cap)) = deposit_cap_of(&data) {
+                    if mkt == *market_key && cap > MAX_CUSTOM_PORTFOLIO_CAPITAL {
+                        return cap;
+                    }
+                }
+            }
+        }
+    }
+    MAX_CUSTOM_PORTFOLIO_CAPITAL
 }
 
 /// Per-portfolio collateral ceiling (quote atoms, 6 decimals = $1,000) on a
@@ -237,6 +261,9 @@ pub fn process_instruction(
         OpenPerpsInstruction::SettlePnl => process_settle_pnl(program_id, accounts),
         OpenPerpsInstruction::SetOracleAuthority { authority, bump } => {
             process_set_oracle_authority(program_id, accounts, authority, bump)
+        }
+        OpenPerpsInstruction::SetDepositCap { max_capital, bump } => {
+            process_set_deposit_cap(program_id, accounts, max_capital, bump)
         }
     }
 }
@@ -885,8 +912,9 @@ fn process_deposit(
     // and therefore the profit extractable by manipulating the thin pool. Majors
     // are exempt. The whole tx reverts (undoing the SPL transfer) if exceeded.
     if oracle_kind == crate::state::oracle_kind::DEX_EWMA {
+        let cap = resolve_deposit_cap(program_id, accounts, market.key());
         let (p_header2, _) = portfolio_split_mut(&mut portfolio_data)?;
-        if p_header2.capital.get() > MAX_CUSTOM_PORTFOLIO_CAPITAL {
+        if p_header2.capital.get() > cap {
             return Err(OpenPerpsError::DepositCapExceeded.into());
         }
     }
@@ -1583,5 +1611,81 @@ fn process_set_oracle_authority(
         .try_borrow_mut_data()
         .map_err(|_| OpenPerpsError::InvalidAccountData)?;
     set_oracle_authority_buffer(&mut data, market_key, new_authority)?;
+    Ok(())
+}
+
+/// Set the market's per-portfolio deposit cap for DEX-priced markets. Only the
+/// market authority may call. The `[DEPOSIT_CAP_SEED, market]` PDA is created on
+/// first use; its `max_capital` raises the per-portfolio collateral cap above the
+/// program floor (it can never lower it; the floor is always enforced). Use this
+/// to let a market with a deep pool support larger positions than the default.
+fn process_set_deposit_cap(
+    program_id: &Pubkey,
+    accounts: &[AccountInfo],
+    max_capital: u128,
+    bump: u8,
+) -> ProgramResult {
+    let [cap_pda, market, authority, _system_program, ..] = accounts else {
+        return Err(OpenPerpsError::InvalidInstruction.into());
+    };
+    if !authority.is_signer() {
+        return Err(OpenPerpsError::MissingRequiredSignature.into());
+    }
+    if !cap_pda.is_writable() {
+        return Err(OpenPerpsError::InvalidAccountData.into());
+    }
+    if unsafe { market.owner() } != program_id {
+        return Err(OpenPerpsError::InvalidAccountOwner.into());
+    }
+
+    // Only the market authority may set the deposit cap.
+    let market_key = *market.key();
+    {
+        let data = market
+            .try_borrow_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        let wrapper = market_wrapper_header(&data)?;
+        if !wrapper.is_initialized() {
+            return Err(OpenPerpsError::UninitializedAccount.into());
+        }
+        if wrapper.authority != *authority.key() {
+            return Err(OpenPerpsError::MissingRequiredSignature.into());
+        }
+    }
+
+    // Verify the PDA address, then create it on first use.
+    let derived = create_program_address(
+        &[DEPOSIT_CAP_SEED, market_key.as_ref(), &[bump]],
+        program_id,
+    )
+    .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    if *cap_pda.key() != derived {
+        return Err(OpenPerpsError::InvalidAccountData.into());
+    }
+
+    if unsafe { cap_pda.owner() } != program_id {
+        let rent = Rent::get()?;
+        let lamports = rent.minimum_balance(DepositCapAccount::LEN);
+        let bump_arr = [bump];
+        let seeds = [
+            Seed::from(DEPOSIT_CAP_SEED),
+            Seed::from(market_key.as_ref()),
+            Seed::from(bump_arr.as_ref()),
+        ];
+        let signer = Signer::from(seeds.as_ref());
+        system_create_account(
+            authority,
+            cap_pda,
+            lamports,
+            DepositCapAccount::LEN as u64,
+            program_id,
+            &[signer],
+        )?;
+    }
+
+    let mut data = cap_pda
+        .try_borrow_mut_data()
+        .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    set_deposit_cap_buffer(&mut data, market_key, max_capital)?;
     Ok(())
 }

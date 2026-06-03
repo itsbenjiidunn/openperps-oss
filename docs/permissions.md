@@ -24,6 +24,7 @@ Who may call each instruction, verified against the program handlers.
 | `SetDelegate` | Portfolio owner signer | Authorizes a session key that can trade but never withdraw. |
 | `SettlePnl` | Permissionless | Converts the user's own released PnL into capital; touches no other account. |
 | `SetOracleAuthority` | Market authority | Sets or rotates the market's oracle authority PDA (a zero key revokes to the constant). |
+| `SetDepositCap` | Market authority | Raises the per-portfolio deposit cap on a DEX-priced market above the program floor. |
 | `CreateMockPool` / `MockSwap` | Permissionless, devnet-only | Token-less price toy; gated out of mainnet builds. |
 
 ## Oracle authority
