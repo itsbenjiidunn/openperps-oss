@@ -35,3 +35,6 @@ trade's `executionPrice`, never a chart price.
 - DEX-EWMA has no pool-depth or TWAP check yet: a thin or Sybil-funded pool can
   still be pushed within the per-slot bound.
 - Pyth settlement is not wired.
+
+The trustless paths (Pyth CPI for majors, depth- and TWAP-aware DEX-EWMA for
+custom tokens) are designed in [`oracle-integration.md`](oracle-integration.md).
