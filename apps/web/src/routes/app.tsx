@@ -123,9 +123,9 @@ function NoMarketsState() {
         </div>
         <h1 className="font-display text-2xl font-semibold">No markets in your registry yet</h1>
         <p className="text-sm text-muted-foreground">
-          OpenPerps is permissionless, anyone can spin up a market against any SPL mint. Launch
-          your first one to start trading. The registry lives in your browser until an on-chain
-          registry account ships.
+          OpenPerps is permissionless, anyone can spin up a market against any SPL mint. Launch your
+          first one to start trading. The registry lives in your browser until an on-chain registry
+          account ships.
         </p>
         <Link
           to="/launch"

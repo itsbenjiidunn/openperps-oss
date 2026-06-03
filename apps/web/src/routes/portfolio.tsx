@@ -180,8 +180,7 @@ function AccountsSummary({ markets }: { markets: Market[] }) {
         <div>
           <h2 className="font-display text-lg font-semibold">Your accounts</h2>
           <p className="text-[11px] text-muted-foreground">
-            {QUOTE_SYMBOL} is held per market, majors share one account, each custom market its
-            own.
+            {QUOTE_SYMBOL} is held per market, majors share one account, each custom market its own.
           </p>
         </div>
         <div className="text-right">
@@ -513,8 +512,8 @@ function PositionsTable({ markets }: { markets: Market[] }) {
         <div className="py-8 text-center">
           <p className="text-sm text-foreground">No open positions</p>
           <p className="mt-1 text-[11px] text-muted-foreground">
-            Open a Long or Short from the Terminal, majors share one account, each custom market
-            its own.
+            Open a Long or Short from the Terminal, majors share one account, each custom market its
+            own.
           </p>
         </div>
       ) : (
