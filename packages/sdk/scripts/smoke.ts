@@ -1,16 +1,23 @@
 // End-to-end smoke test against a live cluster (default: devnet).
 //
-// Reads the program keypair the SBF build emitted at ../../deploy/ and a
-// payer wallet from ~/.config/solana/id.json (Solana CLI default). Sends:
-//   1. createAccount(market) + InitMarket
-//   2. createAccount(portfolio) + InitPortfolio
-//   3. Deposit
-// Then fetches the two accounts and reports the engine state plus the
-// compute-units consumed by each transaction.
+// Exercises the full production lifecycle on real accounts:
+//   1. createAccount(market) + InitMarket   (manual oracle, synthetic asset)
+//   2. CreateVault                           (SPL vault TokenAccount at the PDA)
+//   3. ActivateMarket                        (seed the asset-slot mark)
+//   4. CreateHouseVault + FundHouseVault     (the gated counterparty portfolio)
+//   5. InitPortfolio + Deposit + Withdraw    (the user's [PORTFOLIO_SEED, owner,
+//                                             market] PDA; real SPL custody)
+//   6. AccrueAsset (delta-0 refresh) + PlaceOrder (user vs House)
+// Then fetches every account and asserts the engine + token balances match the
+// fee/PnL math exactly.
+//
+// Note: trades go through PlaceOrder (user portfolio vs the House PDA), not the
+// raw self-cross Trade. Under the one-portfolio-per-(owner, market) PDA model a
+// single owner cannot hold both sides, so the House is the counterparty.
 //
 // Run with:
-//   cd ts/sdk && npm install && npm run smoke
-//
+//   cd packages/sdk && npm run smoke
+//   # or: OPENPERPS_PAYER=C:\tmp\op-devnet\id.json node --import tsx scripts/smoke.ts
 // Override the RPC with $OPENPERPS_RPC, e.g. http://127.0.0.1:8899 for localnet.
 
 import { readFileSync } from "node:fs";
@@ -35,30 +42,37 @@ import {
 import {
   accrueAssetIx,
   activateMarketIx,
+  createHouseVaultIx,
   createVaultIx,
   depositIx,
+  fundHouseVaultIx,
   initMarketIx,
   initPortfolioIx,
-  marketAccountSize,
-  portfolioAccountSize,
-  tradeIx,
+  placeOrderIx,
+  portfolioPda,
   withdrawIx,
+  fetchMarketState,
+  marketAccountSize,
+  readU128LE,
+  HOUSE_SEED,
+  VAULT_SEED,
   OFFSET_VAULT,
   OFFSET_C_TOT,
   OFFSET_CAPITAL,
-  VAULT_SEED,
-  readU128LE,
+  ORACLE_KIND_MANUAL,
+  Side,
 } from "../src/index.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, "../../..");
 
 const ASSET_SLOT_CAPACITY = 2;
-const DEPOSIT_AMOUNT = 50_000_000n; // 5e7 — comfortably above the trade's 1e7 margin
-const WITHDRAW_AMOUNT = 5_000_000n; // demoed on the long side before Trade
-const ORACLE_PRICE = 100_000_000n; // u64; arbitrary trusted price for slot 0
-const REFRESHED_PRICE = 105_000_000n; // u64; a +5% move for the accrue refresh
-const TRADE_SIZE_Q = 1_000_000n; // notional = size_q * price / 1e6 = 1e8
+const POS_SCALE = 1_000_000n; // engine notional scale (size_q * price / POS_SCALE)
+const ORACLE_PRICE = 100_000_000n; // u64 mark seeded at activation
+const USER_DEPOSIT = 50_000_000n; // $50
+const USER_WITHDRAW = 5_000_000n; // $5 demoed before the position opens
+const HOUSE_FUND = 200_000_000n; // $200, comfortably covers the House margin
+const TRADE_SIZE_Q = 1_000_000n; // notional = size_q * price / POS_SCALE = 1e8
 const TRADE_FEE_BPS = 10n; // matches default_market_config.max_trading_fee_bps
 const RPC = process.env.OPENPERPS_RPC ?? "https://api.devnet.solana.com";
 
@@ -67,11 +81,7 @@ function loadKeypair(path: string): Keypair {
   return Keypair.fromSecretKey(Uint8Array.from(raw));
 }
 
-async function getComputeUnits(
-  conn: Connection,
-  sig: string,
-): Promise<number | null> {
-  // Allow the cluster a moment to surface the tx in its history index.
+async function getComputeUnits(conn: Connection, sig: string): Promise<number | null> {
   for (let i = 0; i < 5; i++) {
     const tx = await conn.getTransaction(sig, {
       commitment: "confirmed",
@@ -85,9 +95,11 @@ async function getComputeUnits(
 
 async function main(): Promise<void> {
   const programKeypair = loadKeypair(
-    resolve(REPO_ROOT, "deploy/openperps_program-keypair.json"),
+    resolve(REPO_ROOT, "target/deploy/openperps_program-keypair.json"),
   );
-  const payer = loadKeypair(resolve(homedir(), ".config/solana/id.json"));
+  const payer = loadKeypair(
+    process.env.OPENPERPS_PAYER ?? resolve(homedir(), ".config/solana/id.json"),
+  );
   const programId = programKeypair.publicKey;
 
   const conn = new Connection(RPC, "confirmed");
@@ -97,291 +109,272 @@ async function main(): Promise<void> {
   const balance = await conn.getBalance(payer.publicKey);
   console.log(`payer balance=${balance / 1e9} SOL`);
 
-  // Sanity: program must already be deployed.
   const programInfo = await conn.getAccountInfo(programId);
   if (!programInfo) {
     throw new Error(
       `program ${programId.toBase58()} is not deployed on ${RPC}. ` +
-        `Run \`solana program deploy deploy/openperps_program.so\` first.`,
+        `Run \`solana program deploy target/deploy/openperps_program.so\` first.`,
     );
   }
 
   const market = Keypair.generate();
-  const longPortfolio = Keypair.generate();
-  const shortPortfolio = Keypair.generate();
   const marketGroupId = randomBytes(32);
-  const longPfId = randomBytes(32);
-  const shortPfId = randomBytes(32);
 
-  // Phase B: create a real SPL mint (mock-USDC, 6 decimals) and mint the
-  // payer enough collateral to cover Deposit + Trade margin + fees.
+  // Mock-USDC mint (6 decimals) + a funded payer ATA covering both the user
+  // deposit and the House funding, with headroom.
   console.log("creating mock-USDC mint...");
-  const quoteMint = await createMint(
-    conn,
-    payer,
-    /*mintAuthority*/ payer.publicKey,
-    /*freezeAuthority*/ null,
-    /*decimals*/ 6,
-  );
+  const quoteMint = await createMint(conn, payer, payer.publicKey, null, 6);
   console.log(`quote_mint=${quoteMint.toBase58()}`);
-
-  // ATA the payer will use to fund both long and short deposits.
   const payerAta = await createAssociatedTokenAccount(conn, payer, quoteMint, payer.publicKey);
-  await mintTo(conn, payer, quoteMint, payerAta, payer, /*amount*/ 1_000_000_000n);
-  console.log(`payer ATA=${payerAta.toBase58()} (minted 1,000,000,000 atoms)`);
+  const MINTED = 1_000_000_000n;
+  await mintTo(conn, payer, quoteMint, payerAta, payer, MINTED);
+  console.log(`payer ATA=${payerAta.toBase58()} (minted ${MINTED} atoms)`);
 
-  // Vault PDA = [b"vault", market.key()]. Client finds the bump off-chain;
-  // the on-chain handler verifies via create_program_address.
   const [vaultPda, vaultBump] = PublicKey.findProgramAddressSync(
     [VAULT_SEED, market.publicKey.toBuffer()],
     programId,
   );
+  const [housePda, houseBump] = PublicKey.findProgramAddressSync(
+    [HOUSE_SEED, market.publicKey.toBuffer()],
+    programId,
+  );
+  const [userPf, userPfBump] = portfolioPda(programId, payer.publicKey, market.publicKey);
   console.log(`vault PDA=${vaultPda.toBase58()} (bump=${vaultBump})`);
+  console.log(`house PDA=${housePda.toBase58()} (bump=${houseBump})`);
+  console.log(`user portfolio PDA=${userPf.toBase58()} (bump=${userPfBump})`);
 
   const marketSize = marketAccountSize(ASSET_SLOT_CAPACITY);
-  const portfolioSize = portfolioAccountSize(ASSET_SLOT_CAPACITY);
   const marketRent = await conn.getMinimumBalanceForRentExemption(marketSize);
-  const portfolioRent = await conn.getMinimumBalanceForRentExemption(portfolioSize);
-  console.log(
-    `market account: ${marketSize} bytes, rent=${marketRent / 1e9} SOL`,
-  );
-  console.log(
-    `portfolio account: ${portfolioSize} bytes, rent=${portfolioRent / 1e9} SOL`,
-  );
+
+  const sendTx = async (tx: Transaction, signers: Keypair[], label: string) => {
+    const sig = await sendAndConfirmTransaction(conn, tx, signers, {
+      commitment: "confirmed",
+    });
+    console.log(`${label} tx=${sig}`);
+    console.log(`  compute units=${await getComputeUnits(conn, sig)}`);
+    return sig;
+  };
 
   // ---- 1) Create market account + InitMarket ----
-  const tx1 = new Transaction()
-    .add(
-      SystemProgram.createAccount({
-        fromPubkey: payer.publicKey,
-        newAccountPubkey: market.publicKey,
-        lamports: marketRent,
-        space: marketSize,
-        programId,
-      }),
-    )
-    .add(
-      initMarketIx({
-        programId,
-        market: market.publicKey,
-        authority: payer.publicKey,
-        quoteMint,
-        marketGroupId,
-        assetSlotCapacity: ASSET_SLOT_CAPACITY,
-        vaultBump,
-        // Smoke uses a manual oracle and no underlying mint (synthetic).
-        baseMint: PublicKey.default,
-        oracleKind: 0,
-        oracleFeedId: new Uint8Array(32),
-        oraclePool: PublicKey.default,
-      }),
-    );
-  const sig1 = await sendAndConfirmTransaction(conn, tx1, [payer, market]);
-  console.log(`InitMarket tx=${sig1}`);
-  console.log(`  compute units=${await getComputeUnits(conn, sig1)}`);
-
-  // ---- 1b) Create the vault TokenAccount at the PDA ----
-  const tx1b = new Transaction().add(
-    createVaultIx({
-      programId,
-      market: market.publicKey,
-      authority: payer.publicKey,
-      vault: vaultPda,
-      quoteMint,
-    }),
-  );
-  const sig1b = await sendAndConfirmTransaction(conn, tx1b, [payer]);
-  console.log(`CreateVault tx=${sig1b}`);
-  console.log(`  compute units=${await getComputeUnits(conn, sig1b)}`);
-
-  // ---- 2) Create + init the long and short portfolios ----
-  const createAndInitPortfolio = async (
-    keypair: Keypair,
-    id: Uint8Array,
-    label: string,
-  ): Promise<void> => {
-    const tx = new Transaction()
+  await sendTx(
+    new Transaction()
       .add(
         SystemProgram.createAccount({
           fromPubkey: payer.publicKey,
-          newAccountPubkey: keypair.publicKey,
-          lamports: portfolioRent,
-          space: portfolioSize,
+          newAccountPubkey: market.publicKey,
+          lamports: marketRent,
+          space: marketSize,
           programId,
         }),
       )
       .add(
-        initPortfolioIx({
+        initMarketIx({
           programId,
-          portfolio: keypair.publicKey,
           market: market.publicKey,
-          owner: payer.publicKey,
-          portfolioAccountId: id,
+          authority: payer.publicKey,
+          quoteMint,
+          marketGroupId,
+          assetSlotCapacity: ASSET_SLOT_CAPACITY,
+          vaultBump,
+          baseMint: PublicKey.default, // synthetic asset, no underlying mint
+          oracleKind: ORACLE_KIND_MANUAL,
+          oracleFeedId: new Uint8Array(32),
+          oraclePool: PublicKey.default,
         }),
-      );
-    const sig = await sendAndConfirmTransaction(conn, tx, [payer, keypair]);
-    console.log(`InitPortfolio (${label}) tx=${sig}`);
-    console.log(`  compute units=${await getComputeUnits(conn, sig)}`);
-  };
-  await createAndInitPortfolio(longPortfolio, longPfId, "long");
-  await createAndInitPortfolio(shortPortfolio, shortPfId, "short");
-
-  // ---- 3) Activate asset slot 0 ----
-  const tx3a = new Transaction().add(
-    activateMarketIx({
-      programId,
-      market: market.publicKey,
-      authority: payer.publicKey,
-      assetIndex: 0,
-      authenticatedPrice: ORACLE_PRICE,
-    }),
+      ),
+    [payer, market],
+    "InitMarket",
   );
-  const sig3a = await sendAndConfirmTransaction(conn, tx3a, [payer]);
-  console.log(`ActivateMarket tx=${sig3a}`);
-  console.log(`  compute units=${await getComputeUnits(conn, sig3a)}`);
 
-  // ---- 4) Refresh oracle + funding for the active slot ----
-  const tx3b = new Transaction().add(
-    accrueAssetIx({
-      programId,
-      market: market.publicKey,
-      authority: payer.publicKey,
-      assetIndex: 0,
-      effectivePrice: REFRESHED_PRICE,
-      fundingRateE9: 0n,
-    }),
+  // ---- 2) Create the vault TokenAccount at the PDA ----
+  await sendTx(
+    new Transaction().add(
+      createVaultIx({ programId, market: market.publicKey, authority: payer.publicKey, vault: vaultPda, quoteMint }),
+    ),
+    [payer],
+    "CreateVault",
   );
-  const sig3b = await sendAndConfirmTransaction(conn, tx3b, [payer]);
-  console.log(`AccrueAsset tx=${sig3b}`);
-  console.log(`  compute units=${await getComputeUnits(conn, sig3b)}`);
 
-  // ---- 5) Deposit into both portfolios (real SPL token transfer to vault) ----
-  const depositInto = async (
-    portfolioKey: PublicKey,
-    label: string,
-  ): Promise<void> => {
-    const tx = new Transaction().add(
+  // ---- 3) Activate asset slot 0 (seeds the mark) ----
+  await sendTx(
+    new Transaction().add(
+      activateMarketIx({
+        programId,
+        market: market.publicKey,
+        authority: payer.publicKey,
+        assetIndex: 0,
+        authenticatedPrice: ORACLE_PRICE,
+      }),
+    ),
+    [payer],
+    "ActivateMarket(slot0)",
+  );
+
+  // ---- 4) Create + fund the House (the gated counterparty) ----
+  await sendTx(
+    new Transaction().add(
+      createHouseVaultIx({
+        programId,
+        market: market.publicKey,
+        authority: payer.publicKey,
+        housePortfolio: housePda,
+        houseBump,
+      }),
+    ),
+    [payer],
+    "CreateHouseVault",
+  );
+  await sendTx(
+    new Transaction().add(
+      fundHouseVaultIx({
+        programId,
+        market: market.publicKey,
+        housePortfolio: housePda,
+        authority: payer.publicKey,
+        authorityToken: payerAta,
+        vaultToken: vaultPda,
+        amount: HOUSE_FUND,
+      }),
+    ),
+    [payer],
+    "FundHouseVault",
+  );
+
+  // ---- 5) User portfolio (PDA) + Deposit + Withdraw ----
+  await sendTx(
+    new Transaction().add(
+      initPortfolioIx({
+        programId,
+        portfolio: userPf,
+        market: market.publicKey,
+        owner: payer.publicKey,
+        bump: userPfBump,
+      }),
+    ),
+    [payer],
+    "InitPortfolio",
+  );
+  await sendTx(
+    new Transaction().add(
       depositIx({
         programId,
         market: market.publicKey,
-        portfolio: portfolioKey,
+        portfolio: userPf,
         owner: payer.publicKey,
         userToken: payerAta,
         vaultToken: vaultPda,
-        amount: DEPOSIT_AMOUNT,
+        amount: USER_DEPOSIT,
       }),
-    );
-    const sig = await sendAndConfirmTransaction(conn, tx, [payer]);
-    console.log(`Deposit (${label}) tx=${sig}`);
-    console.log(`  compute units=${await getComputeUnits(conn, sig)}`);
-  };
-  await depositInto(longPortfolio.publicKey, "long");
-  await depositInto(shortPortfolio.publicKey, "short");
-
-  // ---- 5b) Withdraw a slice from the long portfolio before any position
-  //          is opened. Engine requires active_bitmap empty; vault PDA
-  //          signs the SPL Token.Transfer out via invoke_signed.
-  const txW = new Transaction().add(
-    withdrawIx({
-      programId,
-      market: market.publicKey,
-      portfolio: longPortfolio.publicKey,
-      owner: payer.publicKey,
-      vaultToken: vaultPda,
-      userToken: payerAta,
-      amount: WITHDRAW_AMOUNT,
-    }),
+    ),
+    [payer],
+    "Deposit",
   );
-  const sigW = await sendAndConfirmTransaction(conn, txW, [payer]);
-  console.log(`Withdraw (long) tx=${sigW}`);
-  console.log(`  compute units=${await getComputeUnits(conn, sigW)}`);
-
-  // ---- 6) Trade: matched long/short cross ----
-  const tx6 = new Transaction().add(
-    tradeIx({
-      programId,
-      market: market.publicKey,
-      longPortfolio: longPortfolio.publicKey,
-      shortPortfolio: shortPortfolio.publicKey,
-      authority: payer.publicKey,
-      assetIndex: 0,
-      sizeQ: TRADE_SIZE_Q,
-      execPrice: REFRESHED_PRICE,
-      feeBps: TRADE_FEE_BPS,
-    }),
+  await sendTx(
+    new Transaction().add(
+      withdrawIx({
+        programId,
+        market: market.publicKey,
+        portfolio: userPf,
+        owner: payer.publicKey,
+        vaultToken: vaultPda,
+        userToken: payerAta,
+        amount: USER_WITHDRAW,
+      }),
+    ),
+    [payer],
+    "Withdraw",
   );
-  const sig6 = await sendAndConfirmTransaction(conn, tx6, [payer]);
-  console.log(`Trade tx=${sig6}`);
-  console.log(`  compute units=${await getComputeUnits(conn, sig6)}`);
+
+  // ---- 6) Refresh slot_last (delta-0) then PlaceOrder (user long vs House) ----
+  await sendTx(
+    new Transaction().add(
+      accrueAssetIx({
+        programId,
+        market: market.publicKey,
+        authority: payer.publicKey,
+        assetIndex: 0,
+        effectivePrice: ORACLE_PRICE,
+        fundingRateE9: 0n,
+      }),
+    ),
+    [payer],
+    "AccrueAsset(refresh)",
+  );
+
+  // Source the execution price from the on-chain mark, never a client price.
+  const { markPrice } = await fetchMarketState(conn, market.publicKey, 0);
+  if (markPrice !== ORACLE_PRICE) {
+    throw new Error(`unexpected mark: got=${markPrice} expected=${ORACLE_PRICE}`);
+  }
+  await sendTx(
+    new Transaction().add(
+      placeOrderIx({
+        programId,
+        market: market.publicKey,
+        userPortfolio: userPf,
+        housePortfolio: housePda,
+        user: payer.publicKey,
+        side: Side.Long,
+        assetIndex: 0,
+        sizeQ: TRADE_SIZE_Q,
+        execPrice: markPrice,
+        feeBps: TRADE_FEE_BPS,
+      }),
+    ),
+    [payer],
+    "PlaceOrder(long vs House)",
+  );
 
   // ---- Verify on-chain state ----
   const marketAcct = await conn.getAccountInfo(market.publicKey);
-  const longAcct = await conn.getAccountInfo(longPortfolio.publicKey);
-  const shortAcct = await conn.getAccountInfo(shortPortfolio.publicKey);
-  if (!marketAcct || !longAcct || !shortAcct) {
-    throw new Error("could not fetch market/portfolio accounts after trade");
+  const userAcct = await conn.getAccountInfo(userPf);
+  const houseAcct = await conn.getAccountInfo(housePda);
+  if (!marketAcct || !userAcct || !houseAcct) {
+    throw new Error("could not fetch market/user/house accounts after trade");
   }
   const vault = readU128LE(marketAcct.data, OFFSET_VAULT);
   const cTot = readU128LE(marketAcct.data, OFFSET_C_TOT);
-  const longCapital = readU128LE(longAcct.data, OFFSET_CAPITAL);
-  const shortCapital = readU128LE(shortAcct.data, OFFSET_CAPITAL);
+  const userCapital = readU128LE(userAcct.data, OFFSET_CAPITAL);
+  const houseCapital = readU128LE(houseAcct.data, OFFSET_CAPITAL);
 
-  // SPL token balances — these are u64 atoms on the actual TokenAccounts.
   const vaultTok = await getAccount(conn, vaultPda);
   const payerTok = await getAccount(conn, payerAta);
 
   console.log("");
-  console.log("on-chain state after trade:");
+  console.log("on-chain state after PlaceOrder:");
   console.log(`  market.vault     = ${vault}`);
   console.log(`  market.c_tot     = ${cTot}`);
-  console.log(`  long.capital     = ${longCapital}`);
-  console.log(`  short.capital    = ${shortCapital}`);
+  console.log(`  user.capital     = ${userCapital}`);
+  console.log(`  house.capital    = ${houseCapital}`);
   console.log(`  vault TokenAcct  = ${vaultTok.amount}`);
   console.log(`  payer TokenAcct  = ${payerTok.amount}`);
 
-  // Engine math:
-  //   notional = TRADE_SIZE_Q * REFRESHED_PRICE / POS_SCALE(1e6)
-  //   fee per side = notional * TRADE_FEE_BPS / 10_000
-  // Fee leaves account.capital and market.c_tot, moves into market.insurance —
-  // engine `vault` is conserved across trades; only Deposit/Withdraw move it.
-  const notional = (TRADE_SIZE_Q * REFRESHED_PRICE) / 1_000_000n;
-  const expectedFee = (notional * TRADE_FEE_BPS) / 10_000n;
-  const expectedVaultEngine = DEPOSIT_AMOUNT * 2n - WITHDRAW_AMOUNT;
-  const expectedCTot = expectedVaultEngine - expectedFee * 2n;
-  const expectedLongCapital = DEPOSIT_AMOUNT - WITHDRAW_AMOUNT - expectedFee;
-  const expectedShortCapital = DEPOSIT_AMOUNT - expectedFee;
-  if (vault !== expectedVaultEngine) {
-    throw new Error(`vault mismatch: got=${vault} expected=${expectedVaultEngine}`);
-  }
-  if (cTot !== expectedCTot) {
-    throw new Error(`c_tot mismatch: got=${cTot} expected=${expectedCTot}`);
-  }
-  if (longCapital !== expectedLongCapital) {
-    throw new Error(
-      `long capital mismatch: got=${longCapital} expected=${expectedLongCapital}`,
-    );
-  }
-  if (shortCapital !== expectedShortCapital) {
-    throw new Error(
-      `short capital mismatch: got=${shortCapital} expected=${expectedShortCapital}`,
-    );
-  }
+  // Engine math: opening at exec == mark realizes no PnL, only the per-side fee.
+  //   notional = size_q * mark / POS_SCALE; fee = notional * fee_bps / 1e4.
+  // The fee leaves each side's capital and c_tot, moving into insurance; the
+  // engine `vault` is conserved across trades (only Deposit/Withdraw move it).
+  const notional = (TRADE_SIZE_Q * markPrice) / POS_SCALE;
+  const fee = (notional * TRADE_FEE_BPS) / 10_000n;
+  const expectedVault = USER_DEPOSIT + HOUSE_FUND - USER_WITHDRAW;
+  const expectedCTot = expectedVault - fee * 2n;
+  const expectedUserCapital = USER_DEPOSIT - USER_WITHDRAW - fee;
+  const expectedHouseCapital = HOUSE_FUND - fee;
+  const expectedVaultTok = USER_DEPOSIT + HOUSE_FUND - USER_WITHDRAW;
+  const expectedPayerTok = MINTED - USER_DEPOSIT - HOUSE_FUND + USER_WITHDRAW;
 
-  // SPL vault token balance = deposits - withdrawals (atomic units).
-  const expectedVaultTok = DEPOSIT_AMOUNT * 2n - WITHDRAW_AMOUNT;
-  const expectedPayerTok = 1_000_000_000n - DEPOSIT_AMOUNT * 2n + WITHDRAW_AMOUNT;
-  if (vaultTok.amount !== expectedVaultTok) {
-    throw new Error(
-      `vault TokenAccount mismatch: got=${vaultTok.amount} expected=${expectedVaultTok}`,
-    );
-  }
-  if (payerTok.amount !== expectedPayerTok) {
-    throw new Error(
-      `payer TokenAccount mismatch: got=${payerTok.amount} expected=${expectedPayerTok}`,
-    );
-  }
-  console.log("? engine state matches: deposit + withdraw + trade-fees consistent");
-  console.log("? real SPL token custody: vault drained on withdraw, payer credited");
+  const eq = (got: bigint, want: bigint, label: string) => {
+    if (got !== want) throw new Error(`${label} mismatch: got=${got} expected=${want}`);
+  };
+  eq(vault, expectedVault, "engine vault");
+  eq(cTot, expectedCTot, "c_tot");
+  eq(userCapital, expectedUserCapital, "user capital");
+  eq(houseCapital, expectedHouseCapital, "house capital");
+  eq(vaultTok.amount, expectedVaultTok, "vault TokenAccount");
+  eq(payerTok.amount, expectedPayerTok, "payer TokenAccount");
+
+  console.log("");
+  console.log("OK engine state matches: deposit + withdraw + House-funded trade fees consistent");
+  console.log("OK real SPL custody: vault holds user + House collateral net of the withdrawal");
 }
 
 main().catch((e) => {
