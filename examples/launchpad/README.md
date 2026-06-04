@@ -1,24 +1,15 @@
 # Launchpad Example
 
-[![OpenPerps OSS](https://img.shields.io/badge/OpenPerps-OSS-9945FF)](https://github.com/itsbenjiidunn/openperps-oss)
-[![license](https://img.shields.io/badge/license-Apache--2.0-blue)](../../LICENSE)
+A token launch page that adds perp trading for the launching token, with `@openperps/react` and `@openperps/sdk`.
 
-> A token launch page that spins up a perp market for the launching token and
-> offers trading on it, with `@openperps/react`.
+This example shows how a launchpad turns a new token into a tradable perp from its launch page: create the market, then embed the trade, chart, and position widgets. The core integration lives in `src/App.tsx`.
 
-This example shows how a launchpad turns a new token into a tradable perp from its
-launch page: create the market, then embed the trade, chart, and position widgets.
-The whole integration lives in [`src/App.tsx`](src/App.tsx).
+## What It Demonstrates
 
-<!-- Add a short demo GIF of the launch + trade flow here, for example
-     ../../.github/assets/launchpad-demo.gif -->
-
-## What it demonstrates
-
-- Create a custom perp market for a launching token (`<OpenPerpsMarketLauncher/>`).
-- Embed a long/short trade widget on the token launch page.
-- Embed a chart with integrator-provided candles.
-- Show the user's position.
+- Create a custom perp market for a launching token with `<OpenPerpsMarketLauncher/>`.
+- Open a long/short trade panel on the launch page with `<OpenPerpsTrade/>`.
+- Render a price chart from integrator-provided candles with `<OpenPerpsChart/>`.
+- Show the user's open position with `<OpenPerpsPosition/>`.
 
 ## Run
 
@@ -33,24 +24,23 @@ npm install
 npm run dev      # or: npm run build
 ```
 
-## How it works
+## How It Works
 
 | Piece | Role |
-|-------|------|
-| `@openperps/react` | `<OpenPerpsMarketLauncher/>` plus the trade, chart, and position widgets |
-| `@openperps/sdk` | The market creation intent and config types behind the launcher |
+|---|---|
+| `@openperps/react` | Provides `<OpenPerpsMarketLauncher/>` plus the trade, chart, and position widgets. |
+| `@openperps/sdk` | Provides the market creation intent and config types behind the launcher. |
 
-The launcher builds a market from an `OpenPerpsMarketCreationIntent`; swap the
-intent fields, the chart source, or the surrounding page to fit your launch flow.
+The launcher builds a market from an `OpenPerpsMarketCreationIntent`; swap the intent fields, the chart source, or the surrounding page to fit your launch flow. The OpenPerps widgets can stay the same.
 
 ## Boundaries
 
-This example uses sample Solana cluster configuration and can be adapted for your
-deployment. The oracle source, keeper operator, liquidity, and market registry are
-yours to configure. Fork and customize it freely.
+This example uses sample Solana cluster configuration and can be adapted for your deployment. The oracle source, keeper operator, liquidity, and market registry are yours to configure.
+
+Fork and customize it freely.
 
 ## Links
 
-- [OpenPerps OSS](../../) (main repo)
+- [OpenPerps OSS](../../)
 - [`@openperps/sdk`](../../packages/sdk/README.md)
 - [`@openperps/react`](../../packages/react/README.md)
