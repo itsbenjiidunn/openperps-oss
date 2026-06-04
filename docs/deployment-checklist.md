@@ -7,8 +7,10 @@ real users.
 ## Oracle
 
 - [ ] Choose the price source per market (see [`oracle-and-price-safety.md`](oracle-and-price-safety.md)).
-- [ ] Majors: wire a production feed (Pyth / Switchboard). The on-chain Pyth CPI
-      is not implemented in v1; do not rely on `oracle_kind = PYTH` for settlement.
+- [ ] Majors: bind a Pyth feed id and run `CrankPyth`, which reads the Pyth
+      receiver's verified `PriceUpdateV2` account (a pull-oracle read, not a CPI)
+      and gates on confidence and spot/EMA divergence. See
+      [`oracle-integration.md`](oracle-integration.md).
 - [ ] Custom SPL tokens: use the DEX-EWMA path against a pool with real depth, and
       set `max_price_move_bps_per_slot`, `max_accrual_dt_slots`, and the deposit cap
       for that pool's liquidity.
