@@ -1,149 +1,328 @@
+<div align="center">
+
 # OpenPerps OSS
 
-> **The open-source perp layer for Solana apps.**
-> Add long/short markets to any token, from any trading surface.
+### The open-source perp layer for Solana apps
 
-[![npm](https://img.shields.io/npm/v/@openperps/sdk?logo=npm&label=npm)](https://www.npmjs.com/package/@openperps/sdk)
-[![license](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
-[![CI](https://github.com/itsbenjiidunn/openperps-oss/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/itsbenjiidunn/openperps-oss/actions/workflows/ci.yml)
+**Add long/short markets to any token, from any trading surface.**
 
-OpenPerps OSS is the infrastructure a Solana app embeds to offer perpetual
-futures on the tokens it already shows: a launchpad, a DEX terminal, a swap UI, a
-Telegram bot, a wallet, or an analytics dashboard. One shared risk core, one SDK,
-one keeper path, reused across all of them.
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
+[![sdk](https://img.shields.io/npm/v/@openperps/sdk?logo=npm&label=%40openperps%2Fsdk)](https://www.npmjs.com/package/@openperps/sdk)
+[![react](https://img.shields.io/npm/v/@openperps/react?logo=npm&label=%40openperps%2Freact)](https://www.npmjs.com/package/@openperps/react)
+[![keeper](https://img.shields.io/npm/v/@openperps/keeper?logo=npm&label=%40openperps%2Fkeeper)](https://www.npmjs.com/package/@openperps/keeper)
+[![Rust](https://img.shields.io/badge/Rust-54.2%25-orange?logo=rust&logoColor=white)](https://github.com/itsbenjiidunn/openperps-oss/search?l=rust)
+[![TypeScript](https://img.shields.io/badge/TypeScript-43.5%25-blue?logo=typescript&logoColor=white)](https://github.com/itsbenjiidunn/openperps-oss/search?l=typescript)
 
-<!-- Add a short demo GIF or screenshot of the <OpenPerpsTrade/> widget here,
-     for example .github/assets/demo.gif, to show the trade flow at a glance. -->
+</div>
 
-## Highlights
+---
 
-- **Embed perps on any token surface**: launchpads, DEX terminals, swap UIs, bots, wallets, or dashboards.
-- **One verified risk core.** Built on [Percolator](https://github.com/aeyakovenko/percolator) v16, the formally-verified risk engine by Anatoly Yakovenko (@toly), vendored unmodified.
-- **Self-hostable and integrator-owned.** You run the stack and configure the oracle, liquidity, keeper, and market registry. No middleman.
-- **Full toolkit:** a TypeScript SDK, drop-in React widgets, a self-host keeper, and account decoders.
-- **Permissionless markets:** list a perp on any SPL token, with isolated House/LP backing per market.
+OpenPerps OSS is the infrastructure a Solana app embeds to offer **perpetual futures** on the tokens it already shows: a launchpad, a DEX terminal, a swap UI, a Telegram bot, a wallet, or an analytics dashboard.
 
-## Quickstart
+**One SDK, one keeper, one risk engine**, reused across all of them. The SDK is the primary integration surface; React components and the keeper are built on top of it, so a web app, a backend script, and a bot all share the same power.
 
-```bash
-npm install @openperps/sdk @solana/web3.js @solana/spl-token
-```
+It is built on **[Percolator](https://github.com/aeyakovenko/percolator) v16**, the formally-verified risk engine by Anatoly Yakovenko ([@toly](https://github.com/aeyakovenko)). Percolator is the pure risk brain and ships no program, decoder, or deployment. OpenPerps OSS is the body around it: the Solana program, the client SDK, the UI kit, and the keeper.
 
-```ts
-import { buildTradeFromIntent, transactionFromInstructions } from "@openperps/sdk";
 
-// Build a long from a validated intent against the market's House/LP counterparty.
-const built = buildTradeFromIntent({
-  intent: { schemaVersion: 1, marketId: market.id, side: "long", size: "1000000" },
-  market,            // OpenPerpsMarketConfig
-  counterparty,      // resolved House / LP portfolio
-  executionPrice,    // bigint, from the keeper / on-chain mark
-  owner: wallet.publicKey,
-});
-
-const tx = transactionFromInstructions(built.instructions, {
-  feePayer: wallet.publicKey,
-});
-// sign + send with your wallet adapter
-```
-
-`@openperps/react` wraps this in a drop-in `<OpenPerpsTrade/>` widget, and
-`@openperps/keeper` runs the oracle crank and liquidations. See each package's
-README.
-
-## Contents
+## Table of Contents
 
 - [Who it is for](#who-it-is-for)
 - [What it gives you](#what-it-gives-you)
 - [Architecture](#architecture)
+- [How the on-chain program works](#how-the-on-chain-program-works)
 - [Packages](#packages)
+- [Quick start](#quick-start)
+  - [SDK](#sdk)
+  - [React](#react)
+  - [Keeper](#keeper)
+- [Repository layout](#repository-layout)
 - [Build and test](#build-and-test)
-- [Scope and security](#scope-and-security)
 - [License](#license)
+
+---
 
 ## Who it is for
 
 Any surface that already shows a Solana token can add perps on it:
 
-- **Launchpads:** a Create Perp button and a trade panel on the token page.
-- **DEX terminals:** a long/short panel next to the chart.
-- **Swap UIs and aggregators:** perps on the token page (Jupiter, Raydium style).
-- **Telegram bots:** `/perp_create`, `/long`, `/short`, `/positions`, `/close`.
-- **Wallets and portfolio apps:** show perp positions, PnL, close and withdraw.
-- **Analytics dashboards:** open interest, volume, liquidations, oracle health.
+| Surface | What you add |
+| --- | --- |
+| **Launchpads** | A *Create Perp* button and a trade panel on the token page |
+| **DEX terminals** | A long/short panel next to the chart |
+| **Swap UIs & aggregators** | Perps on the token page |
+| **Telegram bots** | `/perp_create`, `/long`, `/short`, `/positions`, `/close` |
+| **Wallets & portfolio apps** | Show perp positions, PnL, close and withdraw |
+| **Analytics dashboards** | Open interest, volume, liquidations, oracle health |
+
+---
 
 ## What it gives you
 
 | Capability | What you build with it |
-|------------|------------------------|
-| Create perp market | A perp market for a token/mint/pool already in your app |
-| Seed LP and insurance vault | Liquidity so users have a counterparty |
-| Long / short | Open a position from a page, a bot, or a wallet |
-| Close position | Close and settle PnL |
-| Chart and mark price | Candles, spot, mark, entry, liquidation, uPnL |
-| Trade feed | Global or per-user fills |
-| Keeper | Crank the oracle, clear stale slots, scan liquidations |
-| Account decoders | Read market, portfolio, position, and vault state |
+| --- | --- |
+| **Create perp market** | A perp market for a token / mint / pool already in your app |
+| **Seed LP & House vault** | Liquidity so users have a counterparty for every trade |
+| **Long / short** | Open a position from a page, a bot, or a wallet |
+| **Close position** | Close and settle PnL |
+| **Chart & mark price** | Candles, spot, mark, entry, liquidation, uPnL |
+| **Trade feed** | Global or per-user fills |
+| **Keeper** | Push oracle/funding updates, clear stale slots, scan liquidations |
+| **Account decoders** | Read market, portfolio, position, and vault state |
+
+---
 
 ## Architecture
 
-Four layers. The SDK is the core; React and the bot helpers are adapters over
-it, so a backend script or a Telegram bot has the same power as a web app.
+Four layers. The **SDK is the core**; React and the bot helpers are adapters over it, so a backend script or a Telegram bot has the same power as a web app.
+
+```
+  Trading surfaces                          Keeper
+  (launchpad, DEX terminal, swap UI,        (oracle / funding cranks,
+   Telegram bot, wallet, dashboard)          liquidations)
+       |                                         |
+       v                                         |
+  Adapters                                       |
+  (@openperps/react widgets + hooks,             |
+   backend / bot helpers)                        |
+       |                                         |
+       v                                         |
+  @openperps/sdk  (the core client)              |
+       |                                         |
+       v                                         v
+  Solana program  (crates/program, 27 instructions, zero-copy)
+       |
+       v
+  Percolator engine  (crates/engine, vendored, risk math)
+```
+
+### Layers
 
 | Layer | What | Who uses it |
-|-------|------|-------------|
-| Protocol | Solana program, risk engine, vaults, market accounts, liquidation | Protocol devs, reviewers |
-| SDK | TypeScript for create market, deposit, trade, close, withdraw, decode | Every dapp, bot, backend |
-| UI kit | React widgets and headless hooks for trade, chart, positions, status | Web apps, terminals |
-| Keeper kit | Self-hostable keeper for oracle crank, liquidation, candles, indexing | Self-hosting integrators |
+| --- | --- | --- |
+| **Protocol** | Solana program, risk engine, vaults, market accounts, liquidation | Protocol devs, auditors |
+| **SDK** | TypeScript for create market, deposit, trade, close, withdraw, decode | Every dapp, bot, backend |
+| **UI kit** | React widgets and headless hooks for trade, chart, positions, status | Web apps, terminals |
+| **Keeper kit** | Self-hostable keeper for oracle/funding cranks and liquidation | Self-hosting integrators |
+
+---
+
+## How the on-chain program works
+
+The vendored Percolator engine is **zero-copy on-chain**. There is no allocation and no serialization on the hot path: account byte buffers are reinterpreted in place (via `bytemuck`) as fixed-layout POD structs, and engine operations mutate those bytes directly. This is what lets the risk engine fit inside an SBF program at all.
+
+### Account layout
+
+```
+Market account data:
+  [ OpenPerpsMarketHeader (208 bytes) ][ MarketGroupV16HeaderAccount ][ MarketSlot ; N ]
+  (MarketSlot = Market<MarketWrapper>)
+
+Portfolio account data (one per user):
+  [ PortfolioAccountV16Account ]   (source domains inline, CAP = 32)
+```
+
+Each market and each portfolio is a single account. The program splits off the 208-byte OpenPerps wrapper header (`MARKET_HEADER_VERSION = 4`), which carries the discriminator, version, oracle kind, and OpenPerps-specific config the engine does not model, then builds the matching engine view over the remaining bytes and calls the engine method, which mutates in place. A portfolio holds up to **16 legs** (`V16_MAX_PORTFOLIO_ASSETS_N = 16`).
+
+The engine's production methods carry a `_not_atomic` suffix (for example `deposit_not_atomic`). That is the engine signalling that **the OpenPerps wrapper owns atomicity, persistence, and authorization**. The engine only does the risk math.
+
+### Instruction to engine map
+
+The program decodes **27 instructions** and dispatches them in `processor.rs`. The ones that drive risk math go through zero-copy `*_buffer` helpers:
+
+| Instruction | Engine entry |
+| --- | --- |
+| `InitMarket` | zero-copy header / slots init |
+| `InitPortfolio` | zero-copy portfolio PDA init |
+| `Deposit` | `deposit_not_atomic` |
+| `Withdraw` | `withdraw_not_atomic` |
+| `ActivateMarket` | `activate_market_buffer` |
+| `AccrueAsset` | `accrue_asset_buffer` |
+| `Trade` / `PlaceOrder` | `trade_buffer` |
+| `PlaceBatchOrder` | `batch_trade_buffer` |
+| `Liquidate` | `liquidate_account_not_atomic` |
+| `ResolveMarket` | `resolve_market_not_atomic` |
+| `CrankRefresh` | `crank_refresh_buffer` |
+| `SettlePnl` | `settle_pnl_buffer` |
+| `CrankOracle` | `crank_oracle_buffer` |
+| `CrankPyth` | reads a Pyth `PriceUpdateV2`, then `accrue_asset_buffer` |
+| `CrankDexSpot` | reads pinned DEX vaults, then `crank_oracle_buffer` |
+
+The remaining instructions are wrapper-side and do no engine math: SPL vault custody (`CreateVault`, `CreateHouseVault`, `FundHouseVault`, `WithdrawHouseVault`), oracle plumbing (`PinOraclePool`, `SetDexPool`), config (`SetOracleAuthority`, `SetDepositCap`), delegation (`SetDelegate`), and mock-pool test helpers (`CreateMockPool`, `MockSwap`).
+
+> Collateral custody is an SPL token vault plus CPI, with a separate **House vault** acting as the counterparty for every `PlaceOrder`.
+
+See [`docs/architecture.md`](./docs/architecture.md) for verified line references into the vendored engine.
+
+---
 
 ## Packages
 
-| Package | Role |
-|---------|------|
-| `@openperps/sdk` | The core client. High-level functions that hide PDAs, instruction tags, account layouts, and atom math |
-| `@openperps/react` | Web widgets (`<OpenPerpsTrade/>`, `<OpenPerpsChart/>`, `<OpenPerpsPosition/>`, `<OpenPerpsMarketLauncher/>`) and headless hooks |
-| `@openperps/keeper` | Self-host keeper for the oracle crank, funding accrual, and liquidations |
+| Package | Version | License | Role |
+| --- | --- | --- | --- |
+| **[`@openperps/sdk`](./packages/sdk)** | 1.1.0 | Apache-2.0 | The core client. High-level typed functions that hide PDAs, instruction tags, account layouts, and atom/price math |
+| **[`@openperps/react`](./packages/react)** | 1.1.0 | MIT | Drop-in widgets (`<OpenPerpsTrade/>`, `<OpenPerpsChart/>`, `<OpenPerpsPosition/>`, `<OpenPerpsMarketLauncher/>`) and headless hooks |
+| **[`@openperps/keeper`](./packages/keeper)** | 1.1.0 | Apache-2.0 | Core-only self-host keeper: oracle/funding cranks and liquidation across many markets |
 
-A Telegram trading bot ships as a runnable example (`examples/telegram-bot`)
-built on `@openperps/sdk` rather than as a separate package.
+The SDK is the primary integration surface. The React components are the fast path for teams that want ready-made UI; the keeper is the risk-side cron you run yourself.
 
-The repo layout follows the layers: `crates/engine`, `crates/program`,
-`packages/sdk`, `packages/react`, `packages/keeper`, `apps/web` (example app),
-`apps/indexer`, `examples/`, and `docs/`.
+---
+
+## Quick start
+
+### SDK
+
+```bash
+npm install @openperps/sdk @solana/web3.js @solana/spl-token
+```
+
+`@solana/web3.js` and `@solana/spl-token` are peer dependencies, so the SDK shares your app's single instance of each.
+
+```ts
+import { Connection, PublicKey } from "@solana/web3.js";
+import { buildTradeFromIntent, transactionFromInstructions } from "@openperps/sdk";
+
+const built = buildTradeFromIntent({
+  intent: { schemaVersion: 1, marketId: market.id, side: "long", size: "1000000" },
+  market,                 // OpenPerpsMarketConfig
+  counterparty,           // resolved House / LP portfolio
+  executionPrice,         // bigint, from the keeper / on-chain mark
+  owner: wallet.publicKey,
+});
+
+const tx = transactionFromInstructions(built.instructions, { feePayer: wallet.publicKey });
+// sign + send with your wallet adapter
+```
+
+What the SDK gives you:
+
+- **Trade build and resolution.** `resolveTrade` checks an intent against the market and on-chain mark (size, side, reduce-only, slippage); `buildTradeFromIntent` composes the on-chain instructions against the user's portfolio and the House counterparty.
+- **Market creation.** `planMarketCreation` and the build helpers compose the full lifecycle (market account, vault, House, oracle binding) for a custom market on any token.
+- **Account decoders.** `decodePortfolioSummary`, `decodePortfolioPositions`, and the layout offsets read market, portfolio, and position state.
+- **Price providers.** Bring your own `PriceProvider` (Pyth, a pool read, your own oracle) or use `createStaticPriceProvider` for tests and demos.
+- **Instruction encoders.** Low-level `accrueAssetIx`, `liquidateIx`, and the rest, mirroring the Rust program, for when you need to compose by hand.
+
+### React
+
+```bash
+npm install @openperps/react @openperps/sdk react @solana/web3.js @solana/wallet-adapter-react
+```
+
+`react`, `@solana/web3.js`, and `@solana/wallet-adapter-react` are peer dependencies, so the components use your app's existing wallet and connection providers.
+
+```tsx
+import {
+  OpenPerpsTrade,
+  OpenPerpsPosition,
+  OpenPerpsChart,
+  OpenPerpsMarketLauncher,
+} from "@openperps/react";
+
+<OpenPerpsTrade market={market} counterparty={house} executionPrice={mark} />
+<OpenPerpsPosition market={market} owner={wallet.publicKey} />
+<OpenPerpsChart market={market} candles={candles} />
+<OpenPerpsMarketLauncher intent={creationIntent} onLaunch={createMarket} />
+```
+
+The components ship no CSS; style them through `className` or the default `openperps-*` class names. Prefer to drive the flow yourself? Use the headless hook:
+
+```tsx
+import { useOpenPerpsTrade } from "@openperps/react";
+
+const { placeTrade, pending, error } = useOpenPerpsTrade({ market, counterparty });
+
+await placeTrade({ side: "long", size: "1000000", executionPrice: mark });
+```
+
+`placeTrade` resolves the intent (counterparty, limit, slippage, reduce-only guards), builds the `PlaceOrder` transaction, signs it with the connected wallet, and confirms it.
+
+### Keeper
+
+```ts
+import { Connection, Keypair } from "@solana/web3.js";
+import { createStaticPriceProvider } from "@openperps/sdk";
+import { runKeeper, type KeeperMarket } from "@openperps/keeper";
+
+const connection = new Connection(process.env.OPENPERPS_RPC!, "confirmed");
+const authority = Keypair.fromSecretKey(/* your oracle authority key */);
+
+const markets: KeeperMarket[] = [
+  { config: sampleMarketConfig, maxAccrualDtSlots: 1000, maxPriceMoveBpsPerSlot: 10 },
+];
+
+await runKeeper(
+  { connection, authority, priceProvider: createStaticPriceProvider(100_000_000n) },
+  markets,
+  { intervalMs: 60_000 },
+);
+```
+
+A keeper is part of the risk system, not just a price cron: it pushes oracle/funding updates on-chain and submits liquidations across many markets. Key points:
+
+- **Authority.** For `AccrueAsset`, the keeper `authority` keypair must match the market's oracle authority, or the program rejects the update. By default that is the program's global relayer constant; a market can rotate it per market with `setOracleAuthorityIx` (an `[ORACLE_SEED, market]` PDA), in which case set `useOracleAuthorityPda: true` on that `KeeperMarket`.
+- **Freshness.** The keeper respects the engine's per-slot price-move bound and `max_accrual_dt_slots` window. A large jump is split into steps that each stay within the per-slot move budget (`oldPrice * maxPriceMoveBpsPerSlot * dt / 10000`), so no single `AccrueAsset` is rejected for moving too far too fast. When a market falls behind, it bursts catch-up accruals before risk-increasing trades. See [`docs/keeper-freshness.md`](./docs/keeper-freshness.md).
+- **Liquidation.** `liquidatePortfolio` submits a permissionless `Liquidate`; the engine rejects healthy accounts, so it is safe to attempt. `scanLiquidations` runs a whole candidate list and returns the signatures that landed. Discovering unhealthy portfolios is integrator-provided in v1.
+- **Monitoring.** Create a `KeeperHealth`, pass it on `deps.health`, and the runner records per-market last crank, slots behind, staleness, last error, and failure streak. `summarizeHealth` returns `{ healthy, staleMarkets, failingMarkets }` for a one-glance `/health` endpoint.
+
+> v1 keeper scope is intentionally small: no analytics, candles, billing, hosted tenant registry, trade-feed API, or SLA system.
+
+---
+
+## Repository layout
+
+The repo layout follows the layers:
+
+```
+openperps-oss/
+├── crates/
+│   ├── engine/        # Percolator risk engine (vendored, upstream 051e268)
+│   └── program/       # Solana on-chain program (27 instructions, zero-copy)
+├── packages/
+│   ├── sdk/           # @openperps/sdk      core TypeScript client
+│   ├── react/         # @openperps/react    web widgets + hooks
+│   └── keeper/        # @openperps/keeper   self-host keeper template
+├── apps/
+│   ├── web/           # @openperps/frontend  reference app (consumes the packages)
+│   └── indexer/       # fills / PnL / liquidation indexer
+├── examples/          # integration examples
+├── scripts/           # build helpers (e.g. rewrite-dts-extensions.mjs)
+├── docs/              # architecture.md, keeper-freshness.md
+├── Cargo.toml         # Rust workspace (engine + program)
+└── package.json       # npm workspace (packages/*)
+```
+
+The SDK source mirrors the program, one module per concern: `layout`, `instructions`, `config`, `intents`, `price`, `market-state`, `decoders`, `transactions`, `actions`, `trade-resolution`, `market-creation`, `trade-build`, `market-create-build`.
+
+---
 
 ## Build and test
 
-```bash
-# Protocol: engine + program, unit + integration tests
-cargo test -p openperps-program
+### Protocol: engine + program
 
-# TypeScript packages: one workspace install, then build / test / typecheck
-npm install            # root: links @openperps/sdk, @openperps/react, @openperps/keeper
-npm run build          # compiles each package to dist/ (.js + .d.ts)
-npm test               # runs every package's test suite
-npm run typecheck      # type-checks every package
+The Rust workspace uses a `fat` LTO release profile and a custom `sbf` profile for the on-chain build. The vendored engine keeps its upstream Kani formal-verification config.
+
+```bash
+# Unit + integration tests for engine + program
+cargo test -p openperps-program
 ```
 
-`packages/*` is an npm workspace. Each package publishes its compiled `dist`
-(`main`, `types`, and `exports` point there, and `prepublishOnly` rebuilds it),
-so `npm install @openperps/sdk` gives a consumer runnable JS plus types, not raw
-TypeScript. The apps and examples consume the same packages locally; run
-`npm run build` once at the root before installing or building them.
+### TypeScript packages: one workspace install
 
-## Scope and security
+`packages/*` is an npm workspace. Each package compiles to `dist/` (`.js` + `.d.ts`) via `tsc`, and `prepublishOnly` rebuilds it, so `npm install @openperps/sdk` gives a consumer runnable JS plus types, not raw TypeScript.
 
-OpenPerps OSS is infrastructure. The
-[Percolator](https://github.com/aeyakovenko/percolator) risk engine in
-`crates/engine` is Kani-formally-verified upstream and vendored unmodified;
-OpenPerps OSS adds no risk logic of its own. Integrators own their deployment:
-the oracle path, liquidity and risk parameters, keeper operator, and market
-registry are yours to configure and review. See [`SECURITY.md`](SECURITY.md) for
-the trust boundary, and [`docs/`](docs/) for the permission map, oracle model,
-and deployment checklist.
+```bash
+npm install        # root: links @openperps/sdk, @openperps/react, @openperps/keeper
+npm run build      # builds sdk, then react, then keeper
+npm test           # builds the sdk, then runs each package's tests
+npm run typecheck  # builds the sdk, then type-checks every package
+```
+
+> [!NOTE]
+> The build order matters: `react` and `keeper` depend on the compiled `@openperps/sdk`, so the root `build` / `test` / `typecheck` scripts always build the SDK first. The apps and examples consume the same packages locally, so **run `npm run build` once at the root** before installing or building them.
+
+---
 
 ## License
 
-Apache-2.0, with per-package exceptions noted in each package. The vendored
-engine retains its upstream Apache-2.0 license and the Percolator disclaimer.
-See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
+**Apache-2.0**, with per-package exceptions noted in each package (`@openperps/react` is MIT). The vendored engine retains its upstream Apache-2.0 license and the Percolator disclaimer.
+
+See [`LICENSE`](./LICENSE) and [`NOTICE`](./NOTICE).
