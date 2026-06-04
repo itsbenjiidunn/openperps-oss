@@ -15,7 +15,7 @@
 
 ---
 
-OpenPerps OSS is the infrastructure a Solana app embeds to offer **perpetual futures** on the tokens it already shows: a launchpad, a DEX terminal, a swap UI, a Telegram bot, a wallet, or an analytics dashboard.
+**OpenPerps OSS** is the infrastructure Solana apps embed to offer **perpetual futures** on the tokens they already show: launchpads, DEX terminals, swap UIs, Telegram bots, wallets, or analytics dashboards.
 
 **One SDK, one keeper, one risk engine**, reused across all of them. The SDK is the primary integration surface; React components and the keeper are built on top of it, so a web app, a backend script, and a bot all share the same power.
 
