@@ -1,10 +1,19 @@
 // Instruction encoders mirroring Rust `crates/program/src/instruction.rs`.
 // Wire format: 1-byte tag followed by little-endian payload.
 
-import { PublicKey, SystemProgram, TransactionInstruction } from "@solana/web3.js";
+import {
+  PublicKey,
+  SystemProgram,
+  TransactionInstruction,
+} from "@solana/web3.js";
 import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 
-import { DEPOSIT_CAP_SEED, DEXPOOL_SEED, ORACLE_SEED, PORTFOLIO_SEED } from "./layout.ts";
+import {
+  DEPOSIT_CAP_SEED,
+  DEXPOOL_SEED,
+  ORACLE_SEED,
+  PORTFOLIO_SEED,
+} from "./layout.ts";
 
 export { TOKEN_PROGRAM_ID };
 
@@ -46,7 +55,8 @@ export const Side = {
 export type Side = (typeof Side)[keyof typeof Side];
 
 function writeU32LE(buf: Uint8Array, offset: number, value: number): void {
-  if (value < 0 || value > 0xffff_ffff) throw new Error(`u32 out of range: ${value}`);
+  if (value < 0 || value > 0xffff_ffff)
+    throw new Error(`u32 out of range: ${value}`);
   buf[offset] = value & 0xff;
   buf[offset + 1] = (value >>> 8) & 0xff;
   buf[offset + 2] = (value >>> 16) & 0xff;
@@ -54,7 +64,8 @@ function writeU32LE(buf: Uint8Array, offset: number, value: number): void {
 }
 
 function writeU64LE(buf: Uint8Array, offset: number, value: bigint): void {
-  if (value < 0n || value >= 1n << 64n) throw new Error(`u64 out of range: ${value}`);
+  if (value < 0n || value >= 1n << 64n)
+    throw new Error(`u64 out of range: ${value}`);
   let v = value;
   for (let i = 0; i < 8; i++) {
     buf[offset + i] = Number(v & 0xffn);
@@ -63,7 +74,8 @@ function writeU64LE(buf: Uint8Array, offset: number, value: bigint): void {
 }
 
 function writeU128LE(buf: Uint8Array, offset: number, value: bigint): void {
-  if (value < 0n || value >= 1n << 128n) throw new Error(`u128 out of range: ${value}`);
+  if (value < 0n || value >= 1n << 128n)
+    throw new Error(`u128 out of range: ${value}`);
   let v = value;
   for (let i = 0; i < 16; i++) {
     buf[offset + i] = Number(v & 0xffn);
@@ -75,13 +87,15 @@ function writeU128LE(buf: Uint8Array, offset: number, value: bigint): void {
 function writeI128LE(buf: Uint8Array, offset: number, value: bigint): void {
   const MIN = -(1n << 127n);
   const MAX = (1n << 127n) - 1n;
-  if (value < MIN || value > MAX) throw new Error(`i128 out of range: ${value}`);
+  if (value < MIN || value > MAX)
+    throw new Error(`i128 out of range: ${value}`);
   const unsigned = value < 0n ? value + (1n << 128n) : value;
   writeU128LE(buf, offset, unsigned);
 }
 
 function expect32(bytes: Uint8Array, label: string): Uint8Array {
-  if (bytes.length !== 32) throw new Error(`${label} must be 32 bytes, got ${bytes.length}`);
+  if (bytes.length !== 32)
+    throw new Error(`${label} must be 32 bytes, got ${bytes.length}`);
   return bytes;
 }
 
@@ -380,8 +394,14 @@ export function crankPythIx(args: {
 }
 
 /** The per-market DEX pool config PDA; matches Rust `[DEXPOOL_SEED, market]`. */
-export function dexPoolPda(programId: PublicKey, market: PublicKey): [PublicKey, number] {
-  return PublicKey.findProgramAddressSync([DEXPOOL_SEED, market.toBuffer()], programId);
+export function dexPoolPda(
+  programId: PublicKey,
+  market: PublicKey,
+): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync(
+    [DEXPOOL_SEED, market.toBuffer()],
+    programId,
+  );
 }
 
 export function encodeSetDexPool(
@@ -485,7 +505,9 @@ export type BatchLeg = {
 
 export function encodePlaceBatchOrder(legs: BatchLeg[]): Buffer {
   if (legs.length === 0 || legs.length > MAX_BATCH_LEGS) {
-    throw new Error(`PlaceBatchOrder needs 1..${MAX_BATCH_LEGS} legs, got ${legs.length}`);
+    throw new Error(
+      `PlaceBatchOrder needs 1..${MAX_BATCH_LEGS} legs, got ${legs.length}`,
+    );
   }
   const LEG = 37; // side(1)+assetIndex(4)+sizeQ(16)+execPrice(8)+feeBps(8)
   const data = new Uint8Array(2 + legs.length * LEG);
@@ -653,7 +675,11 @@ export function accrueAssetIx(args: {
   return new TransactionInstruction({
     programId: args.programId,
     keys,
-    data: encodeAccrueAsset(args.assetIndex, args.effectivePrice, args.fundingRateE9),
+    data: encodeAccrueAsset(
+      args.assetIndex,
+      args.effectivePrice,
+      args.fundingRateE9,
+    ),
   });
 }
 
@@ -736,7 +762,11 @@ export function crankRefreshIx(args: {
       { pubkey: args.portfolio, isSigner: false, isWritable: true },
       { pubkey: args.cranker, isSigner: true, isWritable: false },
     ],
-    data: encodeCrankRefresh(args.assetIndex, args.effectivePrice, args.fundingRateE9),
+    data: encodeCrankRefresh(
+      args.assetIndex,
+      args.effectivePrice,
+      args.fundingRateE9,
+    ),
   });
 }
 
@@ -986,7 +1016,11 @@ export function setDelegateIx(args: {
       { pubkey: args.owner, isSigner: true, isWritable: true },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
     ],
-    data: encodeSetDelegate(args.delegate.toBytes(), args.bump, args.expirySlot),
+    data: encodeSetDelegate(
+      args.delegate.toBytes(),
+      args.bump,
+      args.expirySlot,
+    ),
   });
 }
 
@@ -995,10 +1029,16 @@ export function oracleAuthorityPda(
   programId: PublicKey,
   market: PublicKey,
 ): [PublicKey, number] {
-  return PublicKey.findProgramAddressSync([ORACLE_SEED, market.toBuffer()], programId);
+  return PublicKey.findProgramAddressSync(
+    [ORACLE_SEED, market.toBuffer()],
+    programId,
+  );
 }
 
-export function encodeSetOracleAuthority(authority: Uint8Array, bump: number): Buffer {
+export function encodeSetOracleAuthority(
+  authority: Uint8Array,
+  bump: number,
+): Buffer {
   expect32(authority, "authority");
   const data = new Uint8Array(1 + 32 + 1);
   data[0] = Tag.SetOracleAuthority;
@@ -1038,7 +1078,10 @@ export function depositCapPda(
   programId: PublicKey,
   market: PublicKey,
 ): [PublicKey, number] {
-  return PublicKey.findProgramAddressSync([DEPOSIT_CAP_SEED, market.toBuffer()], programId);
+  return PublicKey.findProgramAddressSync(
+    [DEPOSIT_CAP_SEED, market.toBuffer()],
+    programId,
+  );
 }
 
 export function encodeSetDepositCap(maxCapital: bigint, bump: number): Buffer {
