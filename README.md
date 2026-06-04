@@ -19,22 +19,23 @@
 
 **One SDK, one keeper, one risk engine**, reused across all of them. The SDK is the primary integration surface; React components and the keeper are built on top of it, so a web app, a backend script, and a bot all share the same power.
 
-It is built on **[Percolator](https://github.com/aeyakovenko/percolator) v16**, the formally-verified risk engine by Anatoly Yakovenko ([@toly](https://github.com/aeyakovenko)). Percolator is the pure risk brain and ships no program, decoder, or deployment. OpenPerps OSS is the body around it: the Solana program, the client SDK, the UI kit, and the keeper.
-
+It is built on **[Percolator](https://github.com/aeyakovenko/percolator) v16**, the formally-verified risk engine by Anatoly Yakovenko ([@toly](https://github.com/aeyakovenko)). You get a formally-verified risk core without building or auditing one yourself: Percolator is the pure risk brain and ships no program, decoder, or deployment, and OpenPerps OSS is the body around it: the Solana program, the client SDK, the UI kit, and the keeper.
 
 ## Table of Contents
 
 - [Who it is for](#who-it-is-for)
 - [What it gives you](#what-it-gives-you)
 - [Architecture](#architecture)
-- [How the on-chain program works](#how-the-on-chain-program-works)
-- [Packages](#packages)
 - [Quick start](#quick-start)
   - [SDK](#sdk)
   - [React](#react)
   - [Keeper](#keeper)
-- [Repository layout](#repository-layout)
+- [Examples](#examples)
+- [Deploy your own](#deploy-your-own)
+- [Packages](#packages)
 - [Build and test](#build-and-test)
+- [How the on-chain program works](#how-the-on-chain-program-works)
+- [Repository layout](#repository-layout)
 - [License](#license)
 
 ---
@@ -62,8 +63,8 @@ Any surface that already shows a Solana token can add perps on it:
 | **Seed LP & House vault** | Liquidity so users have a counterparty for every trade |
 | **Long / short** | Open a position from a page, a bot, or a wallet |
 | **Close position** | Close and settle PnL |
-| **Chart & mark price** | Candles, spot, mark, entry, liquidation, uPnL |
-| **Trade feed** | Global or per-user fills |
+| **Mark price & decoders** | Read spot, mark, entry, liquidation, and uPnL from on-chain state |
+| **Chart & trade feed** | Plug your own candle and fill data into the chart and feed widgets |
 | **Keeper** | Push oracle/funding updates, clear stale slots, scan liquidations |
 | **Account decoders** | Read market, portfolio, position, and vault state |
 
@@ -87,7 +88,7 @@ Four layers. The **SDK is the core**; React and the bot helpers are adapters ove
   @openperps/sdk  (the core client)              |
        |                                         |
        v                                         v
-  Solana program  (crates/program, 27 instructions, zero-copy)
+  Solana program  (crates/program, zero-copy)
        |
        v
   Percolator engine  (crates/engine, vendored, risk math)
@@ -104,67 +105,6 @@ Four layers. The **SDK is the core**; React and the bot helpers are adapters ove
 
 ---
 
-## How the on-chain program works
-
-The vendored Percolator engine is **zero-copy on-chain**. There is no allocation and no serialization on the hot path: account byte buffers are reinterpreted in place (via `bytemuck`) as fixed-layout POD structs, and engine operations mutate those bytes directly. This is what lets the risk engine fit inside an SBF program at all.
-
-### Account layout
-
-```
-Market account data:
-  [ OpenPerpsMarketHeader (208 bytes) ][ MarketGroupV16HeaderAccount ][ MarketSlot ; N ]
-  (MarketSlot = Market<MarketWrapper>)
-
-Portfolio account data (one per user):
-  [ PortfolioAccountV16Account ]   (source domains inline, CAP = 32)
-```
-
-Each market and each portfolio is a single account. The program splits off the 208-byte OpenPerps wrapper header (`MARKET_HEADER_VERSION = 4`), which carries the discriminator, version, oracle kind, and OpenPerps-specific config the engine does not model, then builds the matching engine view over the remaining bytes and calls the engine method, which mutates in place. A portfolio holds up to **16 legs** (`V16_MAX_PORTFOLIO_ASSETS_N = 16`).
-
-The engine's production methods carry a `_not_atomic` suffix (for example `deposit_not_atomic`). That is the engine signalling that **the OpenPerps wrapper owns atomicity, persistence, and authorization**. The engine only does the risk math.
-
-### Instruction to engine map
-
-The program decodes **27 instructions** and dispatches them in `processor.rs`. The ones that drive risk math go through zero-copy `*_buffer` helpers:
-
-| Instruction | Engine entry |
-| --- | --- |
-| `InitMarket` | zero-copy header / slots init |
-| `InitPortfolio` | zero-copy portfolio PDA init |
-| `Deposit` | `deposit_not_atomic` |
-| `Withdraw` | `withdraw_not_atomic` |
-| `ActivateMarket` | `activate_market_buffer` |
-| `AccrueAsset` | `accrue_asset_buffer` |
-| `Trade` / `PlaceOrder` | `trade_buffer` |
-| `PlaceBatchOrder` | `batch_trade_buffer` |
-| `Liquidate` | `liquidate_account_not_atomic` |
-| `ResolveMarket` | `resolve_market_not_atomic` |
-| `CrankRefresh` | `crank_refresh_buffer` |
-| `SettlePnl` | `settle_pnl_buffer` |
-| `CrankOracle` | `crank_oracle_buffer` |
-| `CrankPyth` | reads a Pyth `PriceUpdateV2`, then `accrue_asset_buffer` |
-| `CrankDexSpot` | reads pinned DEX vaults, then `crank_oracle_buffer` |
-
-The remaining instructions are wrapper-side and do no engine math: SPL vault custody (`CreateVault`, `CreateHouseVault`, `FundHouseVault`, `WithdrawHouseVault`), oracle plumbing (`PinOraclePool`, `SetDexPool`), config (`SetOracleAuthority`, `SetDepositCap`), delegation (`SetDelegate`), and mock-pool test helpers (`CreateMockPool`, `MockSwap`).
-
-> Collateral custody is an SPL token vault plus CPI, with a separate **House vault** acting as the counterparty for every `PlaceOrder`.
-
-See [`docs/architecture.md`](./docs/architecture.md) for verified line references into the vendored engine.
-
----
-
-## Packages
-
-| Package | Version | License | Role |
-| --- | --- | --- | --- |
-| **[`@openperps/sdk`](./packages/sdk)** | 1.1.0 | Apache-2.0 | The core client. High-level typed functions that hide PDAs, instruction tags, account layouts, and atom/price math |
-| **[`@openperps/react`](./packages/react)** | 1.1.0 | MIT | Drop-in widgets (`<OpenPerpsTrade/>`, `<OpenPerpsChart/>`, `<OpenPerpsPosition/>`, `<OpenPerpsMarketLauncher/>`) and headless hooks |
-| **[`@openperps/keeper`](./packages/keeper)** | 1.1.0 | Apache-2.0 | Core-only self-host keeper: oracle/funding cranks and liquidation across many markets |
-
-The SDK is the primary integration surface. The React components are the fast path for teams that want ready-made UI; the keeper is the risk-side cron you run yourself.
-
----
-
 ## Quick start
 
 ### SDK
@@ -176,14 +116,25 @@ npm install @openperps/sdk @solana/web3.js @solana/spl-token
 `@solana/web3.js` and `@solana/spl-token` are peer dependencies, so the SDK shares your app's single instance of each.
 
 ```ts
-import { Connection, PublicKey } from "@solana/web3.js";
-import { buildTradeFromIntent, transactionFromInstructions } from "@openperps/sdk";
+import {
+  createJsonMarketRegistry,
+  buildTradeFromIntent,
+  transactionFromInstructions,
+} from "@openperps/sdk";
 
+// 1. Load a market from your registry (a list of OpenPerpsMarketConfig you ship).
+const registry = createJsonMarketRegistry(markets);
+const market = await registry.getMarket("SOL-PERP");
+if (!market) throw new Error("unknown market");
+
+// 2. `counterparty` is this market's House portfolio and `executionPrice` is the
+//    current on-chain mark your keeper publishes. The examples below wire both
+//    end to end; here they are the only two inputs you provide.
 const built = buildTradeFromIntent({
   intent: { schemaVersion: 1, marketId: market.id, side: "long", size: "1000000" },
-  market,                 // OpenPerpsMarketConfig
-  counterparty,           // resolved House / LP portfolio
-  executionPrice,         // bigint, from the keeper / on-chain mark
+  market, // OpenPerpsMarketConfig
+  counterparty, // { housePortfolio } for this market
+  executionPrice, // bigint, the on-chain mark
   owner: wallet.publicKey,
 });
 
@@ -191,12 +142,12 @@ const tx = transactionFromInstructions(built.instructions, { feePayer: wallet.pu
 // sign + send with your wallet adapter
 ```
 
-What the SDK gives you:
+For the full flow (loading the registry, resolving the House counterparty, and reading the mark) see [`examples/dex-terminal`](./examples/dex-terminal). What the SDK gives you:
 
 - **Trade build and resolution.** `resolveTrade` checks an intent against the market and on-chain mark (size, side, reduce-only, slippage); `buildTradeFromIntent` composes the on-chain instructions against the user's portfolio and the House counterparty.
-- **Market creation.** `planMarketCreation` and the build helpers compose the full lifecycle (market account, vault, House, oracle binding) for a custom market on any token.
+- **Market creation.** `planMarketCreation` and `buildMarketCreationInstructions` compose the full lifecycle (market account, vault, House, oracle binding) for a custom market on any token.
 - **Account decoders.** `decodePortfolioSummary`, `decodePortfolioPositions`, and the layout offsets read market, portfolio, and position state.
-- **Price providers.** Bring your own `PriceProvider` (Pyth, a pool read, your own oracle) or use `createStaticPriceProvider` for tests and demos.
+- **Price providers.** Bring your own `PriceProvider` (Pyth, a pool read, your own oracle) or use `createStaticPriceProvider` for tests.
 - **Instruction encoders.** Low-level `accrueAssetIx`, `liquidateIx`, and the rest, mirroring the Rust program, for when you need to compose by hand.
 
 ### React
@@ -244,7 +195,7 @@ const connection = new Connection(process.env.OPENPERPS_RPC!, "confirmed");
 const authority = Keypair.fromSecretKey(/* your oracle authority key */);
 
 const markets: KeeperMarket[] = [
-  { config: sampleMarketConfig, maxAccrualDtSlots: 1000, maxPriceMoveBpsPerSlot: 10 },
+  { config: marketConfig, maxAccrualDtSlots: 1000, maxPriceMoveBpsPerSlot: 10 },
 ];
 
 await runKeeper(
@@ -265,30 +216,61 @@ A keeper is part of the risk system, not just a price cron: it pushes oracle/fun
 
 ---
 
-## Repository layout
+## Examples
 
-The repo layout follows the layers:
+Runnable integrations live in [`examples/`](./examples), each a small app or script wired to the SDK:
 
-```
-openperps-oss/
-├── crates/
-│   ├── engine/        # Percolator risk engine (vendored, upstream 051e268)
-│   └── program/       # Solana on-chain program (27 instructions, zero-copy)
-├── packages/
-│   ├── sdk/           # @openperps/sdk      core TypeScript client
-│   ├── react/         # @openperps/react    web widgets + hooks
-│   └── keeper/        # @openperps/keeper   self-host keeper template
-├── apps/
-│   ├── web/           # @openperps/frontend  reference app (consumes the packages)
-│   └── indexer/       # fills / PnL / liquidation indexer
-├── examples/          # integration examples
-├── scripts/           # build helpers (e.g. rewrite-dts-extensions.mjs)
-├── docs/              # architecture.md, keeper-freshness.md
-├── Cargo.toml         # Rust workspace (engine + program)
-└── package.json       # npm workspace (packages/*)
-```
+| Example | What it shows |
+| --- | --- |
+| [`dex-terminal`](./examples/dex-terminal) | A trading terminal: a price chart with a long/short panel |
+| [`launchpad`](./examples/launchpad) | Create a perp market for a launching token, then trade it |
+| [`token-page`](./examples/token-page) | One token page bound to one market (chart, trade, position) |
+| [`wallet-position-card`](./examples/wallet-position-card) | The read side: a wallet's positions and PnL, no trade panel |
+| [`telegram-bot`](./examples/telegram-bot) | A command bot (`/long`, `/short`, ...) with an explicit signing boundary |
+| [`node-create-market`](./examples/node-create-market) | A backend script that builds and registers a market from a creation intent |
 
-The SDK source mirrors the program, one module per concern: `layout`, `instructions`, `config`, `intents`, `price`, `market-state`, `decoders`, `transactions`, `actions`, `trade-resolution`, `market-creation`, `trade-build`, `market-create-build`.
+Each folder has its own README. See [`docs/examples.md`](./docs/examples.md) for the longer tour.
+
+---
+
+## Deploy your own
+
+OpenPerps OSS is self-hosted: you deploy the program to the cluster you choose and operate it yourself.
+
+1. **Build the program** with the Solana toolchain:
+
+   ```bash
+   cargo build-sbf --manifest-path crates/program/Cargo.toml
+   # -> target/deploy/openperps_program.so
+   ```
+
+2. **Deploy it** and note the program id:
+
+   ```bash
+   solana program deploy target/deploy/openperps_program.so
+   ```
+
+3. **Create your first market** with the SDK (`planMarketCreation` +
+   `buildMarketCreationInstructions`). [`examples/node-create-market`](./examples/node-create-market)
+   is a complete script that builds, registers, and prints the derived market,
+   vault, and House addresses.
+
+4. **Fund the House vault**, point [`@openperps/keeper`](./packages/keeper) at the
+   market, and you are live.
+
+Work through [`docs/deployment-checklist.md`](./docs/deployment-checklist.md) for the operational decisions (oracle source, keeper, liquidity, risk parameters, custody) before a deployment goes in front of users.
+
+---
+
+## Packages
+
+| Package | Version | License | Role |
+| --- | --- | --- | --- |
+| **[`@openperps/sdk`](./packages/sdk)** | 1.1.0 | Apache-2.0 | The core client. High-level typed functions that hide PDAs, instruction tags, account layouts, and atom/price math |
+| **[`@openperps/react`](./packages/react)** | 1.1.0 | MIT | Drop-in widgets (`<OpenPerpsTrade/>`, `<OpenPerpsChart/>`, `<OpenPerpsPosition/>`, `<OpenPerpsMarketLauncher/>`) and headless hooks |
+| **[`@openperps/keeper`](./packages/keeper)** | 1.1.0 | Apache-2.0 | Core-only self-host keeper: oracle/funding cranks and liquidation across many markets |
+
+The SDK is the primary integration surface. The React components are the fast path for teams that want ready-made UI; the keeper is the risk-side cron you run yourself.
 
 ---
 
@@ -316,6 +298,80 @@ npm run typecheck  # builds the sdk, then type-checks every package
 
 > [!NOTE]
 > The build order matters: `react` and `keeper` depend on the compiled `@openperps/sdk`, so the root `build` / `test` / `typecheck` scripts always build the SDK first. The apps and examples consume the same packages locally, so **run `npm run build` once at the root** before installing or building them.
+
+---
+
+## How the on-chain program works
+
+The vendored Percolator engine is **zero-copy on-chain**. There is no allocation and no serialization on the hot path: account byte buffers are reinterpreted in place (via `bytemuck`) as fixed-layout POD structs, and engine operations mutate those bytes directly. This is what lets the risk engine fit inside an SBF program at all.
+
+### Account layout
+
+```
+Market account data:
+  [ OpenPerpsMarketHeader (208 bytes) ][ MarketGroupV16HeaderAccount ][ MarketSlot ; N ]
+  (MarketSlot = Market<MarketWrapper>)
+
+Portfolio account data (one per user):
+  [ PortfolioAccountV16Account ]   (source domains inline, CAP = 32)
+```
+
+Each market and each portfolio is a single account. The program splits off the 208-byte OpenPerps wrapper header (`MARKET_HEADER_VERSION = 4`), which carries the discriminator, version, oracle kind, and OpenPerps-specific config the engine does not model, then builds the matching engine view over the remaining bytes and calls the engine method, which mutates in place. A portfolio holds up to **16 legs** (`V16_MAX_PORTFOLIO_ASSETS_N = 16`).
+
+The engine's production methods carry a `_not_atomic` suffix (for example `deposit_not_atomic`). That is the engine signalling that **the OpenPerps wrapper owns atomicity, persistence, and authorization**. The engine only does the risk math.
+
+### Instruction to engine map
+
+The program dispatches its instructions in `processor.rs`. The ones that drive risk math go through zero-copy `*_buffer` helpers:
+
+| Instruction | Engine entry |
+| --- | --- |
+| `InitMarket` | zero-copy header / slots init |
+| `InitPortfolio` | zero-copy portfolio PDA init |
+| `Deposit` | `deposit_not_atomic` |
+| `Withdraw` | `withdraw_not_atomic` |
+| `ActivateMarket` | `activate_market_buffer` |
+| `AccrueAsset` | `accrue_asset_buffer` |
+| `Trade` / `PlaceOrder` | `trade_buffer` |
+| `PlaceBatchOrder` | `batch_trade_buffer` |
+| `Liquidate` | `liquidate_account_not_atomic` |
+| `ResolveMarket` | `resolve_market_not_atomic` |
+| `SettlePnl` | `settle_pnl_buffer` |
+| `CrankPyth` | reads a Pyth `PriceUpdateV2`, then `accrue_asset_buffer` |
+| `CrankDexSpot` | reads the DEX pool reserves, then accrues the mark |
+
+The remaining instructions are wrapper-side and do no engine math: SPL vault custody (`CreateVault`, `CreateHouseVault`, `FundHouseVault`, `WithdrawHouseVault`), oracle binding (`SetDexPool`), config (`SetOracleAuthority`, `SetDepositCap`), and delegation (`SetDelegate`).
+
+> Collateral custody is an SPL token vault plus CPI, with a separate **House vault** acting as the counterparty for every `PlaceOrder`.
+
+See [`docs/architecture.md`](./docs/architecture.md) for verified line references into the vendored engine.
+
+---
+
+## Repository layout
+
+The repo layout follows the layers:
+
+```
+openperps-oss/
+├── crates/
+│   ├── engine/        # Percolator risk engine (vendored, upstream 051e268)
+│   └── program/       # Solana on-chain program (zero-copy)
+├── packages/
+│   ├── sdk/           # @openperps/sdk      core TypeScript client
+│   ├── react/         # @openperps/react    web widgets + hooks
+│   └── keeper/        # @openperps/keeper   self-host keeper template
+├── apps/
+│   ├── web/           # @openperps/frontend  reference app (consumes the packages)
+│   └── indexer/       # fills / PnL / liquidation indexer
+├── examples/          # integration examples
+├── scripts/           # build helpers (e.g. rewrite-dts-extensions.mjs)
+├── docs/              # architecture.md, keeper-freshness.md, deployment-checklist.md
+├── Cargo.toml         # Rust workspace (engine + program)
+└── package.json       # npm workspace (packages/*)
+```
+
+The SDK source mirrors the program, one module per concern: `layout`, `instructions`, `config`, `intents`, `price`, `market-state`, `decoders`, `transactions`, `actions`, `trade-resolution`, `market-creation`, `trade-build`, `market-create-build`.
 
 ---
 
