@@ -11,6 +11,7 @@ import {
   Transaction,
   TransactionInstruction,
 } from "@solana/web3.js";
+import { ADMIN_PATHS, requireAdmin } from "./auth";
 
 export interface Env {
   DB: D1Database;
@@ -25,6 +26,11 @@ export interface Env {
   PRICE_FEED: DurableObjectNamespace;
   /// Optional Discord-style webhook ({content}) for solvency / bad-debt alerts.
   ALERT_WEBHOOK?: string;
+  /// Shared secret (Bearer token) required by the keeper / admin endpoints
+  /// (/relay, /relaycustom, /activate, /liquidate, /prune, /poll, /backfill).
+  /// Fail-closed: if unset, those endpoints return 503. Read endpoints stay
+  /// public. Set with `wrangler secret put ADMIN_SECRET`.
+  ADMIN_SECRET?: string;
 }
 
 export { PriceFeed } from "./priceFeed";
@@ -322,7 +328,7 @@ async function parseTrade(env: Env, s: SigInfo): Promise<ParsedTrade | null> {
 const CORS = {
   "access-control-allow-origin": "*",
   "access-control-allow-methods": "GET, POST, OPTIONS",
-  "access-control-allow-headers": "content-type",
+  "access-control-allow-headers": "content-type, authorization",
 };
 
 function json(data: unknown): Response {
@@ -1108,6 +1114,28 @@ async function maybeAlert(env: Env, h: HealthReport): Promise<void> {
   }
 }
 
+// Verify that a pubkey is a real on-chain OpenPerps market account before it can
+// be written into the shared discovery registry (finding #6). Without this, any
+// client could POST a fabricated market row pointing at its own vault / oracle /
+// House and trick others into trading a spoofed market. We require the account to
+// exist, be owned by this program, and carry the market discriminator.
+const MARKET_DISCRIMINATOR = "OPMARKET"; // b"OPMARKET" at offset 0 of the wrapper header
+
+async function isOnChainMarket(env: Env, pubkey: string): Promise<boolean> {
+  let key: PublicKey;
+  try {
+    key = new PublicKey(pubkey);
+  } catch {
+    return false;
+  }
+  const conn = new Connection(env.RPC_URL, "confirmed");
+  const info = await conn.getAccountInfo(key);
+  if (!info) return false;
+  if (info.owner.toBase58() !== env.PROGRAM_ID) return false;
+  if (info.data.length < WRAPPER_HEADER_SIZE + MARKET_HEADER_SIZE) return false;
+  return new TextDecoder().decode(info.data.subarray(0, 8)) === MARKET_DISCRIMINATOR;
+}
+
 export default {
   async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(
@@ -1143,6 +1171,13 @@ export default {
     if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
     const url = new URL(req.url);
     const path = url.pathname;
+
+    // Keeper / admin endpoints require the ADMIN_SECRET bearer token (the cron
+    // `scheduled` handler calls the same routines directly and is unaffected).
+    if (ADMIN_PATHS.has(path)) {
+      const denied = requireAdmin(req, env);
+      if (denied) return denied;
+    }
 
     // Realtime price WebSocket: route to the per-mint Durable Object so every
     // client for a token shares ONE upstream Helius connection.
@@ -1325,6 +1360,14 @@ export default {
         const b = (await req.json()) as Record<string, any>;
         if (!b.pubkey || !b.symbol || !b.base) {
           return json({ error: "pubkey + symbol + base required" });
+        }
+        // Only accept markets that actually exist on-chain under this program,
+        // so the shared registry cannot be poisoned with spoofed entries.
+        if (!(await isOnChainMarket(env, String(b.pubkey)))) {
+          return new Response(
+            JSON.stringify({ error: "pubkey is not an on-chain market for this program" }),
+            { status: 400, headers: { "content-type": "application/json", ...CORS } },
+          );
         }
         await env.DB.prepare(
           `INSERT INTO custom_markets
