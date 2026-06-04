@@ -35,7 +35,15 @@ pub mod tag {
     pub const CRANK_PYTH: u8 = 23;
     pub const SET_DEX_POOL: u8 = 24;
     pub const CRANK_DEX_SPOT: u8 = 25;
+    pub const PLACE_BATCH_ORDER: u8 = 26;
 }
+
+/// Maximum legs in a single `PlaceBatchOrder`. The engine also rejects a batch
+/// larger than the market's `max_portfolio_assets`.
+pub const MAX_BATCH_LEGS: usize = 8;
+/// Encoded size of one `PlaceBatchOrder` leg: side(1) + asset_index(4) +
+/// size_q(16) + exec_price(8) + fee_bps(8).
+pub const BATCH_LEG_BYTES: usize = 37;
 
 /// Decoded OpenPerps instruction.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -392,6 +400,21 @@ pub enum OpenPerpsInstruction {
     CrankDexSpot {
         asset_index: u32,
     },
+    /// Apply a batch of trade legs (user vs House) in one tx, with a single margin
+    /// recertification. The `count` legs follow the tag + count byte in the
+    /// instruction data; each leg is side(u8) + asset_index(u32) + size_q(u128) +
+    /// exec_price(u64) + fee_bps(u64). `size_q` is the unsigned base size; `side`
+    /// 0 = user long, 1 = user short.
+    ///
+    /// Accounts:
+    ///   0. `[writable]` market account
+    ///   1. `[writable]` user portfolio
+    ///   2. `[writable]` House portfolio
+    ///   3. `[signer]`   user (owner or registered delegate)
+    ///   4. `[]`         delegate PDA (optional, when the signer is a session key)
+    PlaceBatchOrder {
+        count: u8,
+    },
 }
 
 impl OpenPerpsInstruction {
@@ -549,6 +572,16 @@ impl OpenPerpsInstruction {
             tag::CRANK_DEX_SPOT => Ok(Self::CrankDexSpot {
                 asset_index: read_u32(rest, 0)?,
             }),
+            tag::PLACE_BATCH_ORDER => {
+                let count = *rest.first().ok_or(OpenPerpsError::InvalidInstructionData)?;
+                if count == 0 || count as usize > MAX_BATCH_LEGS {
+                    return Err(OpenPerpsError::InvalidInstructionData);
+                }
+                if rest.len() != 1 + count as usize * BATCH_LEG_BYTES {
+                    return Err(OpenPerpsError::InvalidInstructionData);
+                }
+                Ok(Self::PlaceBatchOrder { count })
+            }
             _ => Err(OpenPerpsError::InvalidInstruction),
         }
     }
@@ -866,5 +899,24 @@ mod tests {
             OpenPerpsInstruction::unpack(&data).unwrap(),
             OpenPerpsInstruction::CrankDexSpot { asset_index: 1 }
         );
+    }
+
+    #[test]
+    fn unpack_place_batch_order() {
+        let mut data = vec![tag::PLACE_BATCH_ORDER, 2]; // count = 2
+        for _ in 0..2 {
+            data.push(0); // side
+            data.extend_from_slice(&0u32.to_le_bytes()); // asset_index
+            data.extend_from_slice(&1_000_000u128.to_le_bytes()); // size_q
+            data.extend_from_slice(&100_000_000u64.to_le_bytes()); // exec_price
+            data.extend_from_slice(&10u64.to_le_bytes()); // fee_bps
+        }
+        assert_eq!(
+            OpenPerpsInstruction::unpack(&data).unwrap(),
+            OpenPerpsInstruction::PlaceBatchOrder { count: 2 }
+        );
+        // count of 0 and over-cap are rejected.
+        assert!(OpenPerpsInstruction::unpack(&[tag::PLACE_BATCH_ORDER, 0]).is_err());
+        assert!(OpenPerpsInstruction::unpack(&[tag::PLACE_BATCH_ORDER, 99]).is_err());
     }
 }

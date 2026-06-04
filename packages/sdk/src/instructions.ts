@@ -35,6 +35,7 @@ export const Tag = {
   CrankPyth: 23,
   SetDexPool: 24,
   CrankDexSpot: 25,
+  PlaceBatchOrder: 26,
 } as const;
 
 /// Side encoding for `PlaceOrder`.
@@ -465,6 +466,68 @@ export function crankDexSpotIx(args: {
       { pubkey: args.signer, isSigner: true, isWritable: false },
     ],
     data: encodeCrankDexSpot(args.assetIndex),
+  });
+}
+
+/// Max legs per PlaceBatchOrder; the program also rejects a batch larger than the
+/// market's max_portfolio_assets.
+export const MAX_BATCH_LEGS = 8;
+
+/// One leg of a PlaceBatchOrder. `side` is the user's direction (Long/Short);
+/// `sizeQ` is the unsigned base size.
+export type BatchLeg = {
+  side: Side;
+  assetIndex: number;
+  sizeQ: bigint;
+  execPrice: bigint;
+  feeBps: bigint;
+};
+
+export function encodePlaceBatchOrder(legs: BatchLeg[]): Buffer {
+  if (legs.length === 0 || legs.length > MAX_BATCH_LEGS) {
+    throw new Error(`PlaceBatchOrder needs 1..${MAX_BATCH_LEGS} legs, got ${legs.length}`);
+  }
+  const LEG = 37; // side(1)+assetIndex(4)+sizeQ(16)+execPrice(8)+feeBps(8)
+  const data = new Uint8Array(2 + legs.length * LEG);
+  data[0] = Tag.PlaceBatchOrder;
+  data[1] = legs.length;
+  legs.forEach((leg, i) => {
+    const o = 2 + i * LEG;
+    data[o] = leg.side;
+    writeU32LE(data, o + 1, leg.assetIndex);
+    writeU128LE(data, o + 5, leg.sizeQ);
+    writeU64LE(data, o + 21, leg.execPrice);
+    writeU64LE(data, o + 29, leg.feeBps);
+  });
+  return Buffer.from(data);
+}
+
+/// Apply several trade legs (user vs House) in one tx with a single margin check:
+/// cheaper and atomic versus N separate PlaceOrders. Each leg sets its own asset,
+/// side, size, price, and fee. Signer: the portfolio owner or a session-key
+/// delegate (pass the delegate PDA as the optional 5th account).
+export function placeBatchOrderIx(args: {
+  programId: PublicKey;
+  market: PublicKey;
+  userPortfolio: PublicKey;
+  housePortfolio: PublicKey;
+  user: PublicKey;
+  delegate?: PublicKey;
+  legs: BatchLeg[];
+}): TransactionInstruction {
+  const keys = [
+    { pubkey: args.market, isSigner: false, isWritable: true },
+    { pubkey: args.userPortfolio, isSigner: false, isWritable: true },
+    { pubkey: args.housePortfolio, isSigner: false, isWritable: true },
+    { pubkey: args.user, isSigner: true, isWritable: false },
+  ];
+  if (args.delegate) {
+    keys.push({ pubkey: args.delegate, isSigner: false, isWritable: false });
+  }
+  return new TransactionInstruction({
+    programId: args.programId,
+    keys,
+    data: encodePlaceBatchOrder(args.legs),
   });
 }
 

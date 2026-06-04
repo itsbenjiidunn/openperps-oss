@@ -8,7 +8,8 @@
 
 use bytemuck::{Pod, Zeroable};
 use percolator::v16::{
-    LiquidationOutcomeV16, LiquidationRequestV16, Market, MarketGroupV16HeaderAccount,
+    BatchTradeOutcomeV16, LiquidationOutcomeV16, LiquidationRequestV16, Market,
+    MarketGroupV16HeaderAccount,
     MarketGroupV16ViewMut, PermissionlessCrankActionV16, PermissionlessCrankRequestV16,
     PortfolioAccountV16Account, PortfolioLegV16, PortfolioLegV16Account,
     PortfolioV16ViewMut, ProvenanceHeaderV16,
@@ -1176,6 +1177,25 @@ pub fn trade_buffer(
             fee_bps,
         },
     )
+}
+
+/// Apply a batch of trade legs between `long_buf` (first account) and `short_buf`
+/// (counterparty) in one engine call with a single margin recertification. Each
+/// `TradeRequestV16.size_q` is signed: positive makes `long_buf` long that leg.
+pub fn batch_trade_buffer(
+    market_buf: &mut [u8],
+    long_buf: &mut [u8],
+    short_buf: &mut [u8],
+    requests: &[percolator::v16::TradeRequestV16],
+) -> Result<BatchTradeOutcomeV16, V16Error> {
+    let (m_h, m_s) =
+        market_engine_split_mut(market_buf).map_err(|_| V16Error::InvalidConfig)?;
+    let l_h = portfolio_split_mut(long_buf).map_err(|_| V16Error::InvalidConfig)?;
+    let s_h = portfolio_split_mut(short_buf).map_err(|_| V16Error::InvalidConfig)?;
+    let mut mg = MarketGroupV16ViewMut::new(m_h, m_s);
+    let mut long = PortfolioV16ViewMut::new(l_h);
+    let mut short = PortfolioV16ViewMut::new(s_h);
+    mg.execute_batch_with_fee_in_place_not_atomic(&mut long, &mut short, requests)
 }
 
 // ---------- internals ----------

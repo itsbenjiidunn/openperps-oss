@@ -286,6 +286,9 @@ pub fn process_instruction(
         OpenPerpsInstruction::CrankDexSpot { asset_index } => {
             process_crank_dex_spot(program_id, accounts, asset_index)
         }
+        OpenPerpsInstruction::PlaceBatchOrder { count } => {
+            process_place_batch_order(program_id, accounts, instruction_data, count)
+        }
     }
 }
 
@@ -1304,6 +1307,126 @@ fn process_place_order(
         }
         _ => return Err(OpenPerpsError::InvalidInstructionData.into()),
     }
+    Ok(())
+}
+
+/// Apply a batch of trade legs (user vs House) in one tx, with a single margin
+/// recertification (cheaper and atomic versus N separate `PlaceOrder`s). The user
+/// is the long side: a leg with `side == 0` makes the user long that asset, `side
+/// == 1` short. Each leg carries its own asset, size, price, and fee.
+fn process_place_batch_order(
+    program_id: &Pubkey,
+    accounts: &[AccountInfo],
+    instruction_data: &[u8],
+    count: u8,
+) -> ProgramResult {
+    let [market, user_portfolio, house_portfolio, user, ..] = accounts else {
+        return Err(OpenPerpsError::InvalidInstruction.into());
+    };
+    if !user.is_signer() {
+        return Err(OpenPerpsError::MissingRequiredSignature.into());
+    }
+    if !market.is_writable() || !user_portfolio.is_writable() || !house_portfolio.is_writable() {
+        return Err(OpenPerpsError::InvalidAccountData.into());
+    }
+    if unsafe { market.owner() } != program_id
+        || unsafe { user_portfolio.owner() } != program_id
+        || unsafe { house_portfolio.owner() } != program_id
+    {
+        return Err(OpenPerpsError::InvalidAccountOwner.into());
+    }
+
+    let market_key = *market.key();
+    {
+        let data = market
+            .try_borrow_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        let wrapper = market_wrapper_header(&data)?;
+        if !wrapper.is_initialized() || wrapper.house_bump == 0 {
+            return Err(OpenPerpsError::UninitializedAccount.into());
+        }
+        verify_house_pda(&market_key, house_portfolio, wrapper.house_bump, program_id)?;
+    }
+
+    let mut market_data = market
+        .try_borrow_mut_data()
+        .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    let mut user_data = user_portfolio
+        .try_borrow_mut_data()
+        .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    let mut house_data = house_portfolio
+        .try_borrow_mut_data()
+        .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+
+    // Authorize the signer: portfolio owner or a registered trading delegate
+    // (session key), same as PlaceOrder. Delegates can only trade, never withdraw.
+    {
+        let u_h = portfolio_split_mut(&mut user_data)?;
+        let owner = u_h.owner;
+        let user_key = *user.key();
+        if user_key != owner {
+            let delegate_acc = accounts
+                .get(4)
+                .ok_or(OpenPerpsError::MissingRequiredSignature)?;
+            if unsafe { delegate_acc.owner() } != program_id {
+                return Err(OpenPerpsError::MissingRequiredSignature.into());
+            }
+            let d_data = delegate_acc
+                .try_borrow_data()
+                .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+            let (d_portfolio, d_delegate) = delegate_of(&d_data)?;
+            if d_portfolio != *user_portfolio.key() || d_delegate != user_key {
+                return Err(OpenPerpsError::MissingRequiredSignature.into());
+            }
+        }
+    }
+
+    // Decode the legs. The user is the engine's first (long) account, so a leg's
+    // signed size is positive for `side == 0` (user long) and negative otherwise.
+    let n = count as usize; // validated <= MAX_BATCH_LEGS by unpack
+    let legs = instruction_data
+        .get(2..)
+        .ok_or(OpenPerpsError::InvalidInstructionData)?;
+    let mut requests = [percolator::v16::TradeRequestV16 {
+        asset_index: 0,
+        size_q: 0,
+        exec_price: 0,
+        fee_bps: 0,
+    }; crate::instruction::MAX_BATCH_LEGS];
+    for (i, req) in requests.iter_mut().enumerate().take(n) {
+        let o = i * crate::instruction::BATCH_LEG_BYTES;
+        let leg = legs
+            .get(o..o + crate::instruction::BATCH_LEG_BYTES)
+            .ok_or(OpenPerpsError::InvalidInstructionData)?;
+        let side = leg[0];
+        let asset_index =
+            u32::from_le_bytes(leg[1..5].try_into().unwrap()) as usize;
+        let size = u128::from_le_bytes(leg[5..21].try_into().unwrap());
+        let exec_price = u64::from_le_bytes(leg[21..29].try_into().unwrap());
+        let fee_bps = u64::from_le_bytes(leg[29..37].try_into().unwrap());
+        let signed = i128::try_from(size).map_err(|_| OpenPerpsError::ArithmeticOverflow)?;
+        let size_q = match side {
+            0 => signed,
+            1 => signed
+                .checked_neg()
+                .ok_or(OpenPerpsError::ArithmeticOverflow)?,
+            _ => return Err(OpenPerpsError::InvalidInstructionData.into()),
+        };
+        *req = percolator::v16::TradeRequestV16 {
+            asset_index,
+            size_q,
+            exec_price,
+            fee_bps,
+        };
+    }
+
+    crate::state::batch_trade_buffer(
+        &mut market_data,
+        &mut user_data,
+        &mut house_data,
+        &requests[..n],
+    )
+    .map_v16()?;
     Ok(())
 }
 
