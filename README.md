@@ -7,9 +7,7 @@
 **Add long/short markets to any token, from any trading surface.**
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
-[![sdk](https://img.shields.io/npm/v/@openperps/sdk?logo=npm&label=%40openperps%2Fsdk)](https://www.npmjs.com/package/@openperps/sdk)
-[![react](https://img.shields.io/npm/v/@openperps/react?logo=npm&label=%40openperps%2Freact)](https://www.npmjs.com/package/@openperps/react)
-[![keeper](https://img.shields.io/npm/v/@openperps/keeper?logo=npm&label=%40openperps%2Fkeeper)](https://www.npmjs.com/package/@openperps/keeper)
+[![npm](https://img.shields.io/npm/v/@openperps/sdk?logo=npm&label=npm)](https://www.npmjs.com/package/@openperps/sdk)
 [![Rust](https://img.shields.io/badge/Rust-54.2%25-orange?logo=rust&logoColor=white)](https://github.com/itsbenjiidunn/openperps-oss/search?l=rust)
 [![TypeScript](https://img.shields.io/badge/TypeScript-43.5%25-blue?logo=typescript&logoColor=white)](https://github.com/itsbenjiidunn/openperps-oss/search?l=typescript)
 
