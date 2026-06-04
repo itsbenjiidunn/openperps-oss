@@ -1,23 +1,28 @@
 # OpenPerps OSS
 
+> **The open-source perp layer for Solana apps.**
+> Add long/short markets to any token, from any trading surface.
+
 [![npm](https://img.shields.io/npm/v/@openperps/sdk?logo=npm&label=npm)](https://www.npmjs.com/package/@openperps/sdk)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![CI](https://github.com/itsbenjiidunn/openperps-oss/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/itsbenjiidunn/openperps-oss/actions/workflows/ci.yml)
-
-The open-source perp layer for Solana apps. Add long/short markets to any token,
-from any trading surface.
+[![stars](https://img.shields.io/github/stars/itsbenjiidunn/openperps-oss?style=social)](https://github.com/itsbenjiidunn/openperps-oss/stargazers)
 
 OpenPerps OSS is the infrastructure a Solana app embeds to offer perpetual
 futures on the tokens it already shows: a launchpad, a DEX terminal, a swap UI, a
 Telegram bot, a wallet, or an analytics dashboard. One shared risk core, one SDK,
 one keeper path, reused across all of them.
 
-It is built on [Percolator](https://github.com/aeyakovenko/percolator) v16, the
-formally-verified risk engine by Anatoly Yakovenko (@toly). Percolator provides the verified risk-engine foundation. OpenPerps OSS keeps that risk core upstream and packages the surrounding Solana integration layer: program wrapper, SDK, React kit, keeper, account decoders, examples, and deployment docs.
+<!-- Add a short demo GIF or screenshot of the <OpenPerpsTrade/> widget here,
+     for example .github/assets/demo.gif, to show the trade flow at a glance. -->
 
-**This repo.** OpenPerps OSS is that open layer: the program, SDK, keeper, React
-components, examples, and docs, open and self-hostable, so integrators run their
-own stack rather than routing through a middleman.
+## Highlights
+
+- **Embed perps on any token surface** in a few lines: launchpad, DEX terminal, swap UI, bot, wallet, or dashboard.
+- **One verified risk core.** Built on [Percolator](https://github.com/aeyakovenko/percolator) v16, the formally-verified risk engine by Anatoly Yakovenko (@toly), vendored unmodified.
+- **Self-hostable and integrator-owned.** You run the stack and configure the oracle, liquidity, keeper, and market registry. No middleman.
+- **Full toolkit:** a TypeScript SDK, drop-in React widgets, a self-host keeper, and account decoders.
+- **Permissionless markets:** list a perp on any SPL token, with isolated House/LP backing per market.
 
 ## Quickstart
 
@@ -47,16 +52,26 @@ const tx = transactionFromInstructions(built.instructions, {
 `@openperps/keeper` runs the oracle crank and liquidations. See each package's
 README.
 
+## Contents
+
+- [Who it is for](#who-it-is-for)
+- [What it gives you](#what-it-gives-you)
+- [Architecture](#architecture)
+- [Packages](#packages)
+- [Build and test](#build-and-test)
+- [Scope and security](#scope-and-security)
+- [License](#license)
+
 ## Who it is for
 
 Any surface that already shows a Solana token can add perps on it:
 
-- **Launchpads**: a Create Perp button and a trade panel on the token page.
-- **DEX terminals**: a long/short panel next to the chart (GMGN, Photon style).
-- **Swap UIs and aggregators**: perps on the token page (Jupiter, Raydium style).
-- **Telegram bots**: `/perp_create`, `/long`, `/short`, `/positions`, `/close`.
-- **Wallets and portfolio apps**: show perp positions, PnL, close and withdraw.
-- **Analytics dashboards**: open interest, volume, liquidations, oracle health.
+- **Launchpads:** a Create Perp button and a trade panel on the token page.
+- **DEX terminals:** a long/short panel next to the chart (GMGN, Photon style).
+- **Swap UIs and aggregators:** perps on the token page (Jupiter, Raydium style).
+- **Telegram bots:** `/perp_create`, `/long`, `/short`, `/positions`, `/close`.
+- **Wallets and portfolio apps:** show perp positions, PnL, close and withdraw.
+- **Analytics dashboards:** open interest, volume, liquidations, oracle health.
 
 ## What it gives you
 
@@ -78,7 +93,7 @@ it, so a backend script or a Telegram bot has the same power as a web app.
 
 | Layer | What | Who uses it |
 |-------|------|-------------|
-| Protocol | Solana program, risk engine, vaults, market accounts, liquidation | Protocol devs, auditors |
+| Protocol | Solana program, risk engine, vaults, market accounts, liquidation | Protocol devs, reviewers |
 | SDK | TypeScript for create market, deposit, trade, close, withdraw, decode | Every dapp, bot, backend |
 | UI kit | React widgets and headless hooks for trade, chart, positions, status | Web apps, terminals |
 | Keeper kit | Self-hostable keeper for oracle crank, liquidation, candles, indexing | Self-hosting integrators |
@@ -115,10 +130,9 @@ npm run typecheck      # type-checks every package
 (`main`, `types`, and `exports` point there, and `prepublishOnly` rebuilds it),
 so `npm install @openperps/sdk` gives a consumer runnable JS plus types, not raw
 TypeScript. The apps and examples consume the same packages locally; run
-`npm run build` once at the root before installing or building them. See each
-package's README.
+`npm run build` once at the root before installing or building them.
 
-## Scope
+## Scope and security
 
 OpenPerps OSS is infrastructure. The
 [Percolator](https://github.com/aeyakovenko/percolator) risk engine in
