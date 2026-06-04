@@ -108,10 +108,13 @@ pub enum OpenPerpsInstruction {
     /// seeding it with a trusted oracle price. `now_slot` comes from the
     /// `Clock` sysvar at the handler.
     ///
-    /// NOTE: For MVP the caller signs as "authority" but the wrapper does not
-    /// yet pin a specific authority pubkey in the market header, any signer
-    /// can activate. A real oracle CPI (Pyth/Switchboard) replaces the trust
-    /// model later; here we accept the price as authenticated by the signer.
+    /// NOTE: the caller signs as "authority" and supplies the seed price;
+    /// activation itself is permissionless. The mark is then driven by the
+    /// market's oracle: `CrankPyth` reads a receiver-verified Pyth
+    /// `PriceUpdateV2` account (a pull-oracle read, not a CPI) and
+    /// `CrankDexSpot` reads a constant-product pool, each gated on confidence /
+    /// EMA divergence / depth, while a `MANUAL` market keeps its price via the
+    /// relayer authority. Here we just accept the seed price from the signer.
     ///
     /// Accounts:
     ///   0. `[writable]` market account

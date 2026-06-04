@@ -394,7 +394,8 @@ pub struct OpenPerpsMarketHeader {
     /// (BTC, ETH), the market is then defined purely by its oracle feed.
     pub base_mint: [u8; 32],
     /// Pyth pull-oracle feed id (32-byte hex) when `oracle_kind == PYTH`;
-    /// all-zero for manual markets. Read by the (future) oracle CPI.
+    /// all-zero for manual markets. `CrankPyth` checks it against the verified
+    /// `PriceUpdateV2` account before accruing the mark.
     pub oracle_feed_id: [u8; 32],
     /// On-chain DEX pool account whose reserves price this market when
     /// `oracle_kind == DEX_EWMA`. All-zero otherwise. `CrankOracle` reads
@@ -971,12 +972,15 @@ pub fn activate_market_buffer(
 ///
 /// **`raw_oracle_target_price` patch:** the engine's `accrue` updates
 /// `effective_price` and `fund_px_last` but deliberately leaves
-/// `raw_oracle_target_price` alone, that field is meant to be set by a
-/// separately-attested oracle CPI (Pyth/Switchboard), and any mismatch makes
+/// `raw_oracle_target_price` alone, that field is the engine's separately
+/// attested oracle target, and any mismatch makes
 /// `asset_has_target_effective_lag` return true, which blocks risk-increasing
-/// trades with `LockActive`. For the MVP trust model the signer *is* the
-/// oracle, so we patch `raw_oracle_target_price = effective_price` after the
-/// engine call. Replace this with a real oracle CPI before going to mainnet.
+/// trades with `LockActive`. OpenPerps attests the price at the wrapper
+/// boundary instead: `AccrueAsset` trusts the relayer authority, `CrankPyth`
+/// reads a receiver-verified Pyth `PriceUpdateV2` (a pull-oracle read, not a
+/// CPI), and `CrankDexSpot` reads a constant-product pool, each gated before
+/// the engine call. Since the price is already attested there, we patch
+/// `raw_oracle_target_price = effective_price` after the engine call.
 pub fn accrue_asset_buffer(
     buf: &mut [u8],
     asset_index: u32,
