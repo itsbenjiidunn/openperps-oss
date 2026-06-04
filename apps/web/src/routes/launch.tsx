@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { WalletButton } from "@/components/openperps/WalletButton";
@@ -185,7 +185,7 @@ function Launch() {
     [s.tierId],
   );
 
-  // Creator's mUSDC balance, the seed must come from it (use the faucet first).
+  // Creator's mUSDC balance, the seed must come from it.
   const owner = wallet.publicKey?.toBase58() ?? "";
   const balanceQ = useQuery({
     queryKey: ["musdc-bal", owner, connection.rpcEndpoint],
@@ -892,13 +892,8 @@ function RiskStep({
           <div className="text-[11px] text-danger">
             {seedNum < MIN_SEED_LP
               ? `Minimum seed is ${MIN_SEED_LP} ${QUOTE_SYMBOL}.`
-              : `Not enough ${QUOTE_SYMBOL}, you have ${walletMusdc.toLocaleString(undefined, { maximumFractionDigits: 2 })}. Get more from the Faucet.`}
+              : `Not enough ${QUOTE_SYMBOL}, you have ${walletMusdc.toLocaleString(undefined, { maximumFractionDigits: 2 })}.`}
           </div>
-        )}
-        {walletMusdc < MIN_SEED_LP && (
-          <Link to="/faucet" className="text-[11px] text-neon underline inline-block">
-            Get {QUOTE_SYMBOL} from the Faucet →
-          </Link>
         )}
       </div>
     </div>

@@ -613,11 +613,6 @@ function AccountFundsBar({
           {amt > sourceAtoms && (
             <div className="text-[10px] text-danger">Exceeds available balance.</div>
           )}
-          {isDeposit && walletAtoms === 0n && (
-            <Link to="/faucet" className="text-[10px] text-neon underline inline-block">
-              Get {QUOTE_SYMBOL} from the Faucet →
-            </Link>
-          )}
         </div>
       )}
       {err && <div className="text-[11px] text-danger break-words">{err}</div>}

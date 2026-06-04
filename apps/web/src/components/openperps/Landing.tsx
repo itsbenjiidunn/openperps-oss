@@ -79,9 +79,6 @@ export function Landing() {
             <Link to="/launch" className="btn btn-vio btn-lg">
               List a market
             </Link>
-            <Link to="/faucet" className="btn btn-ghost btn-lg">
-              Get test USDC
-            </Link>
           </div>
           <div className="hero-stats">
             <div className="s">
@@ -335,7 +332,6 @@ export function Landing() {
           <div className="fcol">
             <h4>LEARN</h4>
             <Link to="/about">How it works</Link>
-            <Link to="/faucet">Faucet</Link>
             <a href={EXPLORER} target="_blank" rel="noopener noreferrer">
               View the contract
             </a>
@@ -344,7 +340,6 @@ export function Landing() {
             <h4>START</h4>
             <Link to="/launch">List a market</Link>
             <Link to="/app">Open the app</Link>
-            <Link to="/faucet">Get test USDC</Link>
           </div>
         </div>
         <div className="foot-bot">

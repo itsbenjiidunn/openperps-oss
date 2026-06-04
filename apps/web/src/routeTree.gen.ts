@@ -12,7 +12,6 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as VaultRouteImport } from './routes/vault'
 import { Route as PortfolioRouteImport } from './routes/portfolio'
 import { Route as LaunchRouteImport } from './routes/launch'
-import { Route as FaucetRouteImport } from './routes/faucet'
 import { Route as CrankRouteImport } from './routes/crank'
 import { Route as AppRouteImport } from './routes/app'
 import { Route as AboutRouteImport } from './routes/about'
@@ -31,11 +30,6 @@ const PortfolioRoute = PortfolioRouteImport.update({
 const LaunchRoute = LaunchRouteImport.update({
   id: '/launch',
   path: '/launch',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const FaucetRoute = FaucetRouteImport.update({
-  id: '/faucet',
-  path: '/faucet',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CrankRoute = CrankRouteImport.update({
@@ -64,7 +58,6 @@ export interface FileRoutesByFullPath {
   '/about': typeof AboutRoute
   '/app': typeof AppRoute
   '/crank': typeof CrankRoute
-  '/faucet': typeof FaucetRoute
   '/launch': typeof LaunchRoute
   '/portfolio': typeof PortfolioRoute
   '/vault': typeof VaultRoute
@@ -74,7 +67,6 @@ export interface FileRoutesByTo {
   '/about': typeof AboutRoute
   '/app': typeof AppRoute
   '/crank': typeof CrankRoute
-  '/faucet': typeof FaucetRoute
   '/launch': typeof LaunchRoute
   '/portfolio': typeof PortfolioRoute
   '/vault': typeof VaultRoute
@@ -85,7 +77,6 @@ export interface FileRoutesById {
   '/about': typeof AboutRoute
   '/app': typeof AppRoute
   '/crank': typeof CrankRoute
-  '/faucet': typeof FaucetRoute
   '/launch': typeof LaunchRoute
   '/portfolio': typeof PortfolioRoute
   '/vault': typeof VaultRoute
@@ -97,27 +88,17 @@ export interface FileRouteTypes {
     | '/about'
     | '/app'
     | '/crank'
-    | '/faucet'
     | '/launch'
     | '/portfolio'
     | '/vault'
   fileRoutesByTo: FileRoutesByTo
-  to:
-    | '/'
-    | '/about'
-    | '/app'
-    | '/crank'
-    | '/faucet'
-    | '/launch'
-    | '/portfolio'
-    | '/vault'
+  to: '/' | '/about' | '/app' | '/crank' | '/launch' | '/portfolio' | '/vault'
   id:
     | '__root__'
     | '/'
     | '/about'
     | '/app'
     | '/crank'
-    | '/faucet'
     | '/launch'
     | '/portfolio'
     | '/vault'
@@ -128,7 +109,6 @@ export interface RootRouteChildren {
   AboutRoute: typeof AboutRoute
   AppRoute: typeof AppRoute
   CrankRoute: typeof CrankRoute
-  FaucetRoute: typeof FaucetRoute
   LaunchRoute: typeof LaunchRoute
   PortfolioRoute: typeof PortfolioRoute
   VaultRoute: typeof VaultRoute
@@ -155,13 +135,6 @@ declare module '@tanstack/react-router' {
       path: '/launch'
       fullPath: '/launch'
       preLoaderRoute: typeof LaunchRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/faucet': {
-      id: '/faucet'
-      path: '/faucet'
-      fullPath: '/faucet'
-      preLoaderRoute: typeof FaucetRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/crank': {
@@ -200,7 +173,6 @@ const rootRouteChildren: RootRouteChildren = {
   AboutRoute: AboutRoute,
   AppRoute: AppRoute,
   CrankRoute: CrankRoute,
-  FaucetRoute: FaucetRoute,
   LaunchRoute: LaunchRoute,
   PortfolioRoute: PortfolioRoute,
   VaultRoute: VaultRoute,

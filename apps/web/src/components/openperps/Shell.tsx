@@ -1,12 +1,11 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { LineChart, Rocket, Wallet, Vault, Sparkles, Droplets } from "lucide-react";
+import { LineChart, Rocket, Wallet, Vault, Sparkles } from "lucide-react";
 import logo from "@/assets/openperps-logo.png";
 import { useSlot } from "@/hooks/useSlot";
 import { WalletButton } from "./WalletButton";
 
 const nav = [
   { to: "/app", label: "Terminal", icon: LineChart },
-  { to: "/faucet", label: "Faucet", icon: Droplets },
   { to: "/launch", label: "Launch", icon: Rocket },
   { to: "/portfolio", label: "Portfolio", icon: Wallet },
   { to: "/vault", label: "Vault", icon: Vault },
