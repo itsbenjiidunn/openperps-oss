@@ -66,7 +66,7 @@ README.
 Any surface that already shows a Solana token can add perps on it:
 
 - **Launchpads:** a Create Perp button and a trade panel on the token page.
-- **DEX terminals:** a long/short panel next to the chart (GMGN, Photon style).
+- **DEX terminals:** a long/short panel next to the chart.
 - **Swap UIs and aggregators:** perps on the token page (Jupiter, Raydium style).
 - **Telegram bots:** `/perp_create`, `/long`, `/short`, `/positions`, `/close`.
 - **Wallets and portfolio apps:** show perp positions, PnL, close and withdraw.
