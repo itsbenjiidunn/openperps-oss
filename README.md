@@ -6,7 +6,6 @@
 [![npm](https://img.shields.io/npm/v/@openperps/sdk?logo=npm&label=npm)](https://www.npmjs.com/package/@openperps/sdk)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![CI](https://github.com/itsbenjiidunn/openperps-oss/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/itsbenjiidunn/openperps-oss/actions/workflows/ci.yml)
-[![stars](https://img.shields.io/github/stars/itsbenjiidunn/openperps-oss?style=social)](https://github.com/itsbenjiidunn/openperps-oss/stargazers)
 
 OpenPerps OSS is the infrastructure a Solana app embeds to offer perpetual
 futures on the tokens it already shows: a launchpad, a DEX terminal, a swap UI, a
