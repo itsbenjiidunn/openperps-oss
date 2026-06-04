@@ -17,7 +17,7 @@ one keeper path, reused across all of them.
 
 ## Highlights
 
-- **Embed perps on any token surface** in a few lines: launchpad, DEX terminal, swap UI, bot, wallet, or dashboard.
+- **Embed perps on any token surface**: launchpads, DEX terminals, swap UIs, bots, wallets, or dashboard.
 - **One verified risk core.** Built on [Percolator](https://github.com/aeyakovenko/percolator) v16, the formally-verified risk engine by Anatoly Yakovenko (@toly), vendored unmodified.
 - **Self-hostable and integrator-owned.** You run the stack and configure the oracle, liquidity, keeper, and market registry. No middleman.
 - **Full toolkit:** a TypeScript SDK, drop-in React widgets, a self-host keeper, and account decoders.
