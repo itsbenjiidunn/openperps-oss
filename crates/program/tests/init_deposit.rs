@@ -77,9 +77,9 @@ fn try_setup_market(buf: &mut [u8], market_group_id: [u8; 32]) -> Result<(), ()>
 
 fn deposit(market_buf: &mut [u8], portfolio_buf: &mut [u8], amount: u128) {
     let (m_header, m_slots) = market_engine_split_mut(market_buf).unwrap();
-    let (p_header, p_domains) = portfolio_split_mut(portfolio_buf).unwrap();
+    let p_header = portfolio_split_mut(portfolio_buf).unwrap();
     let mut mg = MarketGroupV16ViewMut::new(m_header, m_slots);
-    let mut pv = PortfolioV16ViewMut::new(p_header, p_domains);
+    let mut pv = PortfolioV16ViewMut::new(p_header);
     mg.deposit_not_atomic(&mut pv, amount).unwrap();
 }
 
@@ -96,7 +96,7 @@ fn init_then_deposit_credits_capital_and_vault() {
     deposit(&mut market_buf, &mut pf_buf, amount);
 
     let (m_header, _) = market_engine_split_mut(&mut market_buf).unwrap();
-    let (p_header, _) = portfolio_split_mut(&mut pf_buf).unwrap();
+    let p_header = portfolio_split_mut(&mut pf_buf).unwrap();
     assert_eq!(p_header.capital.get(), amount);
     assert_eq!(m_header.vault.get(), amount);
     assert_eq!(m_header.c_tot.get(), amount);
@@ -119,7 +119,7 @@ fn deposits_accumulate() {
     }
 
     let (m_header, _) = market_engine_split_mut(&mut market_buf).unwrap();
-    let (p_header, _) = portfolio_split_mut(&mut pf_buf).unwrap();
+    let p_header = portfolio_split_mut(&mut pf_buf).unwrap();
     assert_eq!(p_header.capital.get(), chunk * 3);
     assert_eq!(m_header.vault.get(), chunk * 3);
 }
@@ -136,7 +136,7 @@ fn zero_amount_deposit_is_a_noop() {
     deposit(&mut market_buf, &mut pf_buf, 0);
 
     let (m_header, _) = market_engine_split_mut(&mut market_buf).unwrap();
-    let (p_header, _) = portfolio_split_mut(&mut pf_buf).unwrap();
+    let p_header = portfolio_split_mut(&mut pf_buf).unwrap();
     assert_eq!(p_header.capital.get(), 0);
     assert_eq!(m_header.vault.get(), 0);
 }
@@ -270,14 +270,14 @@ fn trade_opens_matched_long_and_short_legs() {
     assert_eq!(oi_long, 1_000_000);
     assert_eq!(oi_short, 1_000_000);
 
-    let (l_header, _) = portfolio_split_mut(&mut long_buf).unwrap();
+    let l_header = portfolio_split_mut(&mut long_buf).unwrap();
     let long_leg = l_header.legs[0].try_to_runtime().unwrap();
     assert!(long_leg.active);
     assert_eq!(long_leg.asset_index, 0);
     assert_eq!(long_leg.side, SideV16::Long);
     assert_eq!(long_leg.basis_pos_q, 1_000_000);
 
-    let (s_header, _) = portfolio_split_mut(&mut short_buf).unwrap();
+    let s_header = portfolio_split_mut(&mut short_buf).unwrap();
     let short_leg = s_header.legs[0].try_to_runtime().unwrap();
     assert!(short_leg.active);
     assert_eq!(short_leg.asset_index, 0);
@@ -461,7 +461,7 @@ fn withdraw_reduces_capital_vault_and_c_tot() {
     withdraw_buffer(&mut market_buf, &mut pf_buf, 300_000).unwrap();
 
     let (m_header, _) = market_engine_split_mut(&mut market_buf).unwrap();
-    let (p_header, _) = portfolio_split_mut(&mut pf_buf).unwrap();
+    let p_header = portfolio_split_mut(&mut pf_buf).unwrap();
     assert_eq!(p_header.capital.get(), 700_000);
     assert_eq!(m_header.vault.get(), 700_000);
     assert_eq!(m_header.c_tot.get(), 700_000);
@@ -480,7 +480,7 @@ fn withdraw_zero_is_a_noop() {
     withdraw_buffer(&mut market_buf, &mut pf_buf, 0).unwrap();
 
     let (m_header, _) = market_engine_split_mut(&mut market_buf).unwrap();
-    let (p_header, _) = portfolio_split_mut(&mut pf_buf).unwrap();
+    let p_header = portfolio_split_mut(&mut pf_buf).unwrap();
     assert_eq!(p_header.capital.get(), 1_000_000);
     assert_eq!(m_header.vault.get(), 1_000_000);
 }
@@ -622,7 +622,7 @@ fn crank_refresh_certifies_a_healthy_active_account() {
     crank_refresh_buffer(&mut market_buf, &mut long_buf, /*now=*/ 2, 0, 100_000_000, 0)
         .unwrap();
 
-    let (p_header, _) = portfolio_split_mut(&mut long_buf).unwrap();
+    let p_header = portfolio_split_mut(&mut long_buf).unwrap();
     assert_eq!(p_header.health_cert.valid, 1);
 }
 

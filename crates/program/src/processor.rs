@@ -702,7 +702,7 @@ fn process_withdraw(
             .map_err(|_| OpenPerpsError::InvalidAccountData)?;
         // Owner check against the portfolio header.
         {
-            let (p_header, _) = portfolio_split_mut(&mut portfolio_data)?;
+            let p_header = portfolio_split_mut(&mut portfolio_data)?;
             if p_header.owner != *owner.key() {
                 return Err(OpenPerpsError::MissingRequiredSignature.into());
             }
@@ -836,13 +836,13 @@ fn process_trade(
     // against an incoming taker and verifies maker signatures via a separate
     // path (delegated authority or pre-signed orders), out of scope here.
     {
-        let (l_header, _) = portfolio_split_mut(&mut long_data)?;
+        let l_header = portfolio_split_mut(&mut long_data)?;
         if l_header.owner != *authority.key() {
             return Err(OpenPerpsError::MissingRequiredSignature.into());
         }
     }
     {
-        let (s_header, _) = portfolio_split_mut(&mut short_data)?;
+        let s_header = portfolio_split_mut(&mut short_data)?;
         if s_header.owner != *authority.key() {
             return Err(OpenPerpsError::MissingRequiredSignature.into());
         }
@@ -915,7 +915,7 @@ fn process_deposit(
         .map_err(|_| OpenPerpsError::InvalidAccountData)?;
 
     let (m_header, m_slots) = market_engine_split_mut(&mut market_data)?;
-    let (p_header, p_domains) = portfolio_split_mut(&mut portfolio_data)?;
+    let p_header = portfolio_split_mut(&mut portfolio_data)?;
 
     if p_header.owner != *owner.key() {
         return Err(OpenPerpsError::MissingRequiredSignature.into());
@@ -923,7 +923,7 @@ fn process_deposit(
 
     {
         let mut mg = MarketGroupV16ViewMut::new(m_header, m_slots);
-        let mut pv = PortfolioV16ViewMut::new(p_header, p_domains);
+        let mut pv = PortfolioV16ViewMut::new(p_header);
         mg.deposit_not_atomic(&mut pv, amount).map_v16()?;
     }
 
@@ -934,7 +934,7 @@ fn process_deposit(
     // are exempt. The whole tx reverts (undoing the SPL transfer) if exceeded.
     if oracle_kind == crate::state::oracle_kind::DEX_EWMA {
         let cap = resolve_deposit_cap(program_id, accounts, market.key());
-        let (p_header2, _) = portfolio_split_mut(&mut portfolio_data)?;
+        let p_header2 = portfolio_split_mut(&mut portfolio_data)?;
         if p_header2.capital.get() > cap {
             return Err(OpenPerpsError::DepositCapExceeded.into());
         }
@@ -1256,7 +1256,7 @@ fn process_place_order(
     // account) must be program-owned, bound to this portfolio, and name the
     // signer. Delegates can only trade, never withdraw.
     {
-        let (u_h, _) = portfolio_split_mut(&mut user_data)?;
+        let u_h = portfolio_split_mut(&mut user_data)?;
         let owner = u_h.owner;
         let user_key = *user.key();
         if user_key != owner {

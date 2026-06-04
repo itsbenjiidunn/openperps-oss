@@ -29,12 +29,14 @@ export const MOCK_POOL_SIZE = 120;
 export const PRICE_SCALE = 1_000_000n;
 
 // Engine structs (after the wrapper prefix in a market account).
-export const MARKET_HEADER_SIZE = 638;
+export const MARKET_HEADER_SIZE = 710;
 // Market<[u8;32]> = 32-byte per-slot wrapper (the pinned oracle pool) + the
 // 1285-byte engine slot. The wrapper sits at the START of each slot.
 export const MARKET_SLOT_WRAPPER_SIZE = 32;
 export const MARKET_SLOT_SIZE = 1317;
-export const PORTFOLIO_HEADER_SIZE = 2907;
+// The v16 portfolio account embeds its source-domain array inline, so this is
+// the whole account size (fixed, independent of slot capacity).
+export const PORTFOLIO_HEADER_SIZE = 9179;
 export const SOURCE_DOMAIN_SIZE = 160;
 
 // Engine-relative offsets (within MarketGroupV16HeaderAccount).
@@ -122,9 +124,10 @@ export function marketAccountSize(assetSlotCapacity: number): number {
   return WRAPPER_HEADER_SIZE + MARKET_HEADER_SIZE + assetSlotCapacity * MARKET_SLOT_SIZE;
 }
 
-export function portfolioAccountSize(assetSlotCapacity: number): number {
-  // Two source domains (long, short) per asset slot.
-  return PORTFOLIO_HEADER_SIZE + assetSlotCapacity * 2 * SOURCE_DOMAIN_SIZE;
+export function portfolioAccountSize(_assetSlotCapacity: number): number {
+  // v16 embeds the source-domain array inline, so the account is a fixed-size
+  // struct independent of the slot capacity.
+  return PORTFOLIO_HEADER_SIZE;
 }
 
 // PDA seed prefixes. Encoded with TextEncoder (a global in both Node and the

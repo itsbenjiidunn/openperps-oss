@@ -11,7 +11,7 @@ use percolator::v16::{
     LiquidationOutcomeV16, LiquidationRequestV16, Market, MarketGroupV16HeaderAccount,
     MarketGroupV16ViewMut, PermissionlessCrankActionV16, PermissionlessCrankRequestV16,
     PortfolioAccountV16Account, PortfolioLegV16, PortfolioLegV16Account,
-    PortfolioSourceDomainV16Account, PortfolioV16ViewMut, ProvenanceHeaderV16,
+    PortfolioV16ViewMut, ProvenanceHeaderV16,
     ProvenanceHeaderV16Account, TradeOutcomeV16, TradeRequestV16, V16ConfigAccount, V16Error,
     V16PodU128, V16PodU16, V16PodU32, V16PodU64, V16_MAX_PORTFOLIO_ASSETS_N,
 };
@@ -684,15 +684,10 @@ pub fn portfolio_source_domain_count(asset_slot_capacity: usize) -> Result<usize
 
 /// Byte size of a portfolio account paired with a market group of
 /// `asset_slot_capacity` slots.
-pub fn portfolio_account_size(asset_slot_capacity: usize) -> Result<usize, OpenPerpsError> {
-    let domain_count = portfolio_source_domain_count(asset_slot_capacity)?;
-    let header = core::mem::size_of::<PortfolioAccountV16Account>();
-    let domains = domain_count
-        .checked_mul(core::mem::size_of::<PortfolioSourceDomainV16Account>())
-        .ok_or(OpenPerpsError::ArithmeticOverflow)?;
-    header
-        .checked_add(domains)
-        .ok_or(OpenPerpsError::ArithmeticOverflow)
+pub fn portfolio_account_size(_asset_slot_capacity: usize) -> Result<usize, OpenPerpsError> {
+    // v16's portfolio struct embeds a fixed source-domain array inline, so the
+    // account is a single struct sized independently of the slot capacity.
+    Ok(core::mem::size_of::<PortfolioAccountV16Account>())
 }
 
 // ---------- split helpers ----------
@@ -735,25 +730,17 @@ pub fn market_engine_split_mut(
     Ok((engine, markets))
 }
 
-/// Split a portfolio account's mutable data into `(header, source_domains)`.
+/// Cast a portfolio account's mutable data to the engine view struct. v16's
+/// `PortfolioAccountV16Account` embeds its `source_domains` inline, so the whole
+/// account is one zero-copy struct (no separate domains region).
 pub fn portfolio_split_mut(
     data: &mut [u8],
-) -> Result<
-    (
-        &mut PortfolioAccountV16Account,
-        &mut [PortfolioSourceDomainV16Account],
-    ),
-    OpenPerpsError,
-> {
-    let header_len = core::mem::size_of::<PortfolioAccountV16Account>();
-    if data.len() < header_len {
+) -> Result<&mut PortfolioAccountV16Account, OpenPerpsError> {
+    let len = core::mem::size_of::<PortfolioAccountV16Account>();
+    if data.len() < len {
         return Err(OpenPerpsError::AccountDataTooSmall);
     }
-    let (head_bytes, rest) = data.split_at_mut(header_len);
-    let header: &mut PortfolioAccountV16Account = pod_from_bytes_mut(head_bytes)?;
-    let domains: &mut [PortfolioSourceDomainV16Account] =
-        bytemuck::try_cast_slice_mut(rest).map_err(|_| OpenPerpsError::InvalidAccountData)?;
-    Ok((header, domains))
+    pod_from_bytes_mut(&mut data[..len])
 }
 
 /// Read-only access to a market account's engine header (skipping the
@@ -926,8 +913,7 @@ pub fn init_portfolio_buffer(
     portfolio_account_id: [u8; 32],
     owner: [u8; 32],
 ) -> Result<(), V16Error> {
-    let (header, _domains) =
-        portfolio_split_mut(buf).map_err(|_| V16Error::InvalidConfig)?;
+    let header = portfolio_split_mut(buf).map_err(|_| V16Error::InvalidConfig)?;
     if header.provenance_header.market_group_id != [0u8; 32] {
         return Err(V16Error::ProvenanceMismatch);
     }
@@ -1041,9 +1027,9 @@ pub fn withdraw_buffer(
 ) -> Result<(), V16Error> {
     let (m_h, m_s) =
         market_engine_split_mut(market_buf).map_err(|_| V16Error::InvalidConfig)?;
-    let (p_h, p_d) = portfolio_split_mut(portfolio_buf).map_err(|_| V16Error::InvalidConfig)?;
+    let p_h = portfolio_split_mut(portfolio_buf).map_err(|_| V16Error::InvalidConfig)?;
     let mut mg = MarketGroupV16ViewMut::new(m_h, m_s);
-    let mut pv = PortfolioV16ViewMut::new(p_h, p_d);
+    let mut pv = PortfolioV16ViewMut::new(p_h);
     mg.withdraw_not_atomic(&mut pv, amount)
 }
 
@@ -1058,9 +1044,9 @@ pub fn deposit_buffer(
 ) -> Result<(), V16Error> {
     let (m_h, m_s) =
         market_engine_split_mut(market_buf).map_err(|_| V16Error::InvalidConfig)?;
-    let (p_h, p_d) = portfolio_split_mut(portfolio_buf).map_err(|_| V16Error::InvalidConfig)?;
+    let p_h = portfolio_split_mut(portfolio_buf).map_err(|_| V16Error::InvalidConfig)?;
     let mut mg = MarketGroupV16ViewMut::new(m_h, m_s);
-    let mut pv = PortfolioV16ViewMut::new(p_h, p_d);
+    let mut pv = PortfolioV16ViewMut::new(p_h);
     mg.deposit_not_atomic(&mut pv, amount)
 }
 
@@ -1078,9 +1064,9 @@ pub fn liquidate_buffer(
 ) -> Result<LiquidationOutcomeV16, V16Error> {
     let (m_h, m_s) =
         market_engine_split_mut(market_buf).map_err(|_| V16Error::InvalidConfig)?;
-    let (p_h, p_d) = portfolio_split_mut(portfolio_buf).map_err(|_| V16Error::InvalidConfig)?;
+    let p_h = portfolio_split_mut(portfolio_buf).map_err(|_| V16Error::InvalidConfig)?;
     let mut mg = MarketGroupV16ViewMut::new(m_h, m_s);
-    let mut pv = PortfolioV16ViewMut::new(p_h, p_d);
+    let mut pv = PortfolioV16ViewMut::new(p_h);
     mg.liquidate_account_not_atomic(
         &mut pv,
         LiquidationRequestV16 {
@@ -1120,9 +1106,9 @@ pub fn crank_refresh_buffer(
 ) -> Result<(), V16Error> {
     let (m_h, m_s) =
         market_engine_split_mut(market_buf).map_err(|_| V16Error::InvalidConfig)?;
-    let (p_h, p_d) = portfolio_split_mut(portfolio_buf).map_err(|_| V16Error::InvalidConfig)?;
+    let p_h = portfolio_split_mut(portfolio_buf).map_err(|_| V16Error::InvalidConfig)?;
     let mut mg = MarketGroupV16ViewMut::new(m_h, m_s);
-    let mut pv = PortfolioV16ViewMut::new(p_h, p_d);
+    let mut pv = PortfolioV16ViewMut::new(p_h);
     mg.permissionless_crank_not_atomic(
         &mut pv,
         PermissionlessCrankRequestV16 {
@@ -1157,9 +1143,9 @@ pub fn settle_pnl_buffer(
 ) -> Result<u128, V16Error> {
     let (m_h, m_s) =
         market_engine_split_mut(market_buf).map_err(|_| V16Error::InvalidConfig)?;
-    let (u_h, u_d) = portfolio_split_mut(user_buf).map_err(|_| V16Error::InvalidConfig)?;
+    let u_h = portfolio_split_mut(user_buf).map_err(|_| V16Error::InvalidConfig)?;
     let mut mg = MarketGroupV16ViewMut::new(m_h, m_s);
-    let mut user = PortfolioV16ViewMut::new(u_h, u_d);
+    let mut user = PortfolioV16ViewMut::new(u_h);
     mg.convert_released_pnl_to_capital_not_atomic(&mut user)
 }
 
@@ -1174,17 +1160,18 @@ pub fn trade_buffer(
 ) -> Result<TradeOutcomeV16, V16Error> {
     let (m_h, m_s) =
         market_engine_split_mut(market_buf).map_err(|_| V16Error::InvalidConfig)?;
-    let (l_h, l_d) = portfolio_split_mut(long_buf).map_err(|_| V16Error::InvalidConfig)?;
-    let (s_h, s_d) = portfolio_split_mut(short_buf).map_err(|_| V16Error::InvalidConfig)?;
+    let l_h = portfolio_split_mut(long_buf).map_err(|_| V16Error::InvalidConfig)?;
+    let s_h = portfolio_split_mut(short_buf).map_err(|_| V16Error::InvalidConfig)?;
     let mut mg = MarketGroupV16ViewMut::new(m_h, m_s);
-    let mut long = PortfolioV16ViewMut::new(l_h, l_d);
-    let mut short = PortfolioV16ViewMut::new(s_h, s_d);
+    let mut long = PortfolioV16ViewMut::new(l_h);
+    let mut short = PortfolioV16ViewMut::new(s_h);
     mg.execute_trade_with_fee_in_place_not_atomic(
         &mut long,
         &mut short,
         TradeRequestV16 {
             asset_index: asset_index as usize,
-            size_q,
+            // v16 TradeRequestV16.size_q is now signed; the long leg is positive.
+            size_q: i128::try_from(size_q).map_err(|_| V16Error::ArithmeticOverflow)?,
             exec_price,
             fee_bps,
         },
@@ -1324,11 +1311,12 @@ mod tests {
     }
 
     #[test]
-    fn portfolio_split_yields_right_domain_count() {
-        let cap = 4;
-        let mut buf = vec![0u8; portfolio_account_size(cap).unwrap()];
-        let (_header, domains) = portfolio_split_mut(&mut buf).unwrap();
-        assert_eq!(domains.len(), portfolio_source_domain_count(cap).unwrap());
+    fn portfolio_account_is_one_struct() {
+        let mut buf = vec![0u8; portfolio_account_size(4).unwrap()];
+        // v16 embeds source_domains inline, so the account is one struct and the
+        // whole buffer casts to the engine view.
+        assert_eq!(buf.len(), core::mem::size_of::<PortfolioAccountV16Account>());
+        assert!(portfolio_split_mut(&mut buf).is_ok());
     }
 
     #[test]
@@ -1336,12 +1324,11 @@ mod tests {
         // Run with `cargo test -p openperps-program print_byte_sizes -- --nocapture`
         // to recover the constants the TS SDK uses to size accounts.
         println!(
-            "WRAPPER_HEADER={} MARKET_HEADER={} MARKET_SLOT={} PORTFOLIO_HEADER={} SOURCE_DOMAIN={}",
+            "WRAPPER_HEADER={} MARKET_HEADER={} MARKET_SLOT={} PORTFOLIO_ACCOUNT={}",
             OpenPerpsMarketHeader::LEN,
             core::mem::size_of::<MarketGroupV16HeaderAccount>(),
             core::mem::size_of::<MarketSlot>(),
             core::mem::size_of::<PortfolioAccountV16Account>(),
-            core::mem::size_of::<PortfolioSourceDomainV16Account>(),
         );
         println!(
             "OFFSET_VAULT={} OFFSET_CTOT={} OFFSET_CAPITAL={} OFFSET_PNL={}",
