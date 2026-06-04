@@ -949,12 +949,18 @@ export function placeOrderIx(args: {
   });
 }
 
-export function encodeSetDelegate(delegate: Uint8Array, bump: number): Buffer {
+export function encodeSetDelegate(
+  delegate: Uint8Array,
+  bump: number,
+  expirySlot: bigint,
+): Buffer {
   expect32(delegate, "delegate");
-  const data = new Uint8Array(1 + 32 + 1);
+  const data = new Uint8Array(1 + 32 + 1 + 8);
   data[0] = Tag.SetDelegate;
   data.set(delegate, 1);
   data[33] = bump;
+  // Slot after which PlaceOrder rejects the delegate (little-endian u64).
+  new DataView(data.buffer).setBigUint64(34, expirySlot, true);
   return Buffer.from(data);
 }
 
@@ -967,6 +973,10 @@ export function setDelegateIx(args: {
   owner: PublicKey;
   delegate: PublicKey;
   bump: number;
+  /// Slot after which the delegate is rejected by PlaceOrder. Pass a future
+  /// slot (current slot + a bounded TTL); the all-zero delegate (revoke) can
+  /// use 0.
+  expirySlot: bigint;
 }): TransactionInstruction {
   return new TransactionInstruction({
     programId: args.programId,
@@ -976,7 +986,7 @@ export function setDelegateIx(args: {
       { pubkey: args.owner, isSigner: true, isWritable: true },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
     ],
-    data: encodeSetDelegate(args.delegate.toBytes(), args.bump),
+    data: encodeSetDelegate(args.delegate.toBytes(), args.bump, args.expirySlot),
   });
 }
 

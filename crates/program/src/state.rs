@@ -150,6 +150,11 @@ pub struct DelegateAccount {
     pub discriminator: [u8; 8],
     pub portfolio: [u8; 32],
     pub delegate: [u8; 32],
+    /// Slot after which `PlaceOrder` rejects this delegate (little-endian u64).
+    /// Session keys are time-bounded so a leaked key cannot trade forever; the
+    /// owner refreshes it with another `SetDelegate`. A value of 0 is always
+    /// expired (fail-safe), so an expiry must be set explicitly.
+    pub expiry_slot: [u8; 8],
 }
 
 impl DelegateAccount {
@@ -164,6 +169,7 @@ pub fn set_delegate_buffer(
     buf: &mut [u8],
     portfolio: [u8; 32],
     delegate: [u8; 32],
+    expiry_slot: u64,
 ) -> Result<(), OpenPerpsError> {
     if buf.len() < DelegateAccount::LEN {
         return Err(OpenPerpsError::AccountDataTooSmall);
@@ -172,6 +178,7 @@ pub fn set_delegate_buffer(
     acc.discriminator = DELEGATE_DISCRIMINATOR;
     acc.portfolio = portfolio;
     acc.delegate = delegate;
+    acc.expiry_slot = expiry_slot.to_le_bytes();
     Ok(())
 }
 
@@ -187,18 +194,18 @@ pub fn portfolio_owner(buf: &[u8]) -> Result<[u8; 32], OpenPerpsError> {
     Ok(header.owner)
 }
 
-/// Read `(portfolio, delegate)` from a delegate PDA; delegate is zero if
-/// revoked/uninitialized.
-pub fn delegate_of(buf: &[u8]) -> Result<([u8; 32], [u8; 32]), OpenPerpsError> {
+/// Read `(portfolio, delegate, expiry_slot)` from a delegate PDA; delegate is
+/// zero (and expiry 0) if revoked/uninitialized.
+pub fn delegate_of(buf: &[u8]) -> Result<([u8; 32], [u8; 32], u64), OpenPerpsError> {
     if buf.len() < DelegateAccount::LEN {
         return Err(OpenPerpsError::AccountDataTooSmall);
     }
     let acc: &DelegateAccount = bytemuck::try_from_bytes(&buf[..DelegateAccount::LEN])
         .map_err(|_| OpenPerpsError::InvalidAccountData)?;
     if !acc.is_initialized() {
-        return Ok(([0u8; 32], [0u8; 32]));
+        return Ok(([0u8; 32], [0u8; 32], 0));
     }
-    Ok((acc.portfolio, acc.delegate))
+    Ok((acc.portfolio, acc.delegate, u64::from_le_bytes(acc.expiry_slot)))
 }
 
 /// Per-market oracle authority PDA. Optional and owner-rotatable: when present,
@@ -1261,15 +1268,18 @@ mod tests {
     #[test]
     fn delegate_buffer_roundtrip() {
         let mut buf = vec![0u8; DelegateAccount::LEN];
-        // uninitialized → zero delegate
-        assert_eq!(delegate_of(&buf).unwrap(), ([0u8; 32], [0u8; 32]));
-        set_delegate_buffer(&mut buf, [7u8; 32], [9u8; 32]).unwrap();
-        assert_eq!(delegate_of(&buf).unwrap(), ([7u8; 32], [9u8; 32]));
-        // revoke
-        set_delegate_buffer(&mut buf, [7u8; 32], [0u8; 32]).unwrap();
-        let (pf, del) = delegate_of(&buf).unwrap();
+        // uninitialized → zero delegate, zero expiry
+        assert_eq!(delegate_of(&buf).unwrap(), ([0u8; 32], [0u8; 32], 0));
+        // Finding #7: the expiry slot round-trips so PlaceOrder can time-bound
+        // the session key (it rejects once the current slot passes the expiry).
+        set_delegate_buffer(&mut buf, [7u8; 32], [9u8; 32], 12_345).unwrap();
+        assert_eq!(delegate_of(&buf).unwrap(), ([7u8; 32], [9u8; 32], 12_345));
+        // revoke (and a fresh expiry)
+        set_delegate_buffer(&mut buf, [7u8; 32], [0u8; 32], 0).unwrap();
+        let (pf, del, expiry) = delegate_of(&buf).unwrap();
         assert_eq!(pf, [7u8; 32]);
         assert_eq!(del, [0u8; 32]);
+        assert_eq!(expiry, 0);
     }
 
     #[test]

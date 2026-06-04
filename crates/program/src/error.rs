@@ -37,6 +37,9 @@ pub enum OpenPerpsError {
     /// A DEX pool's quote-side depth is below the per-market floor, so it cannot
     /// price the market (or a vault/account was malformed).
     PoolTooThin = 12,
+    /// The trading delegate (session key) is past its expiry slot. The owner
+    /// must issue a fresh `SetDelegate` to keep trading on the session key.
+    DelegateExpired = 13,
 }
 
 impl From<OpenPerpsError> for ProgramError {

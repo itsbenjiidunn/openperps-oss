@@ -574,6 +574,84 @@ fn liquidate_rejects_zero_close_q() {
 }
 
 #[test]
+fn withdraw_rejects_cross_market_group_id_provenance() {
+    // Finding #4: a portfolio funded against one market (group id G1) must not be
+    // able to withdraw from a different market's vault (group id G2). The engine
+    // enforces this through provenance, and process_init_market now binds the
+    // market group id to the market account address, so two distinct markets
+    // always carry distinct group ids and can never collide.
+    let g1 = [0x11; 32];
+    let g2 = [0x22; 32];
+    let owner = [0x66; 32];
+
+    // Market A (group id G1): fund a portfolio against it.
+    let (mut market_a, mut pf_buf) = fresh_buffers();
+    setup_market(&mut market_a, g1);
+    init_portfolio_buffer(&mut pf_buf, g1, [0xAA; 32], owner).unwrap();
+    deposit(&mut market_a, &mut pf_buf, 1_000_000);
+
+    // Market B (group id G2): a different market account / vault.
+    let (mut market_b, _) = fresh_buffers();
+    setup_market(&mut market_b, g2);
+
+    // Cross-market withdraw is rejected (provenance mismatch).
+    assert!(
+        withdraw_buffer(&mut market_b, &mut pf_buf, 1).is_err(),
+        "portfolio funded on market A must not withdraw from market B's vault",
+    );
+
+    // Control: withdrawing from its own market (matching group id) still works,
+    // proving the rejection above is the group-id binding, not a generic failure.
+    withdraw_buffer(&mut market_a, &mut pf_buf, 300_000).unwrap();
+    let p_header = portfolio_split_mut(&mut pf_buf).unwrap();
+    assert_eq!(p_header.capital.get(), 700_000);
+}
+
+#[test]
+fn liquidate_succeeds_on_underwater_account() {
+    // Liquidation stress test (previously only the REFUSAL path was covered):
+    // open a leveraged long, drive the mark against it until the account is
+    // below maintenance margin, and assert the engine actually liquidates it.
+    let mid = [0x91; 32];
+    let owner = [0x92; 32];
+
+    let mut market_buf = vec![0u8; market_account_size(CAP as usize).unwrap()];
+    let mut long_buf = vec![0u8; portfolio_account_size(CAP as usize).unwrap()];
+    let mut short_buf = vec![0u8; portfolio_account_size(CAP as usize).unwrap()];
+
+    setup_market(&mut market_buf, mid);
+    activate_market_buffer(&mut market_buf, 0, 100_000_000, 1).unwrap();
+    init_portfolio_buffer(&mut long_buf, mid, [1; 32], owner).unwrap();
+    init_portfolio_buffer(&mut short_buf, mid, [2; 32], owner).unwrap();
+
+    // Notional is `size * price / 1e6` (= 100M for size 1M at the 1e8 mark), so
+    // the 10% initial margin is ~10M. The long posts 12M (~8.3x), just inside
+    // that cap; the short side is deep enough to take the other leg.
+    deposit(&mut market_buf, &mut long_buf, 12_000_000);
+    deposit(&mut market_buf, &mut short_buf, 50_000_000);
+    trade_buffer(&mut market_buf, &mut long_buf, &mut short_buf, 0, 1_000_000, 100_000_000, 10)
+        .unwrap();
+
+    // Healthy at entry: liquidation is refused.
+    assert_eq!(
+        liquidate_buffer(&mut market_buf, &mut long_buf, 0, 1_000_000, 10).unwrap_err(),
+        percolator::v16::V16Error::NonProgress,
+    );
+
+    // Drop the mark 10% (1e8 -> 9e7). With ~8x leverage and a 5% maintenance
+    // floor the long is now below maintenance but not yet bankrupt. The per-slot
+    // move clamp is 10 bps/slot under open exposure, so we advance ~150 slots in
+    // one protective accrual (allowed move 1490 bps > 1000).
+    accrue_asset_buffer(&mut market_buf, 0, 150, 90_000_000, 0, true).unwrap();
+
+    // The engine now liquidates the underwater long (the happy path).
+    liquidate_buffer(&mut market_buf, &mut long_buf, 0, 1_000_000, 10).unwrap();
+
+    // The leg is closed, so a second attempt makes no progress.
+    assert!(liquidate_buffer(&mut market_buf, &mut long_buf, 0, 1_000_000, 10).is_err());
+}
+
+#[test]
 fn resolve_market_flips_mode_and_records_slot() {
     let mid = [0x81; 32];
     let (mut buf, _) = fresh_buffers();

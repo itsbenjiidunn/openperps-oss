@@ -309,6 +309,8 @@ pub enum OpenPerpsInstruction {
     SetDelegate {
         delegate: [u8; 32],
         bump: u8,
+        /// Slot after which the delegate is rejected by `PlaceOrder`.
+        expiry_slot: u64,
     },
     /// Pin a DEX pool to asset slot `asset_index` (writes the slot wrapper).
     /// Permissionless + pin-once: anyone can claim a free slot's oracle when
@@ -534,7 +536,12 @@ impl OpenPerpsInstruction {
                 let bump = *rest
                     .get(32)
                     .ok_or(OpenPerpsError::InvalidInstructionData)?;
-                Ok(Self::SetDelegate { delegate, bump })
+                let expiry_slot = read_u64(rest, 33)?;
+                Ok(Self::SetDelegate {
+                    delegate,
+                    bump,
+                    expiry_slot,
+                })
             }
             tag::SETTLE_PNL => Ok(Self::SettlePnl),
             tag::SET_ORACLE_AUTHORITY => {

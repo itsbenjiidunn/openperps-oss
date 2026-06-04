@@ -84,6 +84,11 @@ export async function sessionUsableFor(
   return (await delegateRegistered(connection, portfolio, kp.publicKey)) ? kp : null;
 }
 
+/// How long a session key stays valid on-chain before the user must re-enable
+/// it (one wallet tx). Bounded so a leaked delegate cannot trade forever.
+/// ~7 days at ~2.5 slots/s.
+const SESSION_TTL_SLOTS = 1_500_000n;
+
 /// One wallet tx: authorize the session key as the portfolio's delegate and
 /// fund it for fees. After this, trades are popup-free.
 export async function enableSession(args: {
@@ -99,6 +104,11 @@ export async function enableSession(args: {
   const session = loadSession(owner) ?? Keypair.generate();
   const [pda, bump] = delegatePda(portfolio);
 
+  // Time-bound the session key so a leaked delegate cannot trade forever; the
+  // user re-enables (one wallet tx) when it lapses.
+  const currentSlot = BigInt(await connection.getSlot("confirmed"));
+  const expirySlot = currentSlot + SESSION_TTL_SLOTS;
+
   const tx = new Transaction()
     .add(
       setDelegateIx({
@@ -108,6 +118,7 @@ export async function enableSession(args: {
         owner: wallet.publicKey,
         delegate: session.publicKey,
         bump,
+        expirySlot,
       }),
     )
     .add(
@@ -149,6 +160,7 @@ export async function disableSession(args: {
       owner: wallet.publicKey,
       delegate: PublicKey.default,
       bump,
+      expirySlot: 0n,
     }),
   );
   const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");

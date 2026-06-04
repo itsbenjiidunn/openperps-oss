@@ -255,9 +255,11 @@ pub fn process_instruction(
         OpenPerpsInstruction::PinOraclePool { asset_index } => {
             process_pin_oracle_pool(program_id, accounts, asset_index)
         }
-        OpenPerpsInstruction::SetDelegate { delegate, bump } => {
-            process_set_delegate(program_id, accounts, delegate, bump)
-        }
+        OpenPerpsInstruction::SetDelegate {
+            delegate,
+            bump,
+            expiry_slot,
+        } => process_set_delegate(program_id, accounts, delegate, bump, expiry_slot),
         OpenPerpsInstruction::SettlePnl => process_settle_pnl(program_id, accounts),
         OpenPerpsInstruction::SetOracleAuthority { authority, bump } => {
             process_set_oracle_authority(program_id, accounts, authority, bump)
@@ -295,7 +297,7 @@ pub fn process_instruction(
 fn process_init_market(
     program_id: &Pubkey,
     accounts: &[AccountInfo],
-    market_group_id: [u8; 32],
+    _requested_group_id: [u8; 32],
     asset_slot_capacity: u32,
     vault_bump: u8,
     base_mint: [u8; 32],
@@ -332,12 +334,18 @@ fn process_init_market(
     )
     .map_err(|_| OpenPerpsError::InvalidAccountData)?;
 
+    // Bind the engine provenance domain to THIS market account: the market group
+    // id is the market account address, not a client-chosen value. Provenance is
+    // then one-to-one with the per-market vault [VAULT_SEED, market.key()], so a
+    // portfolio funded against one market can never deposit to / withdraw from a
+    // different market's vault by colliding on a shared group id. The requested
+    // id from the instruction is ignored.
     let mut data = market
         .try_borrow_mut_data()
         .map_err(|_| OpenPerpsError::InvalidAccountData)?;
     init_market_buffer(
         &mut data,
-        market_group_id,
+        market_key,
         asset_slot_capacity,
         *authority.key(),
         *quote_mint.key(),
@@ -1272,9 +1280,14 @@ fn process_place_order(
             let d_data = delegate_acc
                 .try_borrow_data()
                 .map_err(|_| OpenPerpsError::InvalidAccountData)?;
-            let (d_portfolio, d_delegate) = delegate_of(&d_data)?;
+            let (d_portfolio, d_delegate, d_expiry) = delegate_of(&d_data)?;
             if d_portfolio != *user_portfolio.key() || d_delegate != user_key {
                 return Err(OpenPerpsError::MissingRequiredSignature.into());
+            }
+            // Session keys are time-bounded: reject past the expiry slot so a
+            // leaked delegate key cannot trade indefinitely.
+            if Clock::get()?.slot > d_expiry {
+                return Err(OpenPerpsError::DelegateExpired.into());
             }
         }
     }
@@ -1374,9 +1387,14 @@ fn process_place_batch_order(
             let d_data = delegate_acc
                 .try_borrow_data()
                 .map_err(|_| OpenPerpsError::InvalidAccountData)?;
-            let (d_portfolio, d_delegate) = delegate_of(&d_data)?;
+            let (d_portfolio, d_delegate, d_expiry) = delegate_of(&d_data)?;
             if d_portfolio != *user_portfolio.key() || d_delegate != user_key {
                 return Err(OpenPerpsError::MissingRequiredSignature.into());
+            }
+            // Session keys are time-bounded: reject past the expiry slot so a
+            // leaked delegate key cannot trade indefinitely.
+            if Clock::get()?.slot > d_expiry {
+                return Err(OpenPerpsError::DelegateExpired.into());
             }
         }
     }
@@ -1861,6 +1879,7 @@ fn process_set_delegate(
     accounts: &[AccountInfo],
     delegate: [u8; 32],
     bump: u8,
+    expiry_slot: u64,
 ) -> ProgramResult {
     let [delegate_pda, portfolio, owner, _system_program, ..] = accounts else {
         return Err(OpenPerpsError::InvalidInstruction.into());
@@ -1919,7 +1938,7 @@ fn process_set_delegate(
     let mut data = delegate_pda
         .try_borrow_mut_data()
         .map_err(|_| OpenPerpsError::InvalidAccountData)?;
-    set_delegate_buffer(&mut data, portfolio_key, delegate)?;
+    set_delegate_buffer(&mut data, portfolio_key, delegate, expiry_slot)?;
     Ok(())
 }
 
