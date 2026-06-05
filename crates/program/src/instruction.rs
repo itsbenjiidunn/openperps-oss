@@ -199,10 +199,19 @@ pub enum OpenPerpsInstruction {
     /// Permissionless cert refresh for `portfolio` against fresh oracle +
     /// funding inputs for `asset_index`. `now_slot` is read from Clock.
     ///
+    /// Like `AccrueAsset`, the supplied `effective_price` / `funding_rate_e9`
+    /// only MOVE the mark when the signer is the market's oracle authority; any
+    /// other cranker is forced to a delta-0 refresh (the price/funding are
+    /// ignored and the current on-chain mark is re-asserted), so a permissionless
+    /// crank can drive certification without walking the mark.
+    ///
     /// Accounts:
     ///   0. `[writable]` market account
     ///   1. `[writable]` portfolio account
     ///   2. `[signer]`   cranker (any signer; pays tx fee)
+    ///   3. `[]`         optional oracle-authority PDA `[ORACLE_SEED, market]`;
+    ///                    pass it when cranking as a rotated per-market authority
+    ///                    (omit it to gate against the relayer constant)
     CrankRefresh {
         asset_index: u32,
         effective_price: u64,

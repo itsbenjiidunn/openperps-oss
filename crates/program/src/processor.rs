@@ -47,19 +47,22 @@ const ORACLE_AUTHORITY: Pubkey = [
     67, 118, 117, 89, 222, 228, 165, 212, 72, 230, 40, 138,
 ];
 
-/// Resolve the oracle authority for a market's `AccrueAsset` price gate. If the
-/// optional per-market oracle authority PDA (account index 2) is present, owned
+/// Resolve the oracle authority for a market's price gate. If the optional
+/// per-market oracle authority PDA (the account at `pda_index`) is present, owned
 /// by this program, initialized, bound to this market, and non-zero, that key
 /// governs; otherwise the global relayer constant does. A valid such account can
 /// only exist at the canonical `[ORACLE_SEED, market]` PDA (SetOracleAuthority
 /// creates it there under the market authority), so a discriminator + market
 /// match is enough to trust it. Markets that never set one stay on the relayer.
+/// `pda_index` is the slot the caller's account layout reserves for the optional
+/// PDA (AccrueAsset = 2, CrankRefresh = 3), since their fixed accounts differ.
 fn resolve_oracle_authority(
     program_id: &Pubkey,
     accounts: &[AccountInfo],
     market_key: &Pubkey,
+    pda_index: usize,
 ) -> Pubkey {
-    if let Some(acc) = accounts.get(2) {
+    if let Some(acc) = accounts.get(pda_index) {
         if unsafe { acc.owner() } == program_id {
             if let Ok(data) = acc.try_borrow_data() {
                 if let Ok((mkt, auth)) = oracle_authority_of(&data) {
@@ -71,6 +74,35 @@ fn resolve_oracle_authority(
         }
     }
     ORACLE_AUTHORITY
+}
+
+/// Shared oracle price gate for `AccrueAsset` and `CrankRefresh`. The requested
+/// `price` / `funding_e9` are honored only for the market's oracle authority
+/// (`is_oracle`); every other signer is forced to a delta-0 update, the asset's
+/// current on-chain `effective_price` with zero funding, so a permissionless
+/// crank can drive certification / funding progress WITHOUT moving the mark.
+/// Reading the current price is lazy (skipped on the oracle path), so the oracle
+/// path touches no extra state. Centralizing this keeps the two handlers' gates
+/// from drifting (the CrankRefresh gate was missing entirely, finding M1).
+fn gated_price_update(
+    is_oracle: bool,
+    price: u64,
+    funding_e9: i128,
+    market_data: &mut [u8],
+    asset_index: u32,
+) -> Result<(u64, i128), OpenPerpsError> {
+    if is_oracle {
+        return Ok((price, funding_e9));
+    }
+    let (_, markets) = market_engine_split_mut(market_data)?;
+    let current = markets
+        .get(asset_index as usize)
+        .ok_or(OpenPerpsError::InvalidAccountData)?
+        .engine
+        .asset
+        .effective_price
+        .get();
+    Ok((current, 0))
 }
 
 /// Resolve the per-portfolio collateral cap for a DEX-priced market. If the
@@ -515,22 +547,10 @@ fn process_accrue_asset(
     // the client reading it and the tx landing. (Devnet/early-mainnet trust
     // model: a pinned relayer key; the trustless variant sources the price from
     // the on-chain DEX pool via CrankOracle.)
-    let is_oracle = *authority.key() == resolve_oracle_authority(program_id, accounts, market.key());
-    let (effective_price, funding_rate_e9) = if is_oracle {
-        (effective_price, funding_rate_e9)
-    } else {
-        let current_eff = {
-            let (_, markets) = crate::state::market_engine_split_mut(&mut data)?;
-            markets
-                .get(asset_index as usize)
-                .ok_or(OpenPerpsError::InvalidAccountData)?
-                .engine
-                .asset
-                .effective_price
-                .get()
-        };
-        (current_eff, 0)
-    };
+    let is_oracle =
+        *authority.key() == resolve_oracle_authority(program_id, accounts, market.key(), 2);
+    let (effective_price, funding_rate_e9) =
+        gated_price_update(is_oracle, effective_price, funding_rate_e9, &mut data, asset_index)?;
     // Asserts protective progress so it works once positions are open (the
     // engine still enforces the per-slot price-move bound).
     accrue_asset_buffer(
@@ -605,6 +625,26 @@ fn process_crank_refresh(
     let mut portfolio_data = portfolio
         .try_borrow_mut_data()
         .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+
+    // ORACLE GATE (same as process_accrue_asset): a permissionless cranker may
+    // drive certification + funding progress, but MUST NOT move the mark. Only
+    // the market's oracle authority (the rotatable per-market PDA at account
+    // index 3, else the relayer constant) may supply a fresh price; every other
+    // signer is forced to a delta-0 refresh that re-asserts the current on-chain
+    // effective_price. Without this gate CrankRefresh was a permissionless bypass
+    // of the AccrueAsset price gate: any signer could walk the mark (bounded by
+    // the engine's per-slot move clamp) or desync raw_oracle_target_price to
+    // grief trading and assist unfair liquidations.
+    let is_oracle =
+        *cranker.key() == resolve_oracle_authority(program_id, accounts, market.key(), 3);
+    let (effective_price, funding_rate_e9) = gated_price_update(
+        is_oracle,
+        effective_price,
+        funding_rate_e9,
+        &mut market_data,
+        asset_index,
+    )?;
+
     crank_refresh_buffer(
         &mut market_data,
         &mut portfolio_data,
@@ -2094,4 +2134,63 @@ fn process_set_deposit_cap(
         .map_err(|_| OpenPerpsError::InvalidAccountData)?;
     set_deposit_cap_buffer(&mut data, market_key, max_capital)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::{
+        activate_market_buffer, init_market_buffer, market_account_size, oracle_kind,
+    };
+
+    /// A 1-slot market with asset 0 active and its mark seeded to `price`.
+    fn market_with_active_asset(price: u64) -> Vec<u8> {
+        let mut buf = vec![0u8; market_account_size(1).unwrap()];
+        init_market_buffer(
+            &mut buf,
+            [9u8; 32],           // market_group_id
+            1,                   // asset_slot_capacity
+            [1u8; 32],           // authority
+            [2u8; 32],           // quote_mint
+            [3u8; 32],           // vault
+            255,                 // vault_bump
+            [0u8; 32],           // base_mint
+            oracle_kind::MANUAL, // oracle_kind
+            [0u8; 32],           // oracle_feed_id
+            [0u8; 32],           // oracle_pool
+        )
+        .unwrap();
+        activate_market_buffer(&mut buf, 0, price, 1).unwrap();
+        buf
+    }
+
+    #[test]
+    fn oracle_price_passes_through_untouched() {
+        // The oracle path returns the requested price + funding verbatim and
+        // never reads market state, so an empty buffer is fine.
+        let mut empty: [u8; 0] = [];
+        assert_eq!(
+            gated_price_update(true, 555_000_000, 42, &mut empty, 0).unwrap(),
+            (555_000_000, 42),
+        );
+    }
+
+    #[test]
+    fn non_oracle_is_forced_to_delta_zero() {
+        // M1 regression: a non-oracle crank's requested price AND funding are
+        // dropped; the gate re-asserts the current on-chain mark with zero
+        // funding, so a permissionless CrankRefresh / AccrueAsset cannot move the
+        // mark or inject funding. This is the exact decision both handlers run.
+        let mut buf = market_with_active_asset(100_000_000);
+        assert_eq!(
+            gated_price_update(false, 555_000_000, 42, &mut buf, 0).unwrap(),
+            (100_000_000, 0),
+        );
+    }
+
+    #[test]
+    fn non_oracle_out_of_range_asset_errors() {
+        let mut buf = market_with_active_asset(100_000_000);
+        assert!(gated_price_update(false, 1, 0, &mut buf, 9).is_err());
+    }
 }
