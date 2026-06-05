@@ -172,7 +172,7 @@ import {
 <OpenPerpsMarketLauncher intent={creationIntent} onLaunch={createMarket} />
 ```
 
-The components ship no CSS; style them through `className` or the default `openperps-*` class names. Prefer to drive the flow yourself? Use the headless hook:
+The components ship no CSS so you need style them through `className` or the default `openperps-*` class names. Prefer to drive the flow yourself? Use the headless hook:
 
 ```tsx
 import { useOpenPerpsTrade } from "@openperps/react";
