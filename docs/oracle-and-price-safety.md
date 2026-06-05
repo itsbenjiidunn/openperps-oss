@@ -14,7 +14,7 @@ trade's `executionPrice`, never a chart price.
 | Path | How it prices | Status |
 | --- | --- | --- |
 | Authority relayer (`AccrueAsset`) | An off-chain relayer signs and pushes the mark on-chain; the engine enforces a per-slot move bound and a freshness window. | Operator-controlled. The price-setting key defaults to a pinned relayer constant; a market authority rotates it per market with `SetOracleAuthority` (a `[ORACLE_SEED, market]` PDA), without a program upgrade. A verifiable per-asset feed is on the roadmap. |
-| DEX-EWMA (`CrankDexSpot`) | A permissionless crank reads a real constant-product pool's two SPL vault reserves, derives the spot, and folds it into the mark via an EWMA (alpha 0.2), bounded by the per-slot move cap and freshness window. | Implemented. `CrankDexSpot` prices from the pinned vaults and rejects a pool below a per-market depth floor (`PoolTooThin`). A program-side TWAP is the next layer. The token-less `CreateMockPool` / `MockSwap` demo source is excluded from a `--no-default-features` build. |
+| DEX-EWMA (`CrankDexSpot`) | A permissionless crank reads a real constant-product pool's two SPL vault reserves, derives the spot, folds it into a rolling TWAP, and moves the mark via an EWMA (alpha 0.2) only once a window has elapsed, bounded by the per-slot move cap and freshness window. | Implemented, including the program-side TWAP. `CrankDexSpot` prices from the pinned vaults, rejects a pool below a per-market depth floor (`PoolTooThin`), and averages over a 30s window in a `[TWAP_SEED, market, asset]` PDA where each observation's weight is capped (`MAX_TWAP_OBS_DT_SECS`), so a single-block flash contributes ~0 and a manipulator must sustain a move across the window. Full robustness still leans on the layered depth floor, per-slot clamp, and deposit cap; reading an AMM-native price cumulative is a later layer. The token-less `CreateMockPool` / `MockSwap` demo source is excluded from a `--no-default-features` build. |
 | Pyth (`oracle_kind = PYTH`) | A Pyth feed id is bound to the market. | Implemented. `CrankPyth` reads the Pyth receiver's `PriceUpdateV2` account, checks its owner, feed id, Full verification, freshness, confidence interval, and spot/EMA divergence, then accrues the mark, bounded by the per-slot clamp. Validated against a live Pyth SOL/USD `PriceUpdateV2` account (`7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE`). A decentralized feed (Wormhole guardian quorum), not a single app key. |
 
 ## Already enforced
@@ -32,8 +32,10 @@ trade's `executionPrice`, never a chart price.
 - The operator-controlled relayer path (`AccrueAsset`) sets the mark from a pinned
   key, rotatable per market via `SetOracleAuthority`. A verifiable feed for every
   asset is the next layer; the Pyth path already provides one for supported feeds.
-- DEX-EWMA gates on pool depth; a program-side TWAP, so a manipulator must sustain
-  a move across a window, is the next layer.
+- DEX-EWMA gates on pool depth and prices off a capped-weight, time-weighted
+  average (the program-side TWAP), so a single-block flash contributes ~0 and a
+  manipulator must sustain a move across the window. Reading an AMM-native price
+  cumulative (e.g. Raydium observations) is a later hardening.
 
 Depth- and TWAP-aware DEX-EWMA for custom tokens is detailed in
 [`oracle-integration.md`](oracle-integration.md).

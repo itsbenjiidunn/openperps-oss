@@ -2,8 +2,9 @@
 
 Design and integration notes for the verifiable oracle paths. Part A (Pyth) and
 Part B (a real constant-product reader with a depth gate) are implemented and
-validated against live accounts; the program-side TWAP for Part B is the next
-layer. This moves settlement pricing from the operator-controlled relayer key to
+validated against live accounts; the program-side TWAP for Part B is now wired
+(a capped-weight, 30s window in a `[TWAP_SEED, market, asset_index]` PDA). This
+moves settlement pricing from the operator-controlled relayer key to
 verifiable, per-tier sources, kept concrete so each part is built and validated
 against real accounts.
 
@@ -67,13 +68,18 @@ Hard parts / validation needs:
 
 ## Part B: DEX-EWMA with pool depth + TWAP (custom SPL tokens)
 
-**Status: reader + depth gate implemented and validated on-chain.**
+**Status: reader + depth gate + program-side TWAP implemented and validated on-chain.**
 `crates/program/src/dexamm.rs` reads the two reserve vaults as standard SPL token
 accounts (AMM-agnostic), derives the spot, and gates on quote-side depth.
 `SetDexPool` pins the vaults, base decimals, and floor; `CrankDexSpot` folds the
-spot into the EWMA mark. `packages/sdk/scripts/dex-crank.ts` validates it against
-real token accounts. The program-side TWAP (step 3) ships as pure helpers in
-`dexamm`; the PDA wiring is the next layer.
+spot into a rolling TWAP and moves the EWMA mark only once a window has elapsed.
+`packages/sdk/scripts/dex-crank.ts` validates it against real token accounts (its
+mark-movement checks now span the TWAP window). The TWAP state lives in a
+`[TWAP_SEED, market, asset_index]` PDA (`state::TwapState`), created by the first
+crank; each observation's weight is capped (`MAX_TWAP_OBS_DT_SECS`) so one
+post-gap sample cannot dominate. The remaining hardening is reading an AMM-native
+price cumulative (e.g. Raydium observations), which removes the sampled-spot
+assumption entirely.
 
 Goal: price a custom token from a real on-chain AMM, manipulation-resistant.
 
@@ -86,11 +92,16 @@ Design:
 2. **Depth gate:** read the quote reserve as depth; reject or clamp the crank if
    depth is below a configured per-market floor, so a drained or thin pool cannot
    price the market.
-3. **TWAP:** price off a time-weighted average, not spot, so a manipulator must
-   sustain the move across the window (cost scales with depth x window). Either
-   read the AMM's own on-chain TWAP (CLMM observations) or maintain a program-side
-   TWAP in a `[TWAP_SEED, market, asset_index]` PDA holding
-   {cumulative, last_ts, last_price} (backward-compatible PDA, no layout change).
+3. **TWAP (done):** price off a time-weighted average, not spot, so a manipulator
+   must sustain the move across the window (cost scales with depth x window).
+   Implemented as a program-side TWAP in a `[TWAP_SEED, market, asset_index]` PDA
+   (`state::TwapState`) holding {cumulative, weighted_time, last_ts, last_price}
+   plus a window anchor. Each observation adds `last_price * min(dt, cap)`; the
+   weight cap stops one post-gap sample from capturing the whole gap, and the
+   weighted-time denominator keeps the average exact when weights are clipped. The
+   mark moves only once `TWAP_WINDOW_SECS` of real time has elapsed. Reading the
+   AMM's own on-chain cumulative (Uniswap-V2 / CLMM observations) is the stronger
+   variant and removes the sampled-spot assumption; it is the next hardening.
 4. EWMA + move bound + freshness layer on top (already present).
 
 Hard parts / validation needs:

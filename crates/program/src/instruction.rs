@@ -402,17 +402,23 @@ pub enum OpenPerpsInstruction {
         bump: u8,
     },
     /// Permissionless: pull a fresh spot from a DEX market's pinned constant-product
-    /// pool (two SPL vault balances), reject a too-thin pool, and fold the spot
-    /// into the EWMA mark (per-slot move bound + freshness).
+    /// pool (two SPL vault balances), reject a too-thin pool, fold the spot into a
+    /// rolling TWAP, and move the EWMA mark only once a full window has elapsed
+    /// (off the time-weighted average, so a single-block reserve flash cannot
+    /// shift it). `bump` is for the `[TWAP_SEED, market, asset_index]` PDA, which
+    /// the first crank creates.
     ///
     /// Accounts:
     ///   0. `[writable]` market account
     ///   1. `[]`         dex pool config PDA (`[DEXPOOL_SEED, market]`)
     ///   2. `[]`         base reserve vault (SPL token account)
     ///   3. `[]`         quote reserve vault (SPL token account)
-    ///   4. `[signer]`   any signer (pays fee)
+    ///   4. `[writable]` TWAP-state PDA (`[TWAP_SEED, market, asset_index]`)
+    ///   5. `[signer, writable]` cranker (pays fee + the TWAP PDA rent on first use)
+    ///   6. `[]`         system program (for the first-use TWAP PDA create)
     CrankDexSpot {
         asset_index: u32,
+        bump: u8,
     },
     /// Apply a batch of trade legs (user vs House) in one tx, with a single margin
     /// recertification. The `count` legs follow the tag + count byte in the
@@ -590,6 +596,7 @@ impl OpenPerpsInstruction {
             }
             tag::CRANK_DEX_SPOT => Ok(Self::CrankDexSpot {
                 asset_index: read_u32(rest, 0)?,
+                bump: read_u8(rest, 4)?,
             }),
             tag::PLACE_BATCH_ORDER => {
                 let count = *rest.first().ok_or(OpenPerpsError::InvalidInstructionData)?;
@@ -914,9 +921,13 @@ mod tests {
     fn unpack_crank_dex_spot() {
         let mut data = vec![tag::CRANK_DEX_SPOT];
         data.extend_from_slice(&1u32.to_le_bytes());
+        data.push(254);
         assert_eq!(
             OpenPerpsInstruction::unpack(&data).unwrap(),
-            OpenPerpsInstruction::CrankDexSpot { asset_index: 1 }
+            OpenPerpsInstruction::CrankDexSpot {
+                asset_index: 1,
+                bump: 254
+            }
         );
     }
 

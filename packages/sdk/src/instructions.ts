@@ -13,6 +13,7 @@ import {
   DEXPOOL_SEED,
   ORACLE_SEED,
   PORTFOLIO_SEED,
+  TWAP_SEED,
 } from "./layout.ts";
 
 export { TOKEN_PROGRAM_ID };
@@ -456,16 +457,35 @@ export function setDexPoolIx(args: {
   });
 }
 
-export function encodeCrankDexSpot(assetIndex: number): Buffer {
-  const data = new Uint8Array(1 + 4);
+export function encodeCrankDexSpot(assetIndex: number, bump: number): Buffer {
+  const data = new Uint8Array(1 + 4 + 1);
   data[0] = Tag.CrankDexSpot;
   writeU32LE(data, 1, assetIndex);
+  data[5] = bump;
   return Buffer.from(data);
 }
 
+/** The per-(market, asset) TWAP-state PDA; matches Rust
+ * `[TWAP_SEED, market, asset_index_le]`. */
+export function twapPda(
+  programId: PublicKey,
+  market: PublicKey,
+  assetIndex: number,
+): [PublicKey, number] {
+  const idx = new Uint8Array(4);
+  writeU32LE(idx, 0, assetIndex);
+  return PublicKey.findProgramAddressSync(
+    [TWAP_SEED, market.toBuffer(), idx],
+    programId,
+  );
+}
+
 /// Permissionless crank for a DEX-priced market: read the pinned pool's two SPL
-/// vault balances, reject a thin pool, and fold the spot into the EWMA mark. Any
-/// signer.
+/// vault balances, reject a thin pool, fold the spot into the rolling TWAP, and
+/// move the EWMA mark only once a full window has elapsed (off the time-weighted
+/// average, so a single-block reserve flash cannot shift it). The TWAP-state PDA
+/// is derived from (market, assetIndex) and created by the first crank; the
+/// signer pays its rent then and the per-tx fee. Any signer.
 export function crankDexSpotIx(args: {
   programId: PublicKey;
   market: PublicKey;
@@ -476,6 +496,7 @@ export function crankDexSpotIx(args: {
   signer: PublicKey;
   assetIndex: number;
 }): TransactionInstruction {
+  const [twap, bump] = twapPda(args.programId, args.market, args.assetIndex);
   return new TransactionInstruction({
     programId: args.programId,
     keys: [
@@ -483,9 +504,11 @@ export function crankDexSpotIx(args: {
       { pubkey: args.dexPoolPda, isSigner: false, isWritable: false },
       { pubkey: args.baseVault, isSigner: false, isWritable: false },
       { pubkey: args.quoteVault, isSigner: false, isWritable: false },
-      { pubkey: args.signer, isSigner: true, isWritable: false },
+      { pubkey: twap, isSigner: false, isWritable: true },
+      { pubkey: args.signer, isSigner: true, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
     ],
-    data: encodeCrankDexSpot(args.assetIndex),
+    data: encodeCrankDexSpot(args.assetIndex, bump),
   });
 }
 

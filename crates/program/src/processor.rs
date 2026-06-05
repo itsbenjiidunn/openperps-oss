@@ -26,6 +26,7 @@ use crate::{
         settle_pnl_buffer, slot_oracle_pool, trade_buffer, withdraw_buffer, DelegateAccount,
         DELEGATE_SEED, DepositCapAccount, DEPOSIT_CAP_SEED, DexPoolConfig, DEXPOOL_SEED,
         OracleAuthorityAccount, ORACLE_SEED, HOUSE_SEED, PORTFOLIO_SEED, VAULT_SEED,
+        twap_observe_buffer, TwapState, TWAP_SEED,
     },
 };
 
@@ -317,8 +318,8 @@ pub fn process_instruction(
             min_quote_depth,
             bump,
         ),
-        OpenPerpsInstruction::CrankDexSpot { asset_index } => {
-            process_crank_dex_spot(program_id, accounts, asset_index)
+        OpenPerpsInstruction::CrankDexSpot { asset_index, bump } => {
+            process_crank_dex_spot(program_id, accounts, asset_index, bump)
         }
         OpenPerpsInstruction::PlaceBatchOrder { count } => {
             process_place_batch_order(program_id, accounts, instruction_data, count)
@@ -1813,14 +1814,17 @@ fn process_crank_dex_spot(
     program_id: &Pubkey,
     accounts: &[AccountInfo],
     asset_index: u32,
+    bump: u8,
 ) -> ProgramResult {
-    let [market, config_pda, base_vault, quote_vault, signer, ..] = accounts else {
+    let [market, config_pda, base_vault, quote_vault, twap_pda, cranker, _system_program, ..] =
+        accounts
+    else {
         return Err(OpenPerpsError::InvalidInstruction.into());
     };
-    if !signer.is_signer() {
+    if !cranker.is_signer() {
         return Err(OpenPerpsError::MissingRequiredSignature.into());
     }
-    if !market.is_writable() {
+    if !market.is_writable() || !twap_pda.is_writable() {
         return Err(OpenPerpsError::InvalidAccountData.into());
     }
     if unsafe { market.owner() } != program_id || unsafe { config_pda.owner() } != program_id {
@@ -1833,7 +1837,18 @@ fn process_crank_dex_spot(
         return Err(OpenPerpsError::InvalidAccountOwner.into());
     }
 
+    // Verify the TWAP-state PDA address [TWAP_SEED, market, asset_index].
     let market_key = *market.key();
+    let aidx = asset_index.to_le_bytes();
+    let derived = create_program_address(
+        &[TWAP_SEED, market_key.as_ref(), aidx.as_ref(), &[bump]],
+        program_id,
+    )
+    .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    if *twap_pda.key() != derived {
+        return Err(OpenPerpsError::InvalidAccountData.into());
+    }
+
     let spot = {
         let m_data = market
             .try_borrow_data()
@@ -1875,11 +1890,49 @@ fn process_crank_dex_spot(
             .map_err(|_| OpenPerpsError::PoolTooThin)?
     };
 
-    let now_slot = Clock::get()?.slot;
-    let mut m_data = market
-        .try_borrow_mut_data()
-        .map_err(|_| OpenPerpsError::InvalidAccountData)?;
-    crank_oracle_buffer(&mut m_data, asset_index, spot, now_slot).map_v16()?;
+    let clock = Clock::get()?;
+    let now_slot = clock.slot;
+    let now_ts = clock.unix_timestamp;
+
+    // Lazily create the TWAP-state PDA on the first crank (the cranker pays the
+    // small rent); later cranks reuse it.
+    if unsafe { twap_pda.owner() } != program_id {
+        let rent = Rent::get()?;
+        let lamports = rent.minimum_balance(TwapState::LEN);
+        let bump_arr = [bump];
+        let seeds = [
+            Seed::from(TWAP_SEED),
+            Seed::from(market_key.as_ref()),
+            Seed::from(aidx.as_ref()),
+            Seed::from(bump_arr.as_ref()),
+        ];
+        let signer = Signer::from(seeds.as_ref());
+        system_create_account(
+            cranker,
+            twap_pda,
+            lamports,
+            TwapState::LEN as u64,
+            program_id,
+            &[signer],
+        )?;
+    }
+
+    // Fold the spot into the rolling TWAP. The mark is moved only when a full
+    // window has elapsed (off the time-weighted average), so a single-block
+    // reserve flash, held for ~0 seconds, cannot shift it.
+    let twap = {
+        let mut t_data = twap_pda
+            .try_borrow_mut_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        twap_observe_buffer(&mut t_data, market_key, asset_index, now_ts, spot)?
+    };
+
+    if let Some(price) = twap {
+        let mut m_data = market
+            .try_borrow_mut_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        crank_oracle_buffer(&mut m_data, asset_index, price, now_slot).map_v16()?;
+    }
     Ok(())
 }
 

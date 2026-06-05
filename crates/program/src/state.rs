@@ -74,6 +74,25 @@ pub const ORACLE_EWMA_ALPHA_BPS: u64 = 2_000;
 /// [`default_market_config`], or the engine rejects the accrual.
 pub const ORACLE_FUNDING_MAX_E9: i128 = 10;
 
+/// TWAP window (seconds) for `CrankDexSpot`. The DEX mark is moved off the
+/// time-weighted average price over this window, not the live spot, so a
+/// manipulator must SUSTAIN a moved reserve balance across the window (cost =
+/// depth x time, plus arbitrage) for the TWAP to reflect it; a single observation
+/// contributes at most [`MAX_TWAP_OBS_DT_SECS`] of weight. Layered under the
+/// EWMA, the per-slot move clamp, and the per-portfolio deposit cap. 30s balances
+/// anti-manipulation strength against mark latency; a constant for now (a
+/// per-market window can move into the dex-pool config PDA later).
+pub const TWAP_WINDOW_SECS: u64 = 30;
+
+/// Maximum weight (seconds) one TWAP observation may contribute, regardless of
+/// how long the real gap since the last observation was. Without this cap a
+/// single crank after a long gap would weight whatever spot it happens to sample
+/// by the whole gap, letting one sampled spike dominate the average. Capping it
+/// means a manipulator must keep cranking a sustained manipulation to keep adding
+/// weight (cost scales with time held). Keep it well above the keeper's crank
+/// cadence so honest observations are not clipped.
+pub const MAX_TWAP_OBS_DT_SECS: u64 = 10;
+
 /// Fixed-point scale for prices: quote atoms per 1.0 base, 6 decimals,
 /// matches the shared mock-USDC mint.
 pub const PRICE_SCALE: u128 = 1_000_000;
@@ -119,6 +138,14 @@ pub const DEPOSIT_CAP_SEED: &[u8] = b"depositcap";
 /// market from a real on-chain pool and reject a thin one.
 pub const DEXPOOL_SEED: &[u8] = b"dexpool";
 
+/// PDA seed prefix for a DEX-priced market's rolling TWAP accumulator. Full
+/// seeds: `[TWAP_SEED, market.key(), asset_index_le]`. One per (market, asset);
+/// `CrankDexSpot` folds each spot reading into it and prices the mark off the
+/// time-weighted average, so a single-block reserve flash cannot move the mark.
+/// Created lazily by the first cranker (permissionless), so no layout change to
+/// the market header and existing markets are unaffected.
+pub const TWAP_SEED: &[u8] = b"twap";
+
 /// PDA seed prefix for a user's portfolio under a market. Full seed list is
 /// `[PORTFOLIO_SEED, owner.key(), market.key()]`. Makes a user's account on a
 /// given market group DETERMINISTIC, one account per (owner, market), derivable
@@ -138,6 +165,9 @@ pub const DEPOSIT_CAP_DISCRIMINATOR: [u8; 8] = *b"OPDEPCAP";
 
 /// Magic bytes for a [`DexPoolConfig`].
 pub const DEXPOOL_DISCRIMINATOR: [u8; 8] = *b"OPDEXAMM";
+
+/// Magic bytes at the start of a [`TwapState`] account.
+pub const TWAP_DISCRIMINATOR: [u8; 8] = *b"OPTWAP00";
 
 /// Tiny PDA holding the session key authorized to place orders for one
 /// portfolio. Owner-set; all-zero `delegate` means revoked. `portfolio` binds
@@ -365,6 +395,116 @@ pub fn dex_pool_of(buf: &[u8], market: &[u8; 32]) -> Result<DexPoolConfig, OpenP
         return Err(OpenPerpsError::InvalidAccountData);
     }
     Ok(*acc)
+}
+
+/// Per-(market, asset) rolling TWAP accumulator for `CrankDexSpot`. A
+/// Uniswap-V2-style cumulative: each observation adds `last_price * w` where the
+/// weight `w = min(dt, MAX_TWAP_OBS_DT_SECS)` is the time the PREVIOUS price was
+/// in effect, CAPPED so one observation after a long gap cannot capture the whole
+/// gap (which would let a single sampled spike dominate). `weighted_time` sums
+/// the same capped weights so the average is `cumulative / weighted_time`, exact
+/// even when weights are clipped. The mark is moved only once a full
+/// `TWAP_WINDOW_SECS` of real time has elapsed; a single reserve flash then
+/// contributes at most `MAX_TWAP_OBS_DT_SECS` of weight, so a manipulator must
+/// SUSTAIN the move across the window for the TWAP to reflect it. Byte arrays
+/// keep it alignment-1 and padding-free (Pod-safe).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Pod, Zeroable)]
+pub struct TwapState {
+    pub discriminator: [u8; 8],
+    pub market: [u8; 32],
+    pub asset_index: [u8; 4],
+    pub last_ts: [u8; 8],
+    pub last_price: [u8; 8],
+    /// sum(last_price * weight): the price-time integral.
+    pub cumulative: [u8; 16],
+    /// sum(weight): accumulated capped weighted time (the TWAP denominator).
+    pub weighted_time: [u8; 16],
+    pub anchor_ts: [u8; 8],
+    pub anchor_cumulative: [u8; 16],
+    pub anchor_weighted_time: [u8; 16],
+}
+
+impl TwapState {
+    pub const LEN: usize = core::mem::size_of::<Self>();
+    pub fn is_initialized(&self) -> bool {
+        self.discriminator == TWAP_DISCRIMINATOR
+    }
+}
+
+/// Fold a fresh `spot` into the (market, asset) TWAP accumulator at `now_ts`
+/// (unix seconds). On first use the freshly-zeroed account is seeded and `None`
+/// is returned (the mark is not moved on bootstrap). On a later observation the
+/// accumulator advances by `last_price * min(dt, MAX_TWAP_OBS_DT_SECS)`; once at
+/// least `TWAP_WINDOW_SECS` of real time has elapsed since the anchor, the
+/// weight-averaged price over the window is returned (`Some(twap)`, the value to
+/// feed the EWMA mark) and the anchor rolls forward. Otherwise `None` (keep the
+/// current mark). A non-positive `dt` (same second or clock skew) contributes
+/// zero weight rather than panicking.
+pub fn twap_observe_buffer(
+    buf: &mut [u8],
+    market: [u8; 32],
+    asset_index: u32,
+    now_ts: i64,
+    spot: u64,
+) -> Result<Option<u64>, OpenPerpsError> {
+    if buf.len() < TwapState::LEN {
+        return Err(OpenPerpsError::AccountDataTooSmall);
+    }
+    let st: &mut TwapState = pod_from_bytes_mut(&mut buf[..TwapState::LEN])?;
+
+    // Bootstrap: seed a freshly-created (zeroed) account; do not move the mark.
+    if !st.is_initialized() {
+        st.discriminator = TWAP_DISCRIMINATOR;
+        st.market = market;
+        st.asset_index = asset_index.to_le_bytes();
+        st.last_ts = now_ts.to_le_bytes();
+        st.last_price = spot.to_le_bytes();
+        st.cumulative = 0u128.to_le_bytes();
+        st.weighted_time = 0u128.to_le_bytes();
+        st.anchor_ts = now_ts.to_le_bytes();
+        st.anchor_cumulative = 0u128.to_le_bytes();
+        st.anchor_weighted_time = 0u128.to_le_bytes();
+        return Ok(None);
+    }
+
+    // Bind the accumulator to this exact (market, asset) so a wrong PDA cannot be
+    // substituted in.
+    if st.market != market || st.asset_index != asset_index.to_le_bytes() {
+        return Err(OpenPerpsError::InvalidAccountData);
+    }
+
+    let last_ts = i64::from_le_bytes(st.last_ts);
+    let last_price = u64::from_le_bytes(st.last_price);
+    let anchor_ts = i64::from_le_bytes(st.anchor_ts);
+    let anchor_cum = u128::from_le_bytes(st.anchor_cumulative);
+    let anchor_wt = u128::from_le_bytes(st.anchor_weighted_time);
+
+    // Accumulate the previous price over the (capped) time it was in effect, then
+    // record the new spot. A same-second or skewed observation has zero weight.
+    let dt = now_ts.saturating_sub(last_ts).max(0) as u64;
+    let w = dt.min(MAX_TWAP_OBS_DT_SECS);
+    let cumulative =
+        crate::dexamm::twap_accumulate(u128::from_le_bytes(st.cumulative), last_price, w);
+    let weighted_time = u128::from_le_bytes(st.weighted_time).saturating_add(w as u128);
+    st.cumulative = cumulative.to_le_bytes();
+    st.weighted_time = weighted_time.to_le_bytes();
+    st.last_ts = now_ts.to_le_bytes();
+    st.last_price = spot.to_le_bytes();
+
+    // Trigger on REAL elapsed time; average over the ACCUMULATED weighted time so
+    // a capped gap does not bias the result. Roll the window forward on update.
+    let elapsed = now_ts.saturating_sub(anchor_ts).max(0) as u64;
+    if elapsed >= TWAP_WINDOW_SECS {
+        let wt = u64::try_from(weighted_time.saturating_sub(anchor_wt)).unwrap_or(u64::MAX);
+        if let Some(twap) = crate::dexamm::twap_average(cumulative, anchor_cum, wt) {
+            st.anchor_ts = now_ts.to_le_bytes();
+            st.anchor_cumulative = cumulative.to_le_bytes();
+            st.anchor_weighted_time = weighted_time.to_le_bytes();
+            return Ok(Some(twap));
+        }
+    }
+    Ok(None)
 }
 
 /// OpenPerps-owned prefix at the start of a market-group account, in front
@@ -1397,5 +1537,62 @@ mod tests {
         // calls during every state-mutating engine op.
         let cfg = default_market_config(4);
         assert!(cfg.try_to_runtime_shape().is_ok());
+    }
+
+    #[test]
+    fn twap_bootstrap_then_flat_returns_spot_after_window() {
+        let mut buf = vec![0u8; TwapState::LEN];
+        let m = [1u8; 32];
+        // First observation seeds the accumulator and does not move the mark.
+        assert_eq!(twap_observe_buffer(&mut buf, m, 0, 0, 100).unwrap(), None);
+        let st: &TwapState = bytemuck::from_bytes(&buf[..TwapState::LEN]);
+        assert!(st.is_initialized());
+        // Inside the window: still no update.
+        assert_eq!(twap_observe_buffer(&mut buf, m, 0, 10, 100).unwrap(), None);
+        assert_eq!(twap_observe_buffer(&mut buf, m, 0, 20, 100).unwrap(), None);
+        // Window reached, flat price: the TWAP is exactly the held price.
+        assert_eq!(twap_observe_buffer(&mut buf, m, 0, 30, 100).unwrap(), Some(100));
+    }
+
+    #[test]
+    fn twap_is_time_weighted_over_the_window() {
+        let mut buf = vec![0u8; TwapState::LEN];
+        let m = [2u8; 32];
+        twap_observe_buffer(&mut buf, m, 0, 0, 100).unwrap(); // seed at 100
+        twap_observe_buffer(&mut buf, m, 0, 10, 200).unwrap(); // 100 held 0..10
+        twap_observe_buffer(&mut buf, m, 0, 20, 200).unwrap(); // 200 held 10..20
+        // At 30s: 200 held 20..30. avg = (100*10 + 200*20) / 30 = 5000/30 = 166.
+        assert_eq!(twap_observe_buffer(&mut buf, m, 0, 30, 200).unwrap(), Some(166));
+    }
+
+    #[test]
+    fn twap_caps_weight_and_zero_weights_a_same_second_flash() {
+        let mut buf = vec![0u8; TwapState::LEN];
+        let m = [3u8; 32];
+        twap_observe_buffer(&mut buf, m, 0, 0, 100).unwrap(); // seed
+        twap_observe_buffer(&mut buf, m, 0, 10, 100).unwrap(); // honest: w=10, cum=1000, wt=10
+        // Same-second flash spike: dt = 0 contributes zero weight to the average.
+        twap_observe_buffer(&mut buf, m, 0, 10, 1_000_000).unwrap(); // w=0; records spike as last
+        // A huge gap later: the spike (now last_price) is weighted by min(gap, cap)
+        // = MAX_TWAP_OBS_DT_SECS (10), NOT the ~1000s gap. cum += 1_000_000*10.
+        // weighted_time = 20, so twap = (1000 + 10_000_000) / 20 = 500_050. Without
+        // the cap it would be ~990_100 (the spike weighted by the whole gap); the
+        // EWMA + per-slot clamp in crank_oracle_buffer then bound the actual mark.
+        assert_eq!(
+            twap_observe_buffer(&mut buf, m, 0, 1_010, 100).unwrap(),
+            Some(500_050),
+        );
+    }
+
+    #[test]
+    fn twap_window_gate_and_binding() {
+        let mut buf = vec![0u8; TwapState::LEN];
+        let m = [4u8; 32];
+        twap_observe_buffer(&mut buf, m, 0, 0, 100).unwrap();
+        // 29s < 30s window: no update yet.
+        assert_eq!(twap_observe_buffer(&mut buf, m, 0, 29, 100).unwrap(), None);
+        // Wrong market / asset binding is rejected (a substituted PDA).
+        assert!(twap_observe_buffer(&mut buf, [9u8; 32], 0, 40, 100).is_err());
+        assert!(twap_observe_buffer(&mut buf, m, 7, 40, 100).is_err());
     }
 }
