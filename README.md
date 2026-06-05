@@ -142,7 +142,7 @@ const tx = transactionFromInstructions(built.instructions, { feePayer: wallet.pu
 // sign + send with your wallet adapter
 ```
 
-For the full flow (loading the registry, resolving the House counterparty, and reading the mark) see [`examples/dex-terminal`](./examples/dex-terminal). What the SDK gives you:
+What the SDK gives you:
 
 - **Trade build and resolution.** `resolveTrade` checks an intent against the market and on-chain mark (size, side, reduce-only, slippage); `buildTradeFromIntent` composes the on-chain instructions against the user's portfolio and the House counterparty.
 - **Market creation.** `planMarketCreation` and `buildMarketCreationInstructions` compose the full lifecycle (market account, vault, House, oracle binding) for a custom market on any token.
