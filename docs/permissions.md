@@ -29,6 +29,7 @@ Who may call each instruction, verified against the program handlers.
 | `SetDepositCap` | Market authority | Raises the per-portfolio deposit cap on a DEX-priced market above the program floor. |
 | `SetDexPool` | Market authority | Binds a DEX-priced market's pool: the two reserve vaults, base decimals, and minimum quote depth (`[DEXPOOL_SEED, market]` PDA). |
 | `SetHouseCap` | Market authority | Sets the House exposure cap: the max net House position per asset, base units (`[HOUSE_CAP_SEED, market]` PDA; zero disables it). Enforced in `PlaceOrder` / `PlaceBatchOrder`. |
+| `SetRequireVerifiable` | Market authority | Sets the market header's require-verifiable flag. When enabled, `AccrueAsset` is forced to a delta-0 accrual so the authority cannot move the mark; only `CrankPyth` / `CrankDexSpot` price it. |
 | `CreateMockPool` / `MockSwap` | Permissionless | Token-less test-only price source; excluded from a `--no-default-features` build. |
 
 ## Oracle authority

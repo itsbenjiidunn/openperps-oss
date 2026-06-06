@@ -48,6 +48,7 @@ export const Tag = {
   CrankDexSpot: 25,
   PlaceBatchOrder: 26,
   SetHouseCap: 27,
+  SetRequireVerifiable: 28,
 } as const;
 
 /// Side encoding for `PlaceOrder`.
@@ -1193,5 +1194,33 @@ export function setHouseCapIx(args: {
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
     ],
     data: encodeSetHouseCap(args.maxBasePosition, args.bump),
+  });
+}
+
+export function encodeSetRequireVerifiable(required: boolean): Buffer {
+  const data = new Uint8Array(1 + 1);
+  data[0] = Tag.SetRequireVerifiable;
+  data[1] = required ? 1 : 0;
+  return Buffer.from(data);
+}
+
+/// Set a market's require-verifiable flag. Market-authority-signed. When enabled,
+/// AccrueAsset can no longer move the mark (the authority-set price is forced to a
+/// delta-0 accrual); only CrankPyth / CrankDexSpot price the market. The flag
+/// lives in the market header, so there is no extra account.
+export function setRequireVerifiableIx(args: {
+  programId: PublicKey;
+  market: PublicKey;
+  /** The market authority (signer). */
+  authority: PublicKey;
+  required: boolean;
+}): TransactionInstruction {
+  return new TransactionInstruction({
+    programId: args.programId,
+    keys: [
+      { pubkey: args.market, isSigner: false, isWritable: true },
+      { pubkey: args.authority, isSigner: true, isWritable: false },
+    ],
+    data: encodeSetRequireVerifiable(args.required),
   });
 }

@@ -330,6 +330,9 @@ pub fn process_instruction(
             max_base_position,
             bump,
         } => process_set_house_cap(program_id, accounts, max_base_position, bump),
+        OpenPerpsInstruction::SetRequireVerifiable { required } => {
+            process_set_require_verifiable(program_id, accounts, required)
+        }
     }
 }
 
@@ -603,8 +606,13 @@ fn process_accrue_asset(
     // the client reading it and the tx landing. (Devnet/early-mainnet trust
     // model: a pinned relayer key; the trustless variant sources the price from
     // the on-chain DEX pool via CrankOracle.)
-    let is_oracle =
-        *authority.key() == resolve_oracle_authority(program_id, accounts, market.key(), 2);
+    // A market flagged `require_verifiable` cannot be priced by AccrueAsset at all:
+    // force the non-oracle path (delta-0), so the authority key can never move the
+    // mark and only CrankPyth / CrankDexSpot price it. The delta-0 stale-clear the
+    // trade flow relies on still works.
+    let requires_verifiable = crate::state::market_requires_verifiable(&data)?;
+    let is_oracle = !requires_verifiable
+        && *authority.key() == resolve_oracle_authority(program_id, accounts, market.key(), 2);
     let (effective_price, funding_rate_e9) =
         gated_price_update(is_oracle, effective_price, funding_rate_e9, &mut data, asset_index)?;
     // Asserts protective progress so it works once positions are open (the
@@ -2360,6 +2368,44 @@ fn process_set_house_cap(
         .try_borrow_mut_data()
         .map_err(|_| OpenPerpsError::InvalidAccountData)?;
     set_house_cap_buffer(&mut data, market_key, max_base_position)?;
+    Ok(())
+}
+
+/// Set the market's `require_verifiable` flag. Only the market authority may
+/// call. When enabled, `AccrueAsset` can no longer move the mark (it is forced to
+/// a delta-0 accrual), so only `CrankPyth` / `CrankDexSpot` price the market. The
+/// flag lives in the market header, so the gate reads it from the market account
+/// the handler already loads, with no extra account to omit.
+fn process_set_require_verifiable(
+    program_id: &Pubkey,
+    accounts: &[AccountInfo],
+    required: u8,
+) -> ProgramResult {
+    let [market, authority, ..] = accounts else {
+        return Err(OpenPerpsError::InvalidInstruction.into());
+    };
+    if !authority.is_signer() {
+        return Err(OpenPerpsError::MissingRequiredSignature.into());
+    }
+    if !market.is_writable() {
+        return Err(OpenPerpsError::InvalidAccountData.into());
+    }
+    if unsafe { market.owner() } != program_id {
+        return Err(OpenPerpsError::InvalidAccountOwner.into());
+    }
+    let mut data = market
+        .try_borrow_mut_data()
+        .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    {
+        let wrapper = market_wrapper_header(&data)?;
+        if !wrapper.is_initialized() {
+            return Err(OpenPerpsError::UninitializedAccount.into());
+        }
+        if wrapper.authority != *authority.key() {
+            return Err(OpenPerpsError::MissingRequiredSignature.into());
+        }
+    }
+    crate::state::set_require_verifiable_buffer(&mut data, required)?;
     Ok(())
 }
 

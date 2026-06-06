@@ -37,6 +37,7 @@ pub mod tag {
     pub const CRANK_DEX_SPOT: u8 = 25;
     pub const PLACE_BATCH_ORDER: u8 = 26;
     pub const SET_HOUSE_CAP: u8 = 27;
+    pub const SET_REQUIRE_VERIFIABLE: u8 = 28;
 }
 
 /// Maximum legs in a single `PlaceBatchOrder`. The engine also rejects a batch
@@ -462,6 +463,16 @@ pub enum OpenPerpsInstruction {
         max_base_position: u128,
         bump: u8,
     },
+    /// Set the market's `require_verifiable` flag. When enabled, `AccrueAsset`
+    /// can no longer move this market's mark (the authority-set price is forced
+    /// to a delta-0 accrual); only `CrankPyth` / `CrankDexSpot` price it.
+    ///
+    /// Accounts:
+    ///   0. `[writable]` market account
+    ///   1. `[signer]`   authority (must match the market authority)
+    SetRequireVerifiable {
+        required: u8,
+    },
 }
 
 impl OpenPerpsInstruction {
@@ -638,6 +649,9 @@ impl OpenPerpsInstruction {
             tag::SET_HOUSE_CAP => Ok(Self::SetHouseCap {
                 max_base_position: read_u128(rest, 0)?,
                 bump: read_u8(rest, 16)?,
+            }),
+            tag::SET_REQUIRE_VERIFIABLE => Ok(Self::SetRequireVerifiable {
+                required: read_u8(rest, 0)?,
             }),
             _ => Err(OpenPerpsError::InvalidInstruction),
         }

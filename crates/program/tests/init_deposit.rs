@@ -13,8 +13,9 @@
 use openperps_program::state::{
     accrue_asset_buffer, activate_market_buffer, crank_oracle_buffer, crank_refresh_buffer,
     init_market_buffer, init_portfolio_buffer, liquidate_buffer, market_account_size,
-    market_engine_split_mut, portfolio_abs_position_for_asset, portfolio_account_size,
-    portfolio_split_mut, resolve_market_buffer, trade_buffer, withdraw_buffer,
+    market_engine_split_mut, market_requires_verifiable, portfolio_abs_position_for_asset,
+    portfolio_account_size, portfolio_split_mut, resolve_market_buffer,
+    set_require_verifiable_buffer, trade_buffer, withdraw_buffer,
 };
 use percolator::v16::{AssetLifecycleV16, MarketGroupV16ViewMut, PortfolioV16ViewMut, SideV16};
 
@@ -147,6 +148,27 @@ fn init_market_rejects_double_init() {
     let (mut buf, _) = fresh_buffers();
     setup_market(&mut buf, mid);
     assert!(try_setup_market(&mut buf, mid).is_err());
+}
+
+#[test]
+fn require_verifiable_flag_roundtrip() {
+    // Hardening 1: the per-market require-verifiable flag. Off by default (every
+    // existing market keeps the authority relayer path); set, it makes the
+    // AccrueAsset gate force a delta-0 accrual so only the verifiable cranks move
+    // the mark. The handler reads the flag from the market header, no extra
+    // account.
+    let (mut market_buf, _) = fresh_buffers();
+    setup_market(&mut market_buf, [0x55; 32]);
+    assert!(!market_requires_verifiable(&market_buf).unwrap());
+
+    set_require_verifiable_buffer(&mut market_buf, 1).unwrap();
+    assert!(market_requires_verifiable(&market_buf).unwrap());
+
+    // Any non-zero enables; zero disables.
+    set_require_verifiable_buffer(&mut market_buf, 7).unwrap();
+    assert!(market_requires_verifiable(&market_buf).unwrap());
+    set_require_verifiable_buffer(&mut market_buf, 0).unwrap();
+    assert!(!market_requires_verifiable(&market_buf).unwrap());
 }
 
 #[test]

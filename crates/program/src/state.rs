@@ -613,7 +613,13 @@ pub struct OpenPerpsMarketHeader {
     /// Oracle binding discriminant, see [`oracle_kind`]. `MANUAL` (0) or
     /// `PYTH` (1). Identifies how `effective_price` should be sourced.
     pub oracle_kind: u8,
-    pub _pad: [u8; 1],
+    /// When 1, `AccrueAsset` may not move this market's mark: the authority-set
+    /// price is ignored (forced to a delta-0 accrual), so only the verifiable
+    /// cranks (`CrankPyth` / `CrankDexSpot`) price it. 0, the default for every
+    /// existing market, keeps the authority relayer path. Repurposed from the
+    /// former reserved pad byte, so the layout and `MARKET_HEADER_VERSION` are
+    /// unchanged.
+    pub require_verifiable: u8,
     /// Whoever signed `InitMarket`, only this key can activate / configure
     /// the market group later, including funding / withdrawing the House.
     pub authority: [u8; 32],
@@ -1001,6 +1007,27 @@ pub fn market_wrapper_header(
     }
     bytemuck::try_from_bytes(&data[..OpenPerpsMarketHeader::LEN])
         .map_err(|_| OpenPerpsError::InvalidAccountData)
+}
+
+/// True when the market's `require_verifiable` flag is set, so `AccrueAsset`
+/// must not move the mark.
+pub fn market_requires_verifiable(data: &[u8]) -> Result<bool, OpenPerpsError> {
+    Ok(market_wrapper_header(data)?.require_verifiable != 0)
+}
+
+/// Set the wrapper header's `require_verifiable` flag (the caller checks the
+/// market authority). Any non-zero value enables it.
+pub fn set_require_verifiable_buffer(data: &mut [u8], required: u8) -> Result<(), OpenPerpsError> {
+    if data.len() < OpenPerpsMarketHeader::LEN {
+        return Err(OpenPerpsError::AccountDataTooSmall);
+    }
+    let wrapper: &mut OpenPerpsMarketHeader =
+        pod_from_bytes_mut(&mut data[..OpenPerpsMarketHeader::LEN])?;
+    if !wrapper.is_initialized() {
+        return Err(OpenPerpsError::UninitializedAccount);
+    }
+    wrapper.require_verifiable = u8::from(required != 0);
+    Ok(())
 }
 
 // ---------- config ----------

@@ -1,10 +1,9 @@
 # Oracle Hardening (design)
 
-Status: design for review. Most long-tail oracle safety is per-market
-risk-modeling, not a switch in code. This spec covers the two small on-chain
-hardenings that make a safe configuration enforceable, plus how the existing
-layered defenses compose. The code lands on top of the in-flight House-cap work
-(same PDA-flag style), so it is specced here first.
+Status: Hardening 1 is implemented; Hardening 2 and 3 are design. Most long-tail
+oracle safety is per-market risk-modeling, not a switch in code. This spec covers
+the small on-chain hardenings that make a safe configuration enforceable, plus how
+the existing layered defenses compose.
 
 ## Context
 
@@ -22,19 +21,24 @@ they fall to `DEX_EWMA` off a possibly-thin pool, or to `MANUAL`. A production
 market should not be priced by a single authority key, and a market on a thin
 pool needs tight caps.
 
-## Hardening 1: require-verifiable-feed flag (highest value)
+## Hardening 1: require-verifiable flag (implemented)
 
-A per-market flag, `require_verifiable_oracle`. When set, `AccrueAsset` (the
-authority-set path) is **rejected** for that market: only `CrankPyth` or
-`CrankDexSpot` may move the mark. An operator marks a production market as "no
-single-key pricing," closing the centralized-relayer manipulation and liveness
-risk for that market.
+A per-market `require_verifiable` flag in the market header, set by the
+authority-gated `SetRequireVerifiable` instruction. When set, `process_accrue_asset`
+forces the non-oracle (delta-0) path: the authority's requested price is ignored
+and the current mark re-asserted, so the authority key can never move the mark and
+only `CrankPyth` / `CrankDexSpot` price it. An operator marks a production market
+as "no single-key pricing," closing the centralized-relayer manipulation and
+liveness risk for that market.
 
-- On-chain: a flag in the market header, or a `[VERIFIABLE_SEED, market]` PDA in
-  the `SetHouseCap` / `SetDexPool` style, checked at the top of
-  `process_accrue_asset` (reject when the flag is set). Set via a new
-  authority-gated `SetRequireVerifiable` instruction, or an `InitMarket` flag.
-- It is a config gate, no new math, so it is the cleanest piece to ship.
+- The flag lives in the market header (a repurposed reserved byte, so the layout
+  and `MARKET_HEADER_VERSION` are unchanged), and the gate reads it from the market
+  account the handler already loads, so there is no extra account to omit or
+  substitute.
+- It forces a delta-0 accrual rather than rejecting, so the permissionless
+  stale-clear the trade flow relies on (which only advances `slot_last`) keeps
+  working. Off by default, so every existing market is unchanged.
+- It is a config gate, no new math.
 
 ## Hardening 2: stale-pause parameter
 
@@ -63,13 +67,14 @@ and the asset's volatility. The hardenings above make the safe configuration
 
 ## Where the code lands
 
-`state.rs` (flag/param), `instruction.rs` (`SetRequireVerifiable` or an
-`InitMarket` flag), `processor.rs` (the accrue gate), `error.rs` (a reject
-error). These files currently hold the in-flight House-cap work; implement on top
-of it once that lands, in the same PDA-flag style.
+Hardening 1 lives in `state.rs` (the `require_verifiable` header flag plus its
+reader/writer), `instruction.rs` (`SetRequireVerifiable`), and `processor.rs`
+(`process_set_require_verifiable` and the one-line gate in `process_accrue_asset`),
+with the SDK `setRequireVerifiableIx`. Hardening 2 (a `max_staleness_pause_slots`
+parameter on the engine config) and Hardening 3 (the divergence band in
+`process_crank_dex_spot`) remain.
 
 ## Recommendation
 
-Ship **Hardening 1** first: it is the highest-value gate and matches the existing
-PDA-flag pattern. Hardening 2 is a parameter. Hardening 3 only once a market
-carries both a verifiable feed and a pool.
+Hardening 1 shipped. Hardening 2 is a parameter on the existing freshness gate;
+Hardening 3 only once a market carries both a verifiable feed and a pool.
