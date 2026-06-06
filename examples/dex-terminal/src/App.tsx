@@ -1,11 +1,20 @@
-/// A DEX terminal surface: a market list with a filter, a chart shell, and a
-/// trade panel for the selected market, using @openperps/react.
+/// A DEX terminal surface that does BOTH halves of the kit in one app: list a
+/// new perp for any token (OpenPerpsMarketLauncher) and trade existing markets
+/// (OpenPerpsChart + OpenPerpsTrade). The split across examples is only for
+/// illustration; the SDK and widgets are the same everywhere, so any surface can
+/// integrate the full capability.
 
 import { useEffect, useMemo, useState, type ReactElement } from "react";
 import { PublicKey } from "@solana/web3.js";
 import { useConnection } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
-import { OpenPerpsChart, OpenPerpsTrade, type Candle } from "@openperps/react";
+import {
+  OpenPerpsChart,
+  OpenPerpsMarketLauncher,
+  OpenPerpsTrade,
+  type Candle,
+  type OpenPerpsMarketCreationIntent,
+} from "@openperps/react";
 import {
   HOUSE_SEED,
   readU64LE,
@@ -30,6 +39,20 @@ const markets: OpenPerpsMarketConfig[] = [
   { ...base, id: "sol-devnet", assetIndex: 0, baseMint: "So11111111111111111111111111111111111111112", symbol: "SOL-PERP", riskTier: "major" },
   { ...base, id: "demo-devnet", assetIndex: 1, baseMint: "So11111111111111111111111111111111111111112", symbol: "DEMO-PERP", riskTier: "experimental" },
 ];
+
+// The "list a perp" half: the same terminal can create a market for any token,
+// not just trade ones that already exist.
+const newPerpIntent: OpenPerpsMarketCreationIntent = {
+  schemaVersion: 1,
+  baseMint: "So11111111111111111111111111111111111111112",
+  quoteMint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+  symbol: "NEWTOKEN-PERP",
+  initialPrice: "1000000",
+  maxLeverage: 10,
+  riskTier: "experimental",
+  priceProvider: { type: "external", id: "my-terminal-feed" },
+  lpVault: { initialDeposit: "50000000" },
+};
 
 function houseFor(m: OpenPerpsMarketConfig): { housePortfolio: string } {
   const [house] = PublicKey.findProgramAddressSync(
@@ -83,6 +106,8 @@ function useMark(market: OpenPerpsMarketConfig): bigint {
 export function App(): ReactElement {
   const [filter, setFilter] = useState("");
   const [selectedId, setSelectedId] = useState(markets[0].id);
+  const [listing, setListing] = useState(false);
+  const [launched, setLaunched] = useState(false);
 
   const filtered = markets.filter((m) =>
     m.symbol.toLowerCase().includes(filter.toLowerCase()),
@@ -93,32 +118,55 @@ export function App(): ReactElement {
 
   return (
     <main>
-      <h1>Markets</h1>
-      <WalletMultiButton />
-      <input
-        placeholder="filter"
-        value={filter}
-        onChange={(e) => setFilter(e.target.value)}
-        style={{ display: "block", margin: "12px 0", padding: 8, width: "100%" }}
-      />
-      <ul style={{ listStyle: "none", padding: 0 }}>
-        {filtered.map((m) => (
-          <li key={m.id}>
-            <button type="button" onClick={() => setSelectedId(m.id)}>
-              {m.symbol} ({m.riskTier})
-            </button>
-          </li>
-        ))}
-      </ul>
-      <h2 style={{ fontSize: 16 }}>{selected.symbol}</h2>
-      <OpenPerpsChart market={selected} candles={candles} width={420} height={140} />
-      <OpenPerpsTrade market={selected} counterparty={houseFor(selected)} executionPrice={mark} />
-      {mark === 0n ? (
-        <p style={{ color: "#8b97a8", fontSize: 13 }}>
-          Mark not loaded (the market may be inactive on this cluster). Trading is
-          disabled until a non-zero mark is available.
-        </p>
-      ) : null}
+      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <h1>Terminal</h1>
+        <WalletMultiButton />
+      </header>
+      <button type="button" onClick={() => setListing((v) => !v)} style={{ margin: "12px 0" }}>
+        {listing ? "Back to markets" : "List a perp"}
+      </button>
+
+      {listing ? (
+        // Create half: list a perp for any token, in the same app.
+        <section>
+          <h2 style={{ fontSize: 16 }}>List a perp for {newPerpIntent.symbol}</h2>
+          <OpenPerpsMarketLauncher intent={newPerpIntent} onLaunch={() => setLaunched(true)} />
+          {launched ? (
+            <p style={{ color: "#8b97a8", fontSize: 13 }}>
+              Creation plan ready. Sign with the authority wallet to create the
+              market and it shows up in the list to trade.
+            </p>
+          ) : null}
+        </section>
+      ) : (
+        // Trade half: browse and long/short the markets that exist.
+        <section>
+          <input
+            placeholder="filter"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            style={{ display: "block", margin: "12px 0", padding: 8, width: "100%" }}
+          />
+          <ul style={{ listStyle: "none", padding: 0 }}>
+            {filtered.map((m) => (
+              <li key={m.id}>
+                <button type="button" onClick={() => setSelectedId(m.id)}>
+                  {m.symbol} ({m.riskTier})
+                </button>
+              </li>
+            ))}
+          </ul>
+          <h2 style={{ fontSize: 16 }}>{selected.symbol}</h2>
+          <OpenPerpsChart market={selected} candles={candles} width={420} height={140} />
+          <OpenPerpsTrade market={selected} counterparty={houseFor(selected)} executionPrice={mark} />
+          {mark === 0n ? (
+            <p style={{ color: "#8b97a8", fontSize: 13 }}>
+              Mark not loaded (the market may be inactive on this cluster). Trading
+              is disabled until a non-zero mark is available.
+            </p>
+          ) : null}
+        </section>
+      )}
     </main>
   );
 }

@@ -53,6 +53,8 @@ Any surface that already shows a Solana token can add perps on it:
 | **Wallets & portfolio apps** | Show perp positions, PnL, close and withdraw |
 | **Analytics dashboards** | Open interest, volume, liquidations, oracle health |
 
+The "what you add" column is just a common starting point per surface, not a limit. The SDK exposes the same full set (create a market, trade, close, manage) to every one of them, so any app can do as much or as little as it wants.
+
 ---
 
 ## What it gives you
@@ -218,11 +220,11 @@ A keeper is part of the risk system, not just a price cron: it pushes oracle/fun
 
 ## Examples
 
-Runnable integrations live in [`examples/`](./examples), each a small app or script wired to the SDK:
+Runnable integrations live in [`examples/`](./examples), each a small app or script wired to the SDK. Each one is a single surface showing a slice; the SDK and widgets are the same everywhere, so any app can integrate the full set (list a market and trade it), as the terminal does:
 
 | Example | What it shows |
 | --- | --- |
-| [`dex-terminal`](./examples/dex-terminal) | A trading terminal: a price chart with a long/short panel |
+| [`dex-terminal`](./examples/dex-terminal) | One app that both lists new perps and trades existing markets |
 | [`launchpad`](./examples/launchpad) | Create a perp market for a launching token, then trade it |
 | [`token-page`](./examples/token-page) | One token page bound to one market (chart, trade, position) |
 | [`wallet-position-card`](./examples/wallet-position-card) | The read side: a wallet's positions and PnL, no trade panel |

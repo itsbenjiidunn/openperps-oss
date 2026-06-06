@@ -1,13 +1,13 @@
 # DEX Terminal Example
 
-A trading terminal that adds perp trading with `@openperps/react` and `@openperps/sdk`.
+A trading terminal that both lists new perp markets and trades existing ones, with `@openperps/react` and `@openperps/sdk`.
 
-This example shows how a DEX terminal can place a long/short panel next to a chart using OpenPerps React widgets. The core integration lives in `src/App.tsx`.
+This example shows one app doing both halves of the kit: a `List a perp` flow that creates a market for any token, and a chart plus long/short panel to trade markets that exist. The split across the examples is only for illustration; the SDK and widgets are the same everywhere, so any surface can integrate the full capability. The core integration lives in `src/App.tsx`.
 
 ## What It Demonstrates
 
-- Load a market registry and filter the market list.
-- Select a market and open its detail view.
+- List a new perp for any token with `<OpenPerpsMarketLauncher/>`.
+- Load and filter the market list, select a market.
 - Render a price chart with `<OpenPerpsChart/>` from candle data.
 - Open a long/short trade panel with `<OpenPerpsTrade/>`.
 - Price orders from the on-chain mark, not from a client-side chart price.
@@ -29,8 +29,8 @@ npm run dev      # or: npm run build
 
 | Piece | Role |
 |---|---|
-| `@openperps/react` | Provides the `<OpenPerpsChart/>` and `<OpenPerpsTrade/>` widgets. |
-| `@openperps/sdk` | Provides market config types, House Vault counterparty resolution, and helpers for reading the on-chain mark used as the execution price. |
+| `@openperps/react` | Provides `<OpenPerpsMarketLauncher/>` (list a perp), and the `<OpenPerpsChart/>` and `<OpenPerpsTrade/>` widgets (trade it). |
+| `@openperps/sdk` | Provides market config and creation-intent types, House Vault counterparty resolution, and helpers for reading the on-chain mark used as the execution price. |
 
 You can swap in your own chart, add markets to the registry, or wire a different market-data source. The OpenPerps widgets can stay the same.
 
