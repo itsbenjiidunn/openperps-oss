@@ -5,6 +5,9 @@
 
 import { PublicKey, Transaction } from "@solana/web3.js";
 import {
+  HOUSE_SEED,
+  PORTFOLIO_HEADER_SIZE,
+  decodePortfolioPositions,
   liquidateIx,
   oracleAuthorityPda,
   readU64LE,
@@ -137,14 +140,16 @@ export async function crankMarketOnce(
   }
 }
 
-/// Submit a permissionless `Liquidate` for a candidate portfolio. The engine
-/// rejects a healthy account (NonProgress), so it is safe to attempt. Candidate
-/// discovery (which portfolios are unhealthy) is integrator-provided in v1.
+/// Submit a permissionless `Liquidate` for a candidate portfolio. By default it
+/// simulates first and only sends when the engine would make progress, so
+/// attempting a healthy account (NonProgress) costs no transaction fee; pass
+/// `simulate: false` to send unconditionally. Build the candidate set with
+/// `discoverLiquidatable`.
 export async function liquidatePortfolio(
   deps: KeeperDeps,
   market: KeeperMarket,
   portfolio: PublicKey,
-  args: { closeQ: bigint; feeBps?: bigint },
+  args: { closeQ: bigint; feeBps?: bigint; simulate?: boolean },
 ): Promise<string | null> {
   const log = deps.log ?? (() => {});
   try {
@@ -163,6 +168,12 @@ export async function liquidatePortfolio(
     tx.recentBlockhash = blockhash;
     tx.feePayer = deps.authority.publicKey;
     tx.sign(deps.authority);
+    // Simulate first: a healthy account makes no progress, so we skip it without
+    // paying a transaction fee. Only a clean simulation is sent on-chain.
+    if (args.simulate !== false) {
+      const sim = await deps.connection.simulateTransaction(tx);
+      if (sim.value.err) return null;
+    }
     const signature = await deps.connection.sendRawTransaction(tx.serialize());
     await deps.connection.confirmTransaction(
       { signature, blockhash, lastValidBlockHeight },
@@ -176,10 +187,11 @@ export async function liquidatePortfolio(
   }
 }
 
-/// Attempt a permissionless `Liquidate` for each candidate portfolio. The engine
-/// rejects healthy accounts (NonProgress), so attempting all candidates is safe.
-/// Candidate discovery is integrator-provided. Returns the signatures that
-/// landed, and records the count against `deps.health` when present.
+/// Attempt a permissionless `Liquidate` for each candidate portfolio. Each
+/// attempt simulates first, so passing the full `discoverLiquidatable` set is
+/// cheap: only the genuinely liquidatable ones land a transaction. Returns the
+/// signatures that landed, and records the count against `deps.health` when
+/// present.
 export async function scanLiquidations(
   deps: KeeperDeps,
   market: KeeperMarket,
@@ -195,6 +207,56 @@ export async function scanLiquidations(
     recordLiquidations(deps.health, signatures.length);
   }
   return signatures;
+}
+
+/// Pure filter behind `discoverLiquidatable`: from fetched portfolio accounts,
+/// keep the ones holding an open position in `assetIndex`, excluding the House
+/// (the counterparty, never a liquidation target).
+export function selectLiquidatable(
+  accounts: { pubkey: PublicKey; data: Uint8Array }[],
+  assetIndex: number,
+  housePda: PublicKey,
+): PublicKey[] {
+  const out: PublicKey[] = [];
+  for (const { pubkey, data } of accounts) {
+    if (pubkey.equals(housePda)) continue;
+    const hasPosition = decodePortfolioPositions(data).some(
+      (p) => p.assetIndex === assetIndex && p.sizeQ > 0n,
+    );
+    if (hasPosition) out.push(pubkey);
+  }
+  return out;
+}
+
+/// Discover the liquidation candidates for a market: every portfolio that holds
+/// an open position in the market's asset, found by scanning the program's
+/// portfolio accounts. The engine still rejects any that are actually healthy,
+/// so the set is always safe to hand to `scanLiquidations` (which simulates each
+/// before sending). The House portfolio is excluded; it is the counterparty, not
+/// a liquidation target.
+///
+/// This is the built-in discovery the keeper previously left to the integrator.
+/// A full `getProgramAccounts` scan is fine for a moderate account count; for a
+/// very large deployment, front it with an indexer that already tracks the open
+/// portfolios per market.
+export async function discoverLiquidatable(
+  deps: KeeperDeps,
+  market: KeeperMarket,
+): Promise<PublicKey[]> {
+  const programId = new PublicKey(market.config.programId);
+  const [housePda] = PublicKey.findProgramAddressSync(
+    [HOUSE_SEED, new PublicKey(market.config.market).toBuffer()],
+    programId,
+  );
+  const accounts = await deps.connection.getProgramAccounts(programId, {
+    commitment: "confirmed",
+    filters: [{ dataSize: PORTFOLIO_HEADER_SIZE }],
+  });
+  return selectLiquidatable(
+    accounts.map((a) => ({ pubkey: a.pubkey, data: a.account.data })),
+    market.config.assetIndex,
+    housePda,
+  );
 }
 
 export type RunKeeperOptions = {

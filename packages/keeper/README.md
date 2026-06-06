@@ -59,11 +59,14 @@ rejected for moving the price too far too fast. See
 
 ## Liquidation
 
-`liquidatePortfolio` submits a permissionless `Liquidate` for a candidate
-portfolio; the engine rejects a healthy account, so it is safe to attempt.
-`scanLiquidations` attempts a whole candidate list and returns the signatures
-that landed. Discovering which portfolios are unhealthy is integrator-provided
-in v1.
+`discoverLiquidatable` scans the program's portfolio accounts and returns the
+candidates for a market: every account with an open position in the asset, minus
+the House. `liquidatePortfolio` submits a permissionless `Liquidate`, simulating
+first so a healthy account (which the engine rejects) costs no transaction fee.
+`scanLiquidations` runs the whole candidate set the same way and returns the
+signatures that landed, so the keeper finds and clears underwater accounts on its
+own. For a very large deployment, front discovery with an indexer instead of a
+full `getProgramAccounts` scan.
 
 ## Monitoring
 

@@ -4,6 +4,8 @@ export { buildAccrualInstructions } from "./accrual.ts";
 export * from "./health.ts";
 export {
   crankMarketOnce,
+  discoverLiquidatable,
+  selectLiquidatable,
   liquidatePortfolio,
   scanLiquidations,
   readSlotLast,
