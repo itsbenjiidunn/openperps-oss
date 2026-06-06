@@ -17,7 +17,7 @@ For the current per-path status see
 - Authority relayer (`AccrueAsset`) is live; the oracle authority is rotatable
   per market (`SetOracleAuthority`). `PYTH` is implemented via `CrankPyth` (Part A).
   `DEX_EWMA` prices from a real constant-product pool via `CrankDexSpot` (Part B);
-  the token-less mock source is demo-only, excluded from a `--no-default-features` build.
+  the token-less price source is test-only, excluded from a `--no-default-features` build.
 - The engine already enforces a per-slot price-move bound, a freshness window,
   and an EWMA (alpha 0.2). The per-portfolio deposit cap (`SetDepositCap`) bounds
   the profit extractable by manipulating a thin pool.

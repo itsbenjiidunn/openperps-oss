@@ -88,7 +88,7 @@ helpers in `state.rs`, which build the views and call the engine:
 The remaining instructions are wrapper-side and do no engine math: SPL vault
 custody (`CreateVault`, `CreateHouseVault`, `FundHouseVault`, `WithdrawHouseVault`),
 oracle plumbing (`PinOraclePool`, `SetDexPool`), config (`SetOracleAuthority`,
-`SetDepositCap`), delegation (`SetDelegate`), and mock-pool test helpers
+`SetDepositCap`), delegation (`SetDelegate`), and test-only helpers
 (`CreateMockPool`, `MockSwap`).
 
 ## Wrapper responsibilities (what percolator deliberately omits)

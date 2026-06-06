@@ -33,7 +33,7 @@ export const priceProvider: PriceProvider = {
 // Market creation semantics:
 // - OpenPerpsMarketCreationIntent is an SDK format, not one on-chain instruction.
 // - createMarket(intent) composes a lifecycle: InitMarket -> CreateVault ->
-//   CreateHouseVault -> FundHouseVault -> ActivateMarket -> optional demo
+//   CreateHouseVault -> FundHouseVault -> ActivateMarket -> optional test-only
 //   CreateMockPool -> oracle binding.
 // - lpVault.initialDeposit must flow into the House/LP vault used as counterparty.
 // - priceProvider.id is a keeper/integration identifier, not a trusted price.

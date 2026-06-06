@@ -9,12 +9,12 @@ Who may call each instruction, verified against the program handlers.
 | `Deposit` | Portfolio owner signer | Moves SPL collateral into the vault; engine credits capital. |
 | `Withdraw` | Portfolio owner signer | Engine debits first; the vault PDA signs the token transfer out. |
 | `PlaceOrder` | Portfolio owner or registered delegate | Production trade path: user vs the market's House PDA. |
-| `Trade` | Single authority owning both portfolios | Raw two-account self-cross. Demo-only, excluded from a `--no-default-features` build. |
+| `Trade` | Single authority owning both portfolios | Raw two-account self-cross. Test-only, excluded from a `--no-default-features` build. |
 | `Liquidate` | Permissionless | Engine rejects a healthy account (`NonProgress`). |
 | `CrankRefresh` | Permissionless | Re-certifies a portfolio against fresh oracle/funding inputs. |
 | `ActivateMarket` | Permissionless | Any signer claims a free (Disabled) slot and activates it with an authenticated price. |
 | `AccrueAsset` | Oracle authority moves the mark; any other signer is forced to a delta-0 (stale-clear only) accrual | Only the pinned oracle relayer key may change the price. |
-| `CrankOracle` | Permissionless | Reads the slot's pinned pool spot and EWMA-updates the mark; the pinned pool is the token-less mock (DEX-EWMA markets). |
+| `CrankOracle` | Permissionless | Reads the slot's pinned pool spot and EWMA-updates the mark; the pinned pool is a token-less test pool (DEX-EWMA markets). |
 | `CrankDexSpot` | Permissionless | Reads the pinned pool's two SPL vault reserves, rejects a pool below the depth floor (`PoolTooThin`), and EWMA-updates the mark (DEX-priced markets). |
 | `CrankPyth` | Permissionless | Reads a Pyth `PriceUpdateV2` account (owner, feed id, Full verification, freshness, confidence, and EMA-divergence checked) and accrues the mark (PYTH markets). |
 | `PinOraclePool` | Permissionless, pin-once | Binds a pool to an asset slot; fails if the slot already has one. |
@@ -28,7 +28,7 @@ Who may call each instruction, verified against the program handlers.
 | `SetOracleAuthority` | Market authority | Sets or rotates the market's oracle authority PDA (a zero key revokes to the constant). |
 | `SetDepositCap` | Market authority | Raises the per-portfolio deposit cap on a DEX-priced market above the program floor. |
 | `SetDexPool` | Market authority | Binds a DEX-priced market's pool: the two reserve vaults, base decimals, and minimum quote depth (`[DEXPOOL_SEED, market]` PDA). |
-| `CreateMockPool` / `MockSwap` | Permissionless | Token-less demo price source; excluded from a `--no-default-features` build. |
+| `CreateMockPool` / `MockSwap` | Permissionless | Token-less test-only price source; excluded from a `--no-default-features` build. |
 
 ## Oracle authority
 
