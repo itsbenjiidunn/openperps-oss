@@ -33,8 +33,17 @@ in place, and the open items.
 - Pyth cranking (`CrankPyth`) validates the account owner, feed id, Full
   verification, freshness, a confidence-interval bound, and spot/EMA divergence
   before it moves the mark.
-- DEX-EWMA cranking (`CrankDexSpot`) prices from real constant-product reserves
-  and rejects a pool below a per-market depth floor (`PoolTooThin`).
+- DEX-EWMA cranking (`CrankDexSpot`) prices from real constant-product reserves,
+  rejects a pool below a per-market depth floor (`PoolTooThin`), and moves the
+  mark off a capped, time-weighted average (a `[TWAP_SEED, market, asset]` PDA) so
+  a single-block reserve flash contributes ~0.
+- A market authority can set a House exposure cap per market (`SetHouseCap`): the
+  max net House position per asset (base units). `PlaceOrder` / `PlaceBatchOrder`
+  reject a trade that would push the House past it (de-risking is always allowed),
+  so no single asset's move can blow the House regardless of how many users stack
+  one side. The trade handlers verify the cap PDA's canonical address, so it
+  cannot be bypassed by omitting the account. The keeper also alerts on a House
+  that has run low on equity.
 
 ## Open items
 
@@ -42,9 +51,11 @@ in place, and the open items.
   pinned key, rotatable per market via `SetOracleAuthority` without a program
   upgrade. A verifiable feed for every asset is on the roadmap; the Pyth path
   (`CrankPyth`) already provides one for supported feeds.
-- DEX-EWMA gates on pool depth; a program-side TWAP is the next layer (pure
-  accumulator helpers ship in `dexamm`, the PDA wiring is on the roadmap).
+- DEX-EWMA prices off a capped program-side TWAP on top of the pool-depth gate;
+  reading an AMM-native price cumulative (e.g. Raydium observations) to drop the
+  sampled-spot assumption is the next layer.
 - Custom SPL markets put more on the integrator: price-source quality, LP and
-  insurance liquidity, and keeper reliability for liquidation safety.
+  insurance liquidity, and keeper reliability for liquidation safety. Set a
+  per-market House exposure cap (`SetHouseCap`) and fund the House adequately.
 - Independent third-party review of the wrapper, SDK, and keeper is part of the
   production-hardening roadmap; see [`../SECURITY.md`](../SECURITY.md).

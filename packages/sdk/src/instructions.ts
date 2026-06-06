@@ -11,6 +11,7 @@ import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import {
   DEPOSIT_CAP_SEED,
   DEXPOOL_SEED,
+  HOUSE_CAP_SEED,
   ORACLE_SEED,
   PORTFOLIO_SEED,
   TWAP_SEED,
@@ -46,6 +47,7 @@ export const Tag = {
   SetDexPool: 24,
   CrankDexSpot: 25,
   PlaceBatchOrder: 26,
+  SetHouseCap: 27,
 } as const;
 
 /// Side encoding for `PlaceOrder`.
@@ -569,6 +571,9 @@ export function placeBatchOrderIx(args: {
   if (args.delegate) {
     keys.push({ pubkey: args.delegate, isSigner: false, isWritable: false });
   }
+  // House-cap PDA trails the optional delegate (verified canonical on-chain).
+  const [houseCap] = houseCapPda(args.programId, args.market);
+  keys.push({ pubkey: houseCap, isSigner: false, isWritable: false });
   return new TransactionInstruction({
     programId: args.programId,
     keys,
@@ -989,6 +994,10 @@ export function placeOrderIx(args: {
   if (args.delegate) {
     keys.push({ pubkey: args.delegate, isSigner: false, isWritable: false });
   }
+  // The House-cap PDA trails the optional delegate; the program verifies it is
+  // the canonical address, so it is always passed (uninitialized = no cap).
+  const [houseCap] = houseCapPda(args.programId, args.market);
+  keys.push({ pubkey: houseCap, isSigner: false, isWritable: false });
   return new TransactionInstruction({
     programId: args.programId,
     keys,
@@ -1138,5 +1147,51 @@ export function setDepositCapIx(args: {
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
     ],
     data: encodeSetDepositCap(args.maxCapital, args.bump),
+  });
+}
+
+/** The per-market House-cap PDA; matches Rust `[HOUSE_CAP_SEED, market]`. */
+export function houseCapPda(
+  programId: PublicKey,
+  market: PublicKey,
+): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync(
+    [HOUSE_CAP_SEED, market.toBuffer()],
+    programId,
+  );
+}
+
+export function encodeSetHouseCap(maxBasePosition: bigint, bump: number): Buffer {
+  const data = new Uint8Array(1 + 16 + 1);
+  data[0] = Tag.SetHouseCap;
+  writeU128LE(data, 1, maxBasePosition);
+  data[17] = bump;
+  return Buffer.from(data);
+}
+
+/// Set a market's House exposure cap: the max net House position per asset (base
+/// units). Market-authority-signed; a zero cap disables it. The PDA is created on
+/// first use. PlaceOrder / PlaceBatchOrder verify this PDA's canonical address, so
+/// the cap cannot be bypassed by omitting the trailing account.
+export function setHouseCapIx(args: {
+  programId: PublicKey;
+  /** The PDA from `houseCapPda(programId, market)`. */
+  houseCapPda: PublicKey;
+  market: PublicKey;
+  /** The market authority (signer; pays PDA rent on first set). */
+  authority: PublicKey;
+  /** Max net House position per asset in base units (0 disables the cap). */
+  maxBasePosition: bigint;
+  bump: number;
+}): TransactionInstruction {
+  return new TransactionInstruction({
+    programId: args.programId,
+    keys: [
+      { pubkey: args.houseCapPda, isSigner: false, isWritable: true },
+      { pubkey: args.market, isSigner: false, isWritable: false },
+      { pubkey: args.authority, isSigner: true, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    data: encodeSetHouseCap(args.maxBasePosition, args.bump),
   });
 }

@@ -13,8 +13,8 @@
 use openperps_program::state::{
     accrue_asset_buffer, activate_market_buffer, crank_oracle_buffer, crank_refresh_buffer,
     init_market_buffer, init_portfolio_buffer, liquidate_buffer, market_account_size,
-    market_engine_split_mut, portfolio_account_size, portfolio_split_mut, resolve_market_buffer,
-    trade_buffer, withdraw_buffer,
+    market_engine_split_mut, portfolio_abs_position_for_asset, portfolio_account_size,
+    portfolio_split_mut, resolve_market_buffer, trade_buffer, withdraw_buffer,
 };
 use percolator::v16::{AssetLifecycleV16, MarketGroupV16ViewMut, PortfolioV16ViewMut, SideV16};
 
@@ -724,4 +724,35 @@ fn market_wrapper_header_stores_authority_mint_vault() {
     assert_eq!(wrapper.oracle_feed_id, DUMMY_ORACLE_FEED_ID);
     // v4 DEX pool binding.
     assert_eq!(wrapper.oracle_pool, DUMMY_ORACLE_POOL);
+}
+
+#[test]
+fn position_reader_reflects_a_trade() {
+    // Backs the House exposure cap (M3): `portfolio_abs_position_for_asset` must
+    // report the real engine-produced leg size so the trade handler can bound the
+    // House's per-asset exposure.
+    let mid = [0x95; 32];
+    let owner = [0x96; 32];
+
+    let mut market_buf = vec![0u8; market_account_size(CAP as usize).unwrap()];
+    let mut long_buf = vec![0u8; portfolio_account_size(CAP as usize).unwrap()];
+    let mut short_buf = vec![0u8; portfolio_account_size(CAP as usize).unwrap()];
+
+    setup_market(&mut market_buf, mid);
+    activate_market_buffer(&mut market_buf, 0, 100_000_000, 1).unwrap();
+    init_portfolio_buffer(&mut long_buf, mid, [1; 32], owner).unwrap();
+    init_portfolio_buffer(&mut short_buf, mid, [2; 32], owner).unwrap();
+    deposit(&mut market_buf, &mut long_buf, 50_000_000);
+    deposit(&mut market_buf, &mut short_buf, 50_000_000);
+
+    // No position yet.
+    assert_eq!(portfolio_abs_position_for_asset(&long_buf, 0).unwrap(), 0);
+
+    trade_buffer(&mut market_buf, &mut long_buf, &mut short_buf, 0, 1_000_000, 100_000_000, 10)
+        .unwrap();
+
+    // Both sides now hold |1_000_000| on asset 0; the untouched asset 1 is flat.
+    assert_eq!(portfolio_abs_position_for_asset(&long_buf, 0).unwrap(), 1_000_000);
+    assert_eq!(portfolio_abs_position_for_asset(&short_buf, 0).unwrap(), 1_000_000);
+    assert_eq!(portfolio_abs_position_for_asset(&long_buf, 1).unwrap(), 0);
 }

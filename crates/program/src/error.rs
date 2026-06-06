@@ -40,6 +40,9 @@ pub enum OpenPerpsError {
     /// The trading delegate (session key) is past its expiry slot. The owner
     /// must issue a fresh `SetDelegate` to keep trading on the session key.
     DelegateExpired = 13,
+    /// A trade would push the House's net position in the asset past the market's
+    /// configured House exposure cap (`SetHouseCap`).
+    HouseExposureCapExceeded = 14,
 }
 
 impl From<OpenPerpsError> for ProgramError {

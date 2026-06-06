@@ -28,6 +28,7 @@ Who may call each instruction, verified against the program handlers.
 | `SetOracleAuthority` | Market authority | Sets or rotates the market's oracle authority PDA (a zero key revokes to the constant). |
 | `SetDepositCap` | Market authority | Raises the per-portfolio deposit cap on a DEX-priced market above the program floor. |
 | `SetDexPool` | Market authority | Binds a DEX-priced market's pool: the two reserve vaults, base decimals, and minimum quote depth (`[DEXPOOL_SEED, market]` PDA). |
+| `SetHouseCap` | Market authority | Sets the House exposure cap: the max net House position per asset, base units (`[HOUSE_CAP_SEED, market]` PDA; zero disables it). Enforced in `PlaceOrder` / `PlaceBatchOrder`. |
 | `CreateMockPool` / `MockSwap` | Permissionless | Token-less test-only price source; excluded from a `--no-default-features` build. |
 
 ## Oracle authority

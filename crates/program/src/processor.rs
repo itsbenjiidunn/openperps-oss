@@ -4,7 +4,7 @@ use percolator::v16::{MarketGroupV16ViewMut, PortfolioV16ViewMut};
 use pinocchio::{
     account_info::AccountInfo,
     instruction::{Seed, Signer},
-    pubkey::{create_program_address, Pubkey},
+    pubkey::{create_program_address, find_program_address, Pubkey},
     sysvars::{clock::Clock, rent::Rent, Sysvar},
     ProgramResult,
 };
@@ -27,6 +27,8 @@ use crate::{
         DELEGATE_SEED, DepositCapAccount, DEPOSIT_CAP_SEED, DexPoolConfig, DEXPOOL_SEED,
         OracleAuthorityAccount, ORACLE_SEED, HOUSE_SEED, PORTFOLIO_SEED, VAULT_SEED,
         twap_observe_buffer, TwapState, TWAP_SEED,
+        house_cap_of, set_house_cap_buffer, portfolio_abs_position_for_asset,
+        HouseCapAccount, HOUSE_CAP_SEED,
     },
 };
 
@@ -324,7 +326,60 @@ pub fn process_instruction(
         OpenPerpsInstruction::PlaceBatchOrder { count } => {
             process_place_batch_order(program_id, accounts, instruction_data, count)
         }
+        OpenPerpsInstruction::SetHouseCap {
+            max_base_position,
+            bump,
+        } => process_set_house_cap(program_id, accounts, max_base_position, bump),
     }
+}
+
+/// Enforce the per-market House exposure cap (when configured) after a trade. The
+/// House-cap PDA is the trailing account at `cap_idx`; its address is verified
+/// against the canonical `[HOUSE_CAP_SEED, market]` (via `find_program_address`,
+/// NOT a caller-supplied bump), so the account cannot be omitted or substituted to
+/// bypass the cap. If the canonical account is uninitialized the market has no cap.
+/// Only trades that INCREASE the House's |position| past the cap are rejected, so
+/// de-risking (reducing/closing) is always allowed even if already over the cap.
+fn enforce_house_cap(
+    program_id: &Pubkey,
+    accounts: &[AccountInfo],
+    cap_idx: usize,
+    market_key: &Pubkey,
+    asset_index: u32,
+    house_abs_before: u128,
+    house_data: &[u8],
+) -> Result<(), OpenPerpsError> {
+    let cap_acc = accounts
+        .get(cap_idx)
+        .ok_or(OpenPerpsError::InvalidInstruction)?;
+    // The trailing account MUST be the canonical House-cap PDA (present even when
+    // no cap is set, as an uninitialized account at that address).
+    let (canonical, _) = find_program_address(&[HOUSE_CAP_SEED, market_key.as_ref()], program_id);
+    if *cap_acc.key() != canonical {
+        return Err(OpenPerpsError::InvalidAccountData);
+    }
+    // Uninitialized (system-owned, zero data) canonical account: market has no cap.
+    if unsafe { cap_acc.owner() } != program_id {
+        return Ok(());
+    }
+    let cap = {
+        let d = cap_acc
+            .try_borrow_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        let (mkt, cap) = house_cap_of(&d)?;
+        if mkt != *market_key {
+            return Ok(());
+        }
+        cap
+    };
+    if cap == 0 {
+        return Ok(());
+    }
+    let house_abs_after = portfolio_abs_position_for_asset(house_data, asset_index)?;
+    if house_abs_after > cap && house_abs_after > house_abs_before {
+        return Err(OpenPerpsError::HouseExposureCapExceeded);
+    }
+    Ok(())
 }
 
 fn process_init_market(
@@ -1306,8 +1361,9 @@ fn process_place_order(
     // Authorize the signer: either the portfolio owner, or a registered
     // trading delegate (session key). The delegate account (optional 5th
     // account) must be program-owned, bound to this portfolio, and name the
-    // signer. Delegates can only trade, never withdraw.
-    {
+    // signer. Delegates can only trade, never withdraw. The House-cap PDA trails
+    // the (optional) delegate, so its index is 4 with no delegate and 5 with one.
+    let cap_idx = {
         let u_h = portfolio_split_mut(&mut user_data)?;
         let owner = u_h.owner;
         let user_key = *user.key();
@@ -1330,8 +1386,15 @@ fn process_place_order(
             if Clock::get()?.slot > d_expiry {
                 return Err(OpenPerpsError::DelegateExpired.into());
             }
+            5
+        } else {
+            4
         }
-    }
+    };
+
+    // House per-asset exposure cap: capture the House's pre-trade position so the
+    // post-trade check rejects only exposure-INCREASING trades over the cap.
+    let house_abs_before = portfolio_abs_position_for_asset(&house_data, asset_index)?;
 
     // side = 0 → user is long, house is short. side = 1 → swap.
     match side {
@@ -1361,6 +1424,16 @@ fn process_place_order(
         }
         _ => return Err(OpenPerpsError::InvalidInstructionData.into()),
     }
+
+    enforce_house_cap(
+        program_id,
+        accounts,
+        cap_idx,
+        &market_key,
+        asset_index,
+        house_abs_before,
+        &house_data,
+    )?;
     Ok(())
 }
 
@@ -1414,7 +1487,8 @@ fn process_place_batch_order(
 
     // Authorize the signer: portfolio owner or a registered trading delegate
     // (session key), same as PlaceOrder. Delegates can only trade, never withdraw.
-    {
+    // The House-cap PDA trails the (optional) delegate (index 4, or 5 with one).
+    let cap_idx = {
         let u_h = portfolio_split_mut(&mut user_data)?;
         let owner = u_h.owner;
         let user_key = *user.key();
@@ -1437,8 +1511,11 @@ fn process_place_batch_order(
             if Clock::get()?.slot > d_expiry {
                 return Err(OpenPerpsError::DelegateExpired.into());
             }
+            5
+        } else {
+            4
         }
-    }
+    };
 
     // Decode the legs. The user is the engine's first (long) account, so a leg's
     // signed size is positive for `side == 0` (user long) and negative otherwise.
@@ -1479,6 +1556,15 @@ fn process_place_batch_order(
         };
     }
 
+    // House per-asset exposure cap: snapshot the House's pre-batch position for
+    // each leg's asset, run the batch, then reject if any leg pushed the House
+    // past the cap (exposure-increasing only; de-risking is allowed).
+    let mut house_abs_before = [0u128; crate::instruction::MAX_BATCH_LEGS];
+    for (i, req) in requests.iter().enumerate().take(n) {
+        house_abs_before[i] =
+            portfolio_abs_position_for_asset(&house_data, req.asset_index as u32)?;
+    }
+
     crate::state::batch_trade_buffer(
         &mut market_data,
         &mut user_data,
@@ -1486,6 +1572,18 @@ fn process_place_batch_order(
         &requests[..n],
     )
     .map_v16()?;
+
+    for (i, req) in requests.iter().enumerate().take(n) {
+        enforce_house_cap(
+            program_id,
+            accounts,
+            cap_idx,
+            &market_key,
+            req.asset_index as u32,
+            house_abs_before[i],
+            &house_data,
+        )?;
+    }
     Ok(())
 }
 
@@ -2186,6 +2284,82 @@ fn process_set_deposit_cap(
         .try_borrow_mut_data()
         .map_err(|_| OpenPerpsError::InvalidAccountData)?;
     set_deposit_cap_buffer(&mut data, market_key, max_capital)?;
+    Ok(())
+}
+
+/// Set the market's House exposure cap (max net House position per asset, base
+/// units). Only the market authority may call. The `[HOUSE_CAP_SEED, market]` PDA
+/// is created on first use; a zero `max_base_position` disables the cap. The trade
+/// handlers verify this PDA's canonical address, so the cap cannot be bypassed by
+/// omitting or substituting the account.
+fn process_set_house_cap(
+    program_id: &Pubkey,
+    accounts: &[AccountInfo],
+    max_base_position: u128,
+    bump: u8,
+) -> ProgramResult {
+    let [cap_pda, market, authority, _system_program, ..] = accounts else {
+        return Err(OpenPerpsError::InvalidInstruction.into());
+    };
+    if !authority.is_signer() {
+        return Err(OpenPerpsError::MissingRequiredSignature.into());
+    }
+    if !cap_pda.is_writable() {
+        return Err(OpenPerpsError::InvalidAccountData.into());
+    }
+    if unsafe { market.owner() } != program_id {
+        return Err(OpenPerpsError::InvalidAccountOwner.into());
+    }
+
+    // Only the market authority may set the House cap.
+    let market_key = *market.key();
+    {
+        let data = market
+            .try_borrow_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        let wrapper = market_wrapper_header(&data)?;
+        if !wrapper.is_initialized() {
+            return Err(OpenPerpsError::UninitializedAccount.into());
+        }
+        if wrapper.authority != *authority.key() {
+            return Err(OpenPerpsError::MissingRequiredSignature.into());
+        }
+    }
+
+    // Verify the PDA address, then create it on first use.
+    let derived = create_program_address(
+        &[HOUSE_CAP_SEED, market_key.as_ref(), &[bump]],
+        program_id,
+    )
+    .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    if *cap_pda.key() != derived {
+        return Err(OpenPerpsError::InvalidAccountData.into());
+    }
+
+    if unsafe { cap_pda.owner() } != program_id {
+        let rent = Rent::get()?;
+        let lamports = rent.minimum_balance(HouseCapAccount::LEN);
+        let bump_arr = [bump];
+        let seeds = [
+            Seed::from(HOUSE_CAP_SEED),
+            Seed::from(market_key.as_ref()),
+            Seed::from(bump_arr.as_ref()),
+        ];
+        let signer = Signer::from(seeds.as_ref());
+        system_create_account(
+            authority,
+            cap_pda,
+            lamports,
+            HouseCapAccount::LEN as u64,
+            program_id,
+            &[signer],
+        )?;
+    }
+
+    let mut data = cap_pda
+        .try_borrow_mut_data()
+        .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    set_house_cap_buffer(&mut data, market_key, max_base_position)?;
     Ok(())
 }
 

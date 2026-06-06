@@ -1026,7 +1026,14 @@ type HealthReport = {
   badDebtUsd: number; // Σ of negative equity, should be ~0 if the keeper works
   negativeAccounts: number;
   undercollateralized: { symbol: string; vault: number; cTot: number }[];
+  // Markets whose House (the counterparty to every user trade) has run low on
+  // equity; the House is the buffer that backs user winnings (M3).
+  houseRisk: { symbol: string; equityUsd: number }[];
 };
+
+/// House equity (USD) below which we flag the market: the House can no longer
+/// absorb losing user trades and may stop quoting / leave winnings unbacked.
+const HOUSE_EQUITY_ALERT_USD = 50;
 
 /// Two independent solvency signals:
 ///  1. Bad debt, Σ negative equity across the latest per-portfolio snapshots.
@@ -1055,9 +1062,10 @@ async function healthCheck(env: Env): Promise<HealthReport> {
   }
 
   const undercollateralized: { symbol: string; vault: number; cTot: number }[] = [];
+  const houseRisk: { symbol: string; equityUsd: number }[] = [];
   const { results: mkts } = await env.DB.prepare(
-    "SELECT pubkey, symbol, vault FROM custom_markets WHERE vault IS NOT NULL AND vault != ''",
-  ).all<{ pubkey: string; symbol: string; vault: string }>();
+    "SELECT pubkey, symbol, vault, house FROM custom_markets WHERE vault IS NOT NULL AND vault != ''",
+  ).all<{ pubkey: string; symbol: string; vault: string; house: string | null }>();
   for (const m of mkts ?? []) {
     try {
       const acc = await rpc<{ value: { data: [string, string] } | null }>(env, "getAccountInfo", [
@@ -1073,6 +1081,28 @@ async function healthCheck(env: Env): Promise<HealthReport> {
       const vault = Number(bal?.value?.uiAmount ?? 0);
       // Small tolerance for rounding; vault must cover user capital.
       if (vault + 0.01 < cTot) undercollateralized.push({ symbol: m.symbol, vault, cTot });
+
+      // House equity: the House takes the opposite of every user trade, so its
+      // equity (capital + pnl) is the buffer backing user winnings. Flag a House
+      // running low; on-chain it stops taking risk-increasing trades once it can
+      // no longer post margin, but a near-empty House is an early operator signal
+      // to refund it (FundHouseVault) or tighten its exposure cap (SetHouseCap).
+      if (m.house) {
+        const hacc = await rpc<{ value: { data: [string, string] } | null }>(
+          env,
+          "getAccountInfo",
+          [m.house, { encoding: "base64" }],
+        );
+        const hdata = hacc?.value?.data ? b64ToBytes(hacc.value.data[0]) : null;
+        if (hdata && hdata.length >= OFFSET_PNL + 16) {
+          const capital = Number(readUintLE(hdata, OFFSET_CAPITAL, 16));
+          const pnl = Number(readIntLE(hdata, OFFSET_PNL, 16));
+          const equityUsd = (capital + pnl) / POS_SCALE_F;
+          if (equityUsd < HOUSE_EQUITY_ALERT_USD) {
+            houseRisk.push({ symbol: m.symbol, equityUsd });
+          }
+        }
+      }
     } catch {
       /* skip a market we can't read this tick */
     }
@@ -1085,6 +1115,7 @@ async function healthCheck(env: Env): Promise<HealthReport> {
     badDebtUsd,
     negativeAccounts,
     undercollateralized,
+    houseRisk,
   };
 }
 
@@ -1101,6 +1132,9 @@ async function maybeAlert(env: Env, h: HealthReport): Promise<void> {
   }
   for (const u of h.undercollateralized) {
     problems.push(`🔴 ${u.symbol} undercollateralized: vault ${u.vault.toFixed(2)} < c_tot ${u.cTot.toFixed(2)}`);
+  }
+  for (const hr of h.houseRisk) {
+    problems.push(`🏦 ${hr.symbol} House equity low: $${hr.equityUsd.toFixed(2)} (refund or tighten the cap)`);
   }
   if (!problems.length) return;
   try {

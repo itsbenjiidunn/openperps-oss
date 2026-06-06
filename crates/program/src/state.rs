@@ -146,6 +146,15 @@ pub const DEXPOOL_SEED: &[u8] = b"dexpool";
 /// the market header and existing markets are unaffected.
 pub const TWAP_SEED: &[u8] = b"twap";
 
+/// PDA seed prefix for a market's House exposure cap. Full seeds:
+/// `[HOUSE_CAP_SEED, market.key()]`. Optional, per-market: when set, it bounds the
+/// House's net open position per asset (base units), so no single asset's move can
+/// blow the House regardless of how many users pile onto one side. Base-unit caps
+/// are per-token, so this is opt-in (a market authority sets it via SetHouseCap);
+/// markets without one rely on the House initial-margin bound, permissionless
+/// liquidation, and the per-portfolio deposit cap.
+pub const HOUSE_CAP_SEED: &[u8] = b"housecap";
+
 /// PDA seed prefix for a user's portfolio under a market. Full seed list is
 /// `[PORTFOLIO_SEED, owner.key(), market.key()]`. Makes a user's account on a
 /// given market group DETERMINISTIC, one account per (owner, market), derivable
@@ -168,6 +177,9 @@ pub const DEXPOOL_DISCRIMINATOR: [u8; 8] = *b"OPDEXAMM";
 
 /// Magic bytes at the start of a [`TwapState`] account.
 pub const TWAP_DISCRIMINATOR: [u8; 8] = *b"OPTWAP00";
+
+/// Magic bytes at the start of a [`HouseCapAccount`].
+pub const HOUSE_CAP_DISCRIMINATOR: [u8; 8] = *b"OPHOUSEC";
 
 /// Tiny PDA holding the session key authorized to place orders for one
 /// portfolio. Owner-set; all-zero `delegate` means revoked. `portfolio` binds
@@ -337,6 +349,81 @@ pub fn deposit_cap_of(buf: &[u8]) -> Result<([u8; 32], u128), OpenPerpsError> {
         return Ok(([0u8; 32], 0));
     }
     Ok((acc.market, u128::from_le_bytes(acc.max_capital)))
+}
+
+/// Per-market House exposure cap: the maximum net open position (base units) the
+/// House may hold in any single asset. Bounds the House's directional loss from
+/// one asset's move regardless of how many users stack onto one side. Byte arrays
+/// keep it alignment-1 and padding-free (Pod-safe).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Pod, Zeroable)]
+pub struct HouseCapAccount {
+    pub discriminator: [u8; 8],
+    pub market: [u8; 32],
+    pub max_base_position: [u8; 16],
+}
+
+impl HouseCapAccount {
+    pub const LEN: usize = core::mem::size_of::<Self>();
+    pub fn is_initialized(&self) -> bool {
+        self.discriminator == HOUSE_CAP_DISCRIMINATOR
+    }
+}
+
+/// Write/overwrite a market's House exposure cap (market-authority-authorized).
+pub fn set_house_cap_buffer(
+    buf: &mut [u8],
+    market: [u8; 32],
+    max_base_position: u128,
+) -> Result<(), OpenPerpsError> {
+    if buf.len() < HouseCapAccount::LEN {
+        return Err(OpenPerpsError::AccountDataTooSmall);
+    }
+    let acc: &mut HouseCapAccount = pod_from_bytes_mut(&mut buf[..HouseCapAccount::LEN])?;
+    acc.discriminator = HOUSE_CAP_DISCRIMINATOR;
+    acc.market = market;
+    acc.max_base_position = max_base_position.to_le_bytes();
+    Ok(())
+}
+
+/// Read `(market, max_base_position)` from a House-cap PDA; both zero if
+/// uninitialized.
+pub fn house_cap_of(buf: &[u8]) -> Result<([u8; 32], u128), OpenPerpsError> {
+    if buf.len() < HouseCapAccount::LEN {
+        return Err(OpenPerpsError::AccountDataTooSmall);
+    }
+    let acc: &HouseCapAccount = bytemuck::try_from_bytes(&buf[..HouseCapAccount::LEN])
+        .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    if !acc.is_initialized() {
+        return Ok(([0u8; 32], 0));
+    }
+    Ok((acc.market, u128::from_le_bytes(acc.max_base_position)))
+}
+
+/// The absolute open position size (base units) a portfolio holds in asset
+/// `asset_index`, summed over its active legs (the engine keeps at most one active
+/// leg per asset). Used to bound the House's per-asset directional exposure in the
+/// trade handlers.
+pub fn portfolio_abs_position_for_asset(
+    buf: &[u8],
+    asset_index: u32,
+) -> Result<u128, OpenPerpsError> {
+    let header_len = core::mem::size_of::<PortfolioAccountV16Account>();
+    if buf.len() < header_len {
+        return Err(OpenPerpsError::AccountDataTooSmall);
+    }
+    let header: &PortfolioAccountV16Account = bytemuck::try_from_bytes(&buf[..header_len])
+        .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    let mut total: u128 = 0;
+    for leg_acct in header.legs.iter() {
+        let leg = leg_acct
+            .try_to_runtime()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        if leg.active && leg.asset_index == asset_index {
+            total = total.saturating_add(leg.basis_pos_q.unsigned_abs());
+        }
+    }
+    Ok(total)
 }
 
 /// Per-market DEX pool binding for `CrankDexSpot`: the two SPL token vaults whose
@@ -1594,5 +1681,24 @@ mod tests {
         // Wrong market / asset binding is rejected (a substituted PDA).
         assert!(twap_observe_buffer(&mut buf, [9u8; 32], 0, 40, 100).is_err());
         assert!(twap_observe_buffer(&mut buf, m, 7, 40, 100).is_err());
+    }
+
+    #[test]
+    fn house_cap_buffer_roundtrip() {
+        let mut buf = vec![0u8; HouseCapAccount::LEN];
+        // Uninitialized reads as zeros.
+        assert_eq!(house_cap_of(&buf).unwrap(), ([0u8; 32], 0));
+        set_house_cap_buffer(&mut buf, [5u8; 32], 1_000_000).unwrap();
+        assert_eq!(house_cap_of(&buf).unwrap(), ([5u8; 32], 1_000_000));
+        // A zero cap (disabled) still reads back its market binding.
+        set_house_cap_buffer(&mut buf, [5u8; 32], 0).unwrap();
+        assert_eq!(house_cap_of(&buf).unwrap(), ([5u8; 32], 0));
+    }
+
+    #[test]
+    fn position_reader_zero_on_empty_portfolio() {
+        let mut buf = vec![0u8; portfolio_account_size(2).unwrap()];
+        init_portfolio_buffer(&mut buf, [1u8; 32], [2u8; 32], [3u8; 32]).unwrap();
+        assert_eq!(portfolio_abs_position_for_asset(&buf, 0).unwrap(), 0);
     }
 }

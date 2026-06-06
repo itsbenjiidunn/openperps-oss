@@ -162,6 +162,10 @@ export const DEXPOOL_SEED = new TextEncoder().encode("dexpool");
  * are `[TWAP_SEED, market, asset_index_le]`. */
 export const TWAP_SEED = new TextEncoder().encode("twap");
 
+/** House exposure cap PDA seed prefix; matches Rust `state::HOUSE_CAP_SEED`. The
+ * full seeds are `[HOUSE_CAP_SEED, market]`. */
+export const HOUSE_CAP_SEED = new TextEncoder().encode("housecap");
+
 /** DelegateAccount size: discriminator(8) + portfolio(32) + delegate(32). */
 export const DELEGATE_ACCOUNT_SIZE = 72;
 

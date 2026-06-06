@@ -36,6 +36,7 @@ pub mod tag {
     pub const SET_DEX_POOL: u8 = 24;
     pub const CRANK_DEX_SPOT: u8 = 25;
     pub const PLACE_BATCH_ORDER: u8 = 26;
+    pub const SET_HOUSE_CAP: u8 = 27;
 }
 
 /// Maximum legs in a single `PlaceBatchOrder`. The engine also rejects a batch
@@ -258,11 +259,21 @@ pub enum OpenPerpsInstruction {
     /// long. Wrapper builds the matched-cross internally so the user only
     /// signs once and never sees a second portfolio.
     ///
+    /// The trailing `[HOUSE_CAP_SEED, market]` PDA (after the optional delegate) is
+    /// verified on-chain to be the canonical House-cap address, so it cannot be
+    /// omitted or substituted to bypass the cap. When it is initialized the trade
+    /// is rejected if it would push the House's net position in the asset past the
+    /// cap (de-risking is always allowed); uninitialized means the market has no
+    /// House cap.
+    ///
     /// Accounts:
     ///   0. `[writable]` market account
     ///   1. `[writable]` user portfolio
     ///   2. `[writable]` house portfolio
     ///   3. `[signer]`   user (must own user_portfolio)
+    ///   4. `[]`         delegate PDA (only when the signer is a session key)
+    ///   .. `[]`         House-cap PDA `[HOUSE_CAP_SEED, market]` (trailing, required;
+    ///                    uninitialized = no cap). Index is 4 with no delegate, 5 with.
     PlaceOrder {
         side: u8,
         asset_index: u32,
@@ -424,7 +435,8 @@ pub enum OpenPerpsInstruction {
     /// recertification. The `count` legs follow the tag + count byte in the
     /// instruction data; each leg is side(u8) + asset_index(u32) + size_q(u128) +
     /// exec_price(u64) + fee_bps(u64). `size_q` is the unsigned base size; `side`
-    /// 0 = user long, 1 = user short.
+    /// 0 = user long, 1 = user short. The trailing `[HOUSE_CAP_SEED, market]` PDA
+    /// account is verified and enforced exactly as in `PlaceOrder`.
     ///
     /// Accounts:
     ///   0. `[writable]` market account
@@ -432,8 +444,23 @@ pub enum OpenPerpsInstruction {
     ///   2. `[writable]` House portfolio
     ///   3. `[signer]`   user (owner or registered delegate)
     ///   4. `[]`         delegate PDA (optional, when the signer is a session key)
+    ///   .. `[]`         House-cap PDA `[HOUSE_CAP_SEED, market]` (trailing, required;
+    ///                    uninitialized = no cap). Index is 4 with no delegate, 5 with.
     PlaceBatchOrder {
         count: u8,
+    },
+    /// Set the market's House exposure cap (max net House position per asset, base
+    /// units). Only the market authority may call. The `[HOUSE_CAP_SEED, market]`
+    /// PDA is created on first use; a zero `max_base_position` disables the cap.
+    ///
+    /// Accounts:
+    ///   0. `[writable]` House-cap PDA (`[HOUSE_CAP_SEED, market]`)
+    ///   1. `[]`         market account (read for authority)
+    ///   2. `[signer, writable]` authority (must match the market authority; pays rent)
+    ///   3. `[]`         system program
+    SetHouseCap {
+        max_base_position: u128,
+        bump: u8,
     },
 }
 
@@ -608,6 +635,10 @@ impl OpenPerpsInstruction {
                 }
                 Ok(Self::PlaceBatchOrder { count })
             }
+            tag::SET_HOUSE_CAP => Ok(Self::SetHouseCap {
+                max_base_position: read_u128(rest, 0)?,
+                bump: read_u8(rest, 16)?,
+            }),
             _ => Err(OpenPerpsError::InvalidInstruction),
         }
     }
