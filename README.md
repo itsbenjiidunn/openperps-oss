@@ -42,18 +42,18 @@ It is built on **[Percolator](https://github.com/aeyakovenko/percolator) v16**, 
 
 ## Who it is for
 
-Any surface that already shows a Solana token can add perps on it:
+OpenPerps OSS is one kit: create a market for any token, seed its House, long/short, close, settle, and decode state, all from `@openperps/sdk` and `@openperps/react`. Any surface that shows a Solana token can embed the whole thing. The rows below are how that same full kit tends to show up per surface, not a menu of what each one is limited to:
 
-| Surface | What you add |
+| Surface | A natural embed (you can wire the full kit) |
 | --- | --- |
-| **Launchpads** | A *Create Perp* button and a trade panel on the token page |
-| **DEX terminals** | A long/short panel next to the chart |
-| **Swap UIs & aggregators** | Perps on the token page |
+| **Launchpads** | List a perp for the launching token and trade it on its page |
+| **DEX terminals** | A long/short panel and a *List a perp* button next to the chart |
+| **Swap UIs & aggregators** | Create and trade perps inline on the token page |
 | **Telegram bots** | `/perp_create`, `/long`, `/short`, `/positions`, `/close` |
-| **Wallets & portfolio apps** | Show perp positions, PnL, close and withdraw |
+| **Wallets & portfolio apps** | Positions, PnL, close and withdraw, and list a market too |
 | **Analytics dashboards** | Open interest, volume, liquidations, oracle health |
 
-The "what you add" column is just a common starting point per surface, not a limit. The SDK exposes the same full set (create a market, trade, close, manage) to every one of them, so any app can do as much or as little as it wants.
+Same SDK, same widgets, everywhere: a wallet can list a market and a launchpad can be a full terminal. Each app wires as much or as little of the kit as it wants.
 
 ---
 
