@@ -49,6 +49,7 @@
     "typecheck": "tsc --noEmit",
     "test": "node --test --import tsx \"test/**/*.test.ts\"",
     "smoke": "tsx scripts/smoke.ts",
+    "hlp-integration": "tsx scripts/hlp-integration.ts",
     "prepublishOnly": "npm run clean && npm run build"
   },
   "peerDependencies": {

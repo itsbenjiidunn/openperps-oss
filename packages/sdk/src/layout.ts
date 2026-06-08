@@ -102,6 +102,12 @@ export const OFFSET_SLOT0_EFFECTIVE_PRICE = slotEffectivePriceOffset(0);
 export const OFFSET_CAPITAL = 132; // V16PodU128 ([u8; 16])
 export const OFFSET_PNL = 148; // V16PodI128 ([u8; 16])
 
+// HLP config: discriminator(8) + market(32), then these. (See Rust `hlp::HlpConfig`.)
+export const OFFSET_HLP_TOTAL_SHARES = 40; // u128
+// HLP position: discriminator(8) + market(32) + owner(32), then these.
+export const OFFSET_HLP_POSITION_SHARES = 72; // u128
+export const OFFSET_HLP_POSITION_PENDING = 88; // u128
+
 // Portfolio legs (open positions). Verified via the byte-sizes test.
 export const OFFSET_PORTFOLIO_LEGS = 228;
 export const PORTFOLIO_LEG_SIZE = 144;
