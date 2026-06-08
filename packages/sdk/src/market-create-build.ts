@@ -41,6 +41,9 @@ export type BuildMarketCreationInput = {
   oracleKind?: number;
   oracleFeedId?: Uint8Array;
   oraclePool?: PublicKey;
+  /// Risk tier (see `RISK_TIER_*`): 0 = Stable (10x, cheap keeper), 1 = Volatile
+  /// (pump-dump, 5x, wide clamp + frequent pushes). Defaults to Stable.
+  riskTier?: number;
 };
 
 export type MarketCreationBuild = {
@@ -93,6 +96,7 @@ export function buildMarketCreationInstructions(
       oracleKind: input.oracleKind ?? 0,
       oracleFeedId: input.oracleFeedId ?? new Uint8Array(32),
       oraclePool: input.oraclePool ?? PublicKey.default,
+      riskTier: input.riskTier ?? 0,
     }),
     createVaultIx({ programId, market, authority, vault, quoteMint }),
     createHouseVaultIx({ programId, market, authority, housePortfolio, houseBump }),

@@ -15,6 +15,7 @@ import {
   INSURANCE_CFG_SEED,
   ORACLE_SEED,
   PORTFOLIO_SEED,
+  RISK_TIER_STABLE,
   TWAP_SEED,
 } from "./layout.ts";
 
@@ -116,6 +117,7 @@ export function encodeInitMarket(
   oracleKind: number,
   oracleFeedId: Uint8Array,
   oraclePool: Uint8Array,
+  riskTier: number,
 ): Buffer {
   expect32(marketGroupId, "marketGroupId");
   expect32(baseMint, "baseMint");
@@ -127,9 +129,13 @@ export function encodeInitMarket(
   if (oracleKind < 0 || oracleKind > 255) {
     throw new Error(`oracleKind out of range: ${oracleKind}`);
   }
+  if (riskTier < 0 || riskTier > 255) {
+    throw new Error(`riskTier out of range: ${riskTier}`);
+  }
   // tag(1) + marketGroupId(32) + capacity(4) + vaultBump(1)
   //   + baseMint(32) + oracleKind(1) + oracleFeedId(32) + oraclePool(32)
-  const data = new Uint8Array(1 + 32 + 4 + 1 + 32 + 1 + 32 + 32);
+  //   + riskTier(1)
+  const data = new Uint8Array(1 + 32 + 4 + 1 + 32 + 1 + 32 + 32 + 1);
   data[0] = Tag.InitMarket;
   data.set(marketGroupId, 1);
   writeU32LE(data, 33, assetSlotCapacity);
@@ -138,6 +144,7 @@ export function encodeInitMarket(
   data[70] = oracleKind;
   data.set(oracleFeedId, 71);
   data.set(oraclePool, 103);
+  data[135] = riskTier;
   return Buffer.from(data);
 }
 
@@ -291,6 +298,10 @@ export function initMarketIx(args: {
   oracleFeedId: Uint8Array;
   /// DEX pool account read by CrankOracle; all-zero unless DEX-EWMA.
   oraclePool: PublicKey;
+  /// Risk tier: 0 = Stable (deep-pool / major, 10x, cheap keeper), 1 = Volatile
+  /// (pump-dump, wide clamp + short accrual window, 5x, frequent pushes). See
+  /// `RISK_TIER_*`. Defaults to Stable when omitted.
+  riskTier?: number;
 }): TransactionInstruction {
   return new TransactionInstruction({
     programId: args.programId,
@@ -307,6 +318,7 @@ export function initMarketIx(args: {
       args.oracleKind,
       args.oracleFeedId,
       args.oraclePool.toBytes(),
+      args.riskTier ?? RISK_TIER_STABLE,
     ),
   });
 }

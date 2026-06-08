@@ -17,7 +17,7 @@ use openperps_program::state::{
     init_portfolio_buffer, insurance_domain_index, insurance_params_of, liquidate_buffer,
     market_account_size, market_engine_split_mut, market_requires_verifiable,
     portfolio_abs_position_for_asset, portfolio_account_size, portfolio_split_mut,
-    resolve_market_buffer, set_insurance_params_buffer, set_insurance_pending_buffer,
+    resolve_market_buffer, risk_tier, set_insurance_params_buffer, set_insurance_pending_buffer,
     set_require_verifiable_buffer, trade_buffer, withdraw_buffer, withdraw_domain_insurance_buffer,
     InsuranceConfig,
 };
@@ -43,8 +43,8 @@ fn fresh_buffers() -> (Vec<u8>, Vec<u8>) {
     (m, p)
 }
 
-/// Initialize a market buffer with dummy wrapper-header values.
-fn setup_market(buf: &mut [u8], market_group_id: [u8; 32]) {
+/// Initialize a market buffer with dummy wrapper-header values at `tier`.
+fn setup_market_tier(buf: &mut [u8], market_group_id: [u8; 32], tier: u8) {
     init_market_buffer(
         buf,
         market_group_id,
@@ -57,8 +57,14 @@ fn setup_market(buf: &mut [u8], market_group_id: [u8; 32]) {
         DUMMY_ORACLE_KIND,
         DUMMY_ORACLE_FEED_ID,
         DUMMY_ORACLE_POOL,
+        tier,
     )
     .unwrap();
+}
+
+/// Initialize a market buffer with dummy wrapper-header values (Stable tier).
+fn setup_market(buf: &mut [u8], market_group_id: [u8; 32]) {
+    setup_market_tier(buf, market_group_id, risk_tier::STABLE);
 }
 
 /// Same as `setup_market` but returns the result so a test can assert on it
@@ -76,6 +82,7 @@ fn try_setup_market(buf: &mut [u8], market_group_id: [u8; 32]) -> Result<(), ()>
         DUMMY_ORACLE_KIND,
         DUMMY_ORACLE_FEED_ID,
         DUMMY_ORACLE_POOL,
+        risk_tier::STABLE,
     )
     .map_err(|_| ())
 }
@@ -189,6 +196,7 @@ fn require_verifiable_default_and_ratchet() {
         0, // MANUAL
         DUMMY_ORACLE_FEED_ID,
         DUMMY_ORACLE_POOL,
+        risk_tier::STABLE,
     )
     .unwrap();
     assert!(!market_requires_verifiable(&manual).unwrap());
@@ -584,6 +592,38 @@ fn trade_rejects_oversize_when_capital_insufficient() {
         10,
     )
     .is_err());
+}
+
+#[test]
+fn volatile_tier_caps_leverage_at_5x() {
+    // The same ~6x trade is allowed on a Stable market (10x max) but rejected on a
+    // Volatile market (5x max), proving the tier's lower leverage is enforced on a
+    // live market, not just at config validation.
+    let id = [0x7A; 32];
+    let owner = [0xD1; 32];
+    let price = 100_000_000u64; // mark at the 1e6 price scale
+    let capital = 1_000_000u128;
+    // notional = size_q * price / 1e6 = 6_000_000 = 6x the deposited capital.
+    let size_q = 60_000u128;
+
+    let trade_succeeds = |tier: u8| -> bool {
+        let mut m = vec![0u8; market_account_size(CAP as usize).unwrap()];
+        let mut long_buf = vec![0u8; portfolio_account_size(CAP as usize).unwrap()];
+        let mut short_buf = vec![0u8; portfolio_account_size(CAP as usize).unwrap()];
+        setup_market_tier(&mut m, id, tier);
+        activate_market_buffer(&mut m, 0, price, 1).unwrap();
+        init_portfolio_buffer(&mut long_buf, id, [1; 32], owner).unwrap();
+        init_portfolio_buffer(&mut short_buf, id, [2; 32], owner).unwrap();
+        deposit(&mut m, &mut long_buf, capital);
+        deposit(&mut m, &mut short_buf, capital);
+        trade_buffer(&mut m, &mut long_buf, &mut short_buf, 0, size_q, price, 10).is_ok()
+    };
+
+    assert!(trade_succeeds(risk_tier::STABLE), "6x must be allowed on Stable (10x)");
+    assert!(
+        !trade_succeeds(risk_tier::VOLATILE),
+        "6x must be rejected on Volatile (5x)"
+    );
 }
 
 #[test]

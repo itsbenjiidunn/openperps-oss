@@ -64,6 +64,21 @@ pub mod oracle_kind {
     pub const DEX_EWMA: u8 = 2;
 }
 
+/// Risk tier chosen at `InitMarket`. The tier sets the engine config's (margin,
+/// per-slot price clamp, accrual window) bundle. The solvency envelope binds the
+/// PRODUCT `max_price_move_bps_per_slot * max_accrual_dt_slots`, so both tiers keep
+/// the same validated price budget and only rebalance HOW it is spent: speed of
+/// mark tracking vs keeper push frequency vs leverage.
+pub mod risk_tier {
+    /// Deep-pool / major token: a small per-slot clamp over a long accrual window
+    /// (cheap keeper, ~1 push/min, the mark smooths) at higher leverage (10x).
+    pub const STABLE: u8 = 0;
+    /// Volatile / pump-dump token: a wide per-slot clamp over a short accrual
+    /// window (frequent pushes, the mark tracks a violent move) at lower leverage
+    /// (5x), so a fast move is reflected on-chain before it turns into bad debt.
+    pub const VOLATILE: u8 = 1;
+}
+
 /// EWMA smoothing factor in bps (α = 0.2). `new = old + α·(spot − old)`.
 /// Small enough to resist single-swap manipulation, large enough that the
 /// mark visibly tracks the pool over a handful of cranks.
@@ -1241,7 +1256,7 @@ pub fn set_require_verifiable_buffer(data: &mut [u8], required: u8) -> Result<()
 /// on every state-mutating op). Field values are deliberately small / lax
 /// where deposit doesn't read them; later instructions (trade, fund) will
 /// expose real values through the SDK.
-pub fn default_market_config(asset_slot_capacity: u32) -> V16ConfigAccount {
+pub fn default_market_config(asset_slot_capacity: u32, risk_tier: u8) -> V16ConfigAccount {
     let mut c = V16ConfigAccount::default();
 
     let max_portfolio = core::cmp::min(asset_slot_capacity, V16_MAX_PORTFOLIO_ASSETS_N as u32);
@@ -1252,11 +1267,28 @@ pub fn default_market_config(asset_slot_capacity: u32) -> V16ConfigAccount {
     c.h_min = V16PodU64::new(0);
     c.h_max = V16PodU64::new(1);
 
+    // Risk-tier bundle: (maintenance bps, initial bps, per-slot clamp bps, accrual
+    // window slots, funding lifetime slots). The solvency envelope binds the PRODUCT
+    // clamp * window, so both tiers keep the SAME validated price budget (10_000 bps
+    // = the previously-verified 10*1000 == 1000*10) and only rebalance it. Stable
+    // spends it as a tiny clamp over a long window (cheap keeper, laggy mark) at 10x;
+    // Volatile spends it as a wide clamp (10%/slot) over a short window (push every
+    // ~10 slots, fast-tracking mark) at 5x, so a pump-dump token's mark catches a
+    // violent move before it turns into bad debt. Both bundles are verified against
+    // the engine's `validate_public_user_fund_shape` by the tier shape tests; the
+    // integrator bears the keeper cost of the shorter window.
+    let (maintenance_bps, initial_bps, clamp_bps, accrual_dt_slots, funding_lifetime_slots) =
+        if risk_tier == self::risk_tier::VOLATILE {
+            (1_000u64, 2_000u64, 1_000u64, 10u64, 10u64)
+        } else {
+            (500u64, 1_000u64, 10u64, 1_000u64, 1_000u64)
+        };
+
     // Margin floors: mm < im, both > 0; bps ordering and ≤ 10_000.
     c.min_nonzero_mm_req = V16PodU128::new(1);
     c.min_nonzero_im_req = V16PodU128::new(2);
-    c.maintenance_margin_bps = V16PodU64::new(500);
-    c.initial_margin_bps = V16PodU64::new(1_000);
+    c.maintenance_margin_bps = V16PodU64::new(maintenance_bps);
+    c.initial_margin_bps = V16PodU64::new(initial_bps);
     c.max_trading_fee_bps = V16PodU64::new(10);
     c.liquidation_fee_bps = V16PodU64::new(50);
     c.liquidation_fee_cap = V16PodU128::new(1_000_000_000);
@@ -1276,10 +1308,10 @@ pub fn default_market_config(asset_slot_capacity: u32) -> V16ConfigAccount {
     // `max_abs_funding_e9_per_slot * max_accrual_dt_slots`; we keep both equal
     // to the previously-validated config (100*100 = 1000*10) by scaling the
     // per-slot caps down 10x, so the Kani-verified envelope is unchanged.
-    c.max_accrual_dt_slots = V16PodU64::new(1_000);
+    c.max_accrual_dt_slots = V16PodU64::new(accrual_dt_slots);
     c.max_abs_funding_e9_per_slot = V16PodU64::new(10);
-    c.min_funding_lifetime_slots = V16PodU64::new(1_000);
-    c.max_price_move_bps_per_slot = V16PodU64::new(10);
+    c.min_funding_lifetime_slots = V16PodU64::new(funding_lifetime_slots);
+    c.max_price_move_bps_per_slot = V16PodU64::new(clamp_bps);
 
     // Recovery / bankruptcy chunking knobs (all > 0 where required).
     c.max_account_b_settlement_chunks = V16PodU64::new(1);
@@ -1342,6 +1374,7 @@ pub fn init_market_buffer(
     oracle_kind: u8,
     oracle_feed_id: [u8; 32],
     oracle_pool: [u8; 32],
+    risk_tier: u8,
 ) -> Result<(), OpenPerpsError> {
     if buf.len() != market_account_size(asset_slot_capacity as usize)? {
         return Err(OpenPerpsError::AccountDataTooSmall);
@@ -1375,7 +1408,7 @@ pub fn init_market_buffer(
 
     // --- Engine header ---
     engine.market_group_id = market_group_id;
-    engine.config = default_market_config(asset_slot_capacity);
+    engine.config = default_market_config(asset_slot_capacity, risk_tier);
     engine.asset_slot_capacity = V16PodU32::new(asset_slot_capacity);
     // Slots stay at their zero / Disabled defaults, see ActivateMarket.
     let _ = markets;
@@ -1783,7 +1816,7 @@ mod tests {
         let mut buf = vec![0u8; market_account_size(2).unwrap()];
         init_market_buffer(
             &mut buf, [9u8; 32], 2, [1u8; 32], [2u8; 32], [3u8; 32], 0, [0u8; 32], 0,
-            [0u8; 32], [0u8; 32],
+            [0u8; 32], [0u8; 32], risk_tier::STABLE,
         )
         .unwrap();
         // Unset slots read all-zero.
@@ -1863,8 +1896,37 @@ mod tests {
         // Encode → decode round-trip via `try_to_runtime_shape` exercises
         // `validate_public_user_fund_shape`, which is what `validate_shape`
         // calls during every state-mutating engine op.
-        let cfg = default_market_config(4);
+        let cfg = default_market_config(4, risk_tier::STABLE);
         assert!(cfg.try_to_runtime_shape().is_ok());
+    }
+
+    #[test]
+    fn both_risk_tiers_pass_engine_shape_check() {
+        // The Volatile tier rebalances the (clamp, window, margin) bundle; this is
+        // the empirical proof its numbers satisfy the engine solvency envelope (not
+        // hand-derived). Both tiers keep the same validated price budget.
+        let stable = default_market_config(4, risk_tier::STABLE);
+        let volatile = default_market_config(4, risk_tier::VOLATILE);
+        assert!(stable.try_to_runtime_shape().is_ok());
+        assert!(volatile.try_to_runtime_shape().is_ok());
+
+        // Same validated price budget (clamp * window); only the split differs.
+        let budget = |c: &V16ConfigAccount| {
+            c.max_price_move_bps_per_slot.get() * c.max_accrual_dt_slots.get()
+        };
+        assert_eq!(budget(&stable), budget(&volatile));
+
+        // Volatile is the lower-leverage, faster-tracking tier.
+        assert!(
+            volatile.initial_margin_bps.get() > stable.initial_margin_bps.get(),
+            "volatile must require more initial margin (lower leverage)"
+        );
+        assert!(
+            volatile.max_price_move_bps_per_slot.get() > stable.max_price_move_bps_per_slot.get(),
+            "volatile must allow a wider per-slot clamp (faster mark)"
+        );
+        // 5x: initial margin 20% (2000 bps).
+        assert_eq!(volatile.initial_margin_bps.get(), 2_000);
     }
 
     #[test]

@@ -159,6 +159,7 @@ pub fn process_instruction(
             oracle_kind,
             oracle_feed_id,
             oracle_pool,
+            risk_tier,
         } => process_init_market(
             program_id,
             accounts,
@@ -169,6 +170,7 @@ pub fn process_instruction(
             oracle_kind,
             oracle_feed_id,
             oracle_pool,
+            risk_tier,
         ),
         OpenPerpsInstruction::InitPortfolio { bump } => {
             process_init_portfolio(program_id, accounts, bump)
@@ -425,6 +427,7 @@ fn process_init_market(
     oracle_kind: u8,
     oracle_feed_id: [u8; 32],
     oracle_pool: [u8; 32],
+    risk_tier: u8,
 ) -> ProgramResult {
     let [market, authority, quote_mint, ..] = accounts else {
         return Err(OpenPerpsError::InvalidInstruction.into());
@@ -476,6 +479,7 @@ fn process_init_market(
         oracle_kind,
         oracle_feed_id,
         oracle_pool,
+        risk_tier,
     )?;
     Ok(())
 }
@@ -2777,7 +2781,7 @@ fn process_execute_insurance_withdraw(
 mod tests {
     use super::*;
     use crate::state::{
-        activate_market_buffer, init_market_buffer, market_account_size, oracle_kind,
+        activate_market_buffer, init_market_buffer, market_account_size, oracle_kind, risk_tier,
     };
 
     /// A 1-slot market with asset 0 active and its mark seeded to `price`.
@@ -2795,6 +2799,7 @@ mod tests {
             oracle_kind::MANUAL, // oracle_kind
             [0u8; 32],           // oracle_feed_id
             [0u8; 32],           // oracle_pool
+            risk_tier::STABLE,   // risk_tier
         )
         .unwrap();
         activate_market_buffer(&mut buf, 0, price, 1).unwrap();

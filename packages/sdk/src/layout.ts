@@ -25,6 +25,13 @@ export const ORACLE_KIND_MANUAL = 0;
 export const ORACLE_KIND_PYTH = 1;
 export const ORACLE_KIND_DEX_EWMA = 2;
 
+/** Risk-tier discriminants, mirror Rust `state::risk_tier`. Stable = deep-pool /
+ * major (10x, small clamp, long accrual window, cheap keeper); Volatile = pump-dump
+ * (5x, wide clamp, short window, frequent pushes so the mark tracks a violent
+ * move). Chosen at `InitMarket`; sets the engine config's margin/clamp/window. */
+export const RISK_TIER_STABLE = 0;
+export const RISK_TIER_VOLATILE = 1;
+
 /** Market pricing trust tier, read from the wrapper header's `require_verifiable`
  * byte. `"verifiable"` = no single key can move the mark (only `CrankPyth` /
  * `CrankDexSpot` price it); `"relayer"` = a relayer/authority key prices it via

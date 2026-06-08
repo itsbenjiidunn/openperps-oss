@@ -82,6 +82,10 @@ pub enum OpenPerpsInstruction {
         oracle_kind: u8,
         oracle_feed_id: [u8; 32],
         oracle_pool: [u8; 32],
+        /// Risk tier (see `state::risk_tier`): 0 = Stable (deep-pool / major, 10x,
+        /// cheap keeper), 1 = Volatile (pump-dump, wide clamp + short window, 5x,
+        /// frequent pushes). Sets the engine config's margin/clamp/window bundle.
+        risk_tier: u8,
     },
     /// Initialize a user's portfolio at the deterministic PDA
     /// `[PORTFOLIO_SEED, owner, market]`. The program creates the account itself
@@ -565,6 +569,7 @@ impl OpenPerpsInstruction {
                     .ok_or(OpenPerpsError::InvalidInstructionData)?;
                 let oracle_feed_id = read_pubkey(rest, 70)?;
                 let oracle_pool = read_pubkey(rest, 102)?;
+                let risk_tier = read_u8(rest, 134)?;
                 Ok(Self::InitMarket {
                     market_group_id,
                     asset_slot_capacity,
@@ -573,6 +578,7 @@ impl OpenPerpsInstruction {
                     oracle_kind,
                     oracle_feed_id,
                     oracle_pool,
+                    risk_tier,
                 })
             }
             tag::INIT_PORTFOLIO => Ok(Self::InitPortfolio {
@@ -828,6 +834,7 @@ mod tests {
         data.push(1); // oracle_kind = Pyth
         data.extend_from_slice(&[5u8; 32]); // oracle_feed_id
         data.extend_from_slice(&[6u8; 32]); // oracle_pool
+        data.push(1); // risk_tier = Volatile
         assert_eq!(
             OpenPerpsInstruction::unpack(&data).unwrap(),
             OpenPerpsInstruction::InitMarket {
@@ -838,6 +845,7 @@ mod tests {
                 oracle_kind: 1,
                 oracle_feed_id: [5u8; 32],
                 oracle_pool: [6u8; 32],
+                risk_tier: 1,
             }
         );
     }
