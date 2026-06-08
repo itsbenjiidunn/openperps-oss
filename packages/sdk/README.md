@@ -23,9 +23,12 @@ shares the host app's single instance of each.
   market and on-chain mark (size, side, reduce-only, slippage); `buildTradeFromIntent`
   composes the on-chain instructions against the user's portfolio and the House
   counterparty.
-- **Market creation.** `planMarketCreation` and the build helpers compose the
-  full lifecycle (market account, vault, House, oracle binding) for a custom
-  market on any token.
+- **Market creation.** `createPerpMarket(mint)` is the one-call listing: it reads
+  the token's live signals (DexScreener), runs the pump-dump classifier to pick a
+  risk tier and oracle posture, scales the live price, and emits every
+  instruction (account, InitMarket at that tier, vault, House, ActivateMarket, and
+  the House / deposit caps). `planMarketCreation` and the lower-level build
+  helpers compose the same lifecycle by hand when you want full control.
 - **Account decoders.** `decodePortfolioSummary`, `decodePortfolioPositions`,
   and the layout offsets read market, portfolio, and position state.
 - **Price providers.** `createLivePriceProvider` feeds any Solana token from

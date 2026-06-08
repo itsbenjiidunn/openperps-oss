@@ -12,3 +12,4 @@ export * from "./market-creation.ts";
 export * from "./trade-build.ts";
 export * from "./market-create-build.ts";
 export * from "./classify.ts";
+export * from "./perp-listing.ts";
