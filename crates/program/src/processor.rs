@@ -1894,6 +1894,14 @@ fn process_crank_oracle(
 /// clock (either stale or implausibly ahead).
 const MAX_PYTH_AGE_SECS: i64 = 60;
 
+/// Reject a Pyth price whose on-chain `posted_slot` is more than this many slots
+/// behind the current slot. This is the slot-domain freshness guard alongside the
+/// `publish_time` (wall-clock) one: `posted_slot` is stamped by the receiver when
+/// the update lands on-chain, so it catches a price account that has sat unused
+/// for many slots even if its embedded `publish_time` still looks recent. ~150
+/// slots is roughly the 60s window at Solana's cadence.
+const MAX_PYTH_AGE_SLOTS: u64 = 150;
+
 /// Reject a Pyth price whose confidence interval exceeds this fraction of the
 /// price (in bps): a too-uncertain price. 200 bps = 2%.
 const MAX_PYTH_CONF_BPS: u64 = 200;
@@ -2016,6 +2024,11 @@ fn process_crank_pyth(
             .map_err(|_| OpenPerpsError::StalePythPrice)?;
         let age = now_unix.saturating_sub(pp.publish_time);
         if age > MAX_PYTH_AGE_SECS || age < -MAX_PYTH_AGE_SECS {
+            return Err(OpenPerpsError::StalePythPrice.into());
+        }
+        // Slot-domain freshness: reject a price posted too many slots ago (a
+        // long-sat account) even if its publish_time still looks recent.
+        if now_slot.saturating_sub(pp.posted_slot) > MAX_PYTH_AGE_SLOTS {
             return Err(OpenPerpsError::StalePythPrice.into());
         }
         // Reject a too-uncertain price (wide confidence band).
@@ -2665,6 +2678,11 @@ fn process_fund_insurance(
         }
         if *vault_token.key() != wrapper.vault {
             return Err(OpenPerpsError::InvalidAccountData.into());
+        }
+        // Validate asset_index up front (the engine bound-checks the domain too,
+        // but only after the token transfer); fail before moving any tokens.
+        if asset_index >= market_header(&data)?.asset_slot_capacity.get() {
+            return Err(OpenPerpsError::InvalidInstructionData.into());
         }
     }
 

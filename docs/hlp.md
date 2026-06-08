@@ -90,6 +90,14 @@ model.
 - The House cap (`SetHouseCap`) bounds per-asset House exposure, so it bounds LP
   drawdown from any one asset's move.
 - A guarded launch caps LP deposits low at first.
+- The authority cannot drain LP-backing capital: `WithdrawHouseVault` is refused
+  while HLP shares are outstanding (it requires the canonical HLP config account
+  and rejects when `total_shares > 0`). To take profit the authority harvests into
+  the buffer and lets LPs redeem, rather than withdrawing the House.
+- Authority seed funded via `FundHouseVault` is share-less: it counts toward House
+  equity and so toward NAV, benefiting existing LP shares. For clean accounting an
+  authority that wants its seed to be its own claim should deposit through HLP
+  (minting shares) rather than `FundHouseVault`.
 
 ## Attack surface (the LP-vault classics)
 
