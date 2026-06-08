@@ -48,6 +48,7 @@ pub mod tag {
     pub const DEPLOY_HLP: u8 = 36;
     pub const REQUEST_REDEEM_HLP: u8 = 37;
     pub const EXECUTE_REDEEM_HLP: u8 = 38;
+    pub const HARVEST_HLP: u8 = 39;
 }
 
 /// Maximum legs in a single `PlaceBatchOrder`. The engine also rejects a batch
@@ -579,6 +580,7 @@ pub enum OpenPerpsInstruction {
         redeem_delay_slots: u64,
         fee_bps: u64,
         min_deposit: u128,
+        nav_haircut_bps: u64,
         bump: u8,
     },
     /// Deposit `amount` quote tokens into the HLP buffer and mint LP shares priced
@@ -647,6 +649,21 @@ pub enum OpenPerpsInstruction {
     ///   7. `[]`         SPL Token program
     ExecuteRedeemHlp {
         position_bump: u8,
+    },
+    /// Harvest `amount` of House capital back into the HLP buffer, refilling
+    /// redemption liquidity. Withdraws from the engine House (the `WithdrawHouseVault`
+    /// path) into the buffer vault. The engine refuses while the House holds open
+    /// positions, so this is opportunistic (during flat windows). Authority-only.
+    ///
+    /// Accounts:
+    ///   0. `[writable]` market account (engine House debited)
+    ///   1. `[writable]` House portfolio PDA `[HOUSE_SEED, market]`
+    ///   2. `[writable]` market vault SPL TokenAccount (`wrapper.vault`, source, PDA-signed)
+    ///   3. `[writable]` HLP buffer vault PDA `[HLP_VAULT_SEED, market]` (destination)
+    ///   4. `[signer]`   market authority
+    ///   5. `[]`         SPL Token program
+    HarvestHlp {
+        amount: u128,
     },
 }
 
@@ -854,7 +871,8 @@ impl OpenPerpsInstruction {
                 redeem_delay_slots: read_u64(rest, 0)?,
                 fee_bps: read_u64(rest, 8)?,
                 min_deposit: read_u128(rest, 16)?,
-                bump: read_u8(rest, 32)?,
+                nav_haircut_bps: read_u64(rest, 32)?,
+                bump: read_u8(rest, 40)?,
             }),
             tag::DEPOSIT_HLP => Ok(Self::DepositHlp {
                 amount: read_u128(rest, 0)?,
@@ -869,6 +887,9 @@ impl OpenPerpsInstruction {
             }),
             tag::EXECUTE_REDEEM_HLP => Ok(Self::ExecuteRedeemHlp {
                 position_bump: read_u8(rest, 0)?,
+            }),
+            tag::HARVEST_HLP => Ok(Self::HarvestHlp {
+                amount: read_u128(rest, 0)?,
             }),
             _ => Err(OpenPerpsError::InvalidInstruction),
         }
@@ -1283,6 +1304,7 @@ mod tests {
         p.extend_from_slice(&216_000u64.to_le_bytes()); // redeem_delay_slots
         p.extend_from_slice(&10u64.to_le_bytes()); // fee_bps
         p.extend_from_slice(&1_000u128.to_le_bytes()); // min_deposit
+        p.extend_from_slice(&2_000u64.to_le_bytes()); // nav_haircut_bps
         p.push(254); // bump
         assert_eq!(
             OpenPerpsInstruction::unpack(&p).unwrap(),
@@ -1290,6 +1312,7 @@ mod tests {
                 redeem_delay_slots: 216_000,
                 fee_bps: 10,
                 min_deposit: 1_000,
+                nav_haircut_bps: 2_000,
                 bump: 254,
             }
         );
@@ -1329,6 +1352,13 @@ mod tests {
         assert_eq!(
             OpenPerpsInstruction::unpack(&[tag::EXECUTE_REDEEM_HLP, 251]).unwrap(),
             OpenPerpsInstruction::ExecuteRedeemHlp { position_bump: 251 }
+        );
+
+        let mut h = vec![tag::HARVEST_HLP];
+        h.extend_from_slice(&2_000_000u128.to_le_bytes());
+        assert_eq!(
+            OpenPerpsInstruction::unpack(&h).unwrap(),
+            OpenPerpsInstruction::HarvestHlp { amount: 2_000_000 }
         );
     }
 }

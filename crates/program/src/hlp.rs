@@ -50,7 +50,12 @@ pub struct HlpConfig {
     pub fee_bps: [u8; 8],
     /// Minimum first/each deposit in quote atoms (anti dust / inflation) (LE u128).
     pub min_deposit: [u8; 16],
-    pub reserved: [u8; 32],
+    /// Haircut (bps) applied to the House's POSITIVE marked PnL when computing NAV
+    /// (LE u64). The raw marked equity counts paper gains at face; this discounts
+    /// them so an LP cannot redeem unrealizable gains in stress. Losses are never
+    /// discounted (NAV stays conservative on the dangerous side). 0 = raw equity.
+    pub nav_haircut_bps: [u8; 8],
+    pub reserved: [u8; 24],
 }
 
 impl HlpConfig {
@@ -67,6 +72,7 @@ pub struct HlpParams {
     pub redeem_delay_slots: u64,
     pub fee_bps: u64,
     pub min_deposit: u128,
+    pub nav_haircut_bps: u64,
 }
 
 /// Per-LP HLP position: share balance + the single pending-redeem slot.
@@ -133,6 +139,18 @@ pub fn shares_to_assets(shares: u128, total_shares: u128, nav: u128) -> u128 {
 /// shares are worthless (limited liability), never negative. This is the deployed
 /// half of HLP NAV; the other half is the free buffer's token balance.
 pub fn house_marked_equity(house_data: &[u8]) -> Result<u128, OpenPerpsError> {
+    house_marked_equity_haircut(house_data, 0)
+}
+
+/// Like [`house_marked_equity`] but discounts the House's POSITIVE marked PnL by
+/// `haircut_bps` (capped at 10_000). Paper gains are unrealizable in stress (capped
+/// by the engine's own haircut, which is private), so for a conservative NAV the
+/// wrapper discounts them; LOSSES are never discounted, so NAV stays conservative on
+/// the dangerous side. Floored at 0 (limited liability).
+pub fn house_marked_equity_haircut(
+    house_data: &[u8],
+    haircut_bps: u64,
+) -> Result<u128, OpenPerpsError> {
     let header_len = core::mem::size_of::<PortfolioAccountV16Account>();
     if house_data.len() < header_len {
         return Err(OpenPerpsError::AccountDataTooSmall);
@@ -140,13 +158,16 @@ pub fn house_marked_equity(house_data: &[u8]) -> Result<u128, OpenPerpsError> {
     let header: &PortfolioAccountV16Account =
         bytemuck::try_from_bytes(&house_data[..header_len])
             .map_err(|_| OpenPerpsError::InvalidAccountData)?;
-    let equity = account_equity_from_parts(
-        header.capital.get(),
-        header.pnl.get(),
-        header.fee_credits.get(),
-    )
-    .map_err(|_| OpenPerpsError::InvalidAccountData)?;
-    Ok(if equity < 0 { 0 } else { equity as u128 })
+    let pnl = header.pnl.get();
+    let raw = account_equity_from_parts(header.capital.get(), pnl, header.fee_credits.get())
+        .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    let haircut = if pnl > 0 {
+        pnl.saturating_mul(haircut_bps.min(10_000) as i128) / 10_000
+    } else {
+        0
+    };
+    let adjusted = raw.saturating_sub(haircut);
+    Ok(if adjusted < 0 { 0 } else { adjusted as u128 })
 }
 
 // ---------- config buffer helpers ----------
@@ -160,6 +181,7 @@ pub fn set_hlp_params_buffer(
     redeem_delay_slots: u64,
     fee_bps: u64,
     min_deposit: u128,
+    nav_haircut_bps: u64,
 ) -> Result<(), OpenPerpsError> {
     let cfg = hlp_config_mut(buf)?;
     if cfg.is_initialized() {
@@ -174,6 +196,7 @@ pub fn set_hlp_params_buffer(
     cfg.redeem_delay_slots = redeem_delay_slots.to_le_bytes();
     cfg.fee_bps = fee_bps.to_le_bytes();
     cfg.min_deposit = min_deposit.to_le_bytes();
+    cfg.nav_haircut_bps = nav_haircut_bps.to_le_bytes();
     Ok(())
 }
 
@@ -191,6 +214,7 @@ pub fn hlp_params_of(buf: &[u8], market: &[u8; 32]) -> Result<HlpParams, OpenPer
         redeem_delay_slots: u64::from_le_bytes(cfg.redeem_delay_slots),
         fee_bps: u64::from_le_bytes(cfg.fee_bps),
         min_deposit: u128::from_le_bytes(cfg.min_deposit),
+        nav_haircut_bps: u64::from_le_bytes(cfg.nav_haircut_bps),
     })
 }
 
@@ -393,17 +417,39 @@ mod tests {
     }
 
     #[test]
+    fn nav_haircut_discounts_only_positive_pnl() {
+        let mut buf = vec![0u8; core::mem::size_of::<PortfolioAccountV16Account>()];
+        // House up: capital 1_000, pnl +400. A 25% haircut discounts the gain by 100.
+        {
+            let h: &mut PortfolioAccountV16Account = bytemuck::from_bytes_mut(&mut buf[..]);
+            h.capital = percolator::v16::V16PodU128::new(1_000);
+            h.pnl = percolator::v16::V16PodI128::new(400);
+        }
+        assert_eq!(house_marked_equity_haircut(&buf, 0).unwrap(), 1_400);
+        assert_eq!(house_marked_equity_haircut(&buf, 2_500).unwrap(), 1_300);
+
+        // House down: capital 1_000, pnl -400. A loss is NEVER discounted.
+        {
+            let h: &mut PortfolioAccountV16Account = bytemuck::from_bytes_mut(&mut buf[..]);
+            h.pnl = percolator::v16::V16PodI128::new(-400);
+        }
+        assert_eq!(house_marked_equity_haircut(&buf, 2_500).unwrap(), 600);
+        assert_eq!(house_marked_equity_haircut(&buf, 9_999).unwrap(), 600);
+    }
+
+    #[test]
     fn config_and_position_roundtrip() {
         let market = [0x9A; 32];
         let owner = [0x9B; 32];
 
         let mut cfg = vec![0u8; HlpConfig::LEN];
-        set_hlp_params_buffer(&mut cfg, market, 216_000, 10, 1_000).unwrap();
+        set_hlp_params_buffer(&mut cfg, market, 216_000, 10, 1_000, 2_000).unwrap();
         let p = hlp_params_of(&cfg, &market).unwrap();
         assert_eq!(p.total_shares, 0);
         assert_eq!(p.redeem_delay_slots, 216_000);
         assert_eq!(p.fee_bps, 10);
         assert_eq!(p.min_deposit, 1_000);
+        assert_eq!(p.nav_haircut_bps, 2_000);
         set_hlp_total_shares_buffer(&mut cfg, &market, 5_000).unwrap();
         assert_eq!(hlp_params_of(&cfg, &market).unwrap().total_shares, 5_000);
         // Wrong market is rejected.

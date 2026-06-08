@@ -64,6 +64,7 @@ export const Tag = {
   DeployHlp: 36,
   RequestRedeemHlp: 37,
   ExecuteRedeemHlp: 38,
+  HarvestHlp: 39,
 } as const;
 
 /// Side encoding for `PlaceOrder`.
@@ -1501,20 +1502,22 @@ export function encodeSetHlpParams(
   redeemDelaySlots: bigint,
   feeBps: bigint,
   minDeposit: bigint,
+  navHaircutBps: bigint,
   bump: number,
 ): Buffer {
-  const data = new Uint8Array(1 + 8 + 8 + 16 + 1);
+  const data = new Uint8Array(1 + 8 + 8 + 16 + 8 + 1);
   data[0] = Tag.SetHlpParams;
   writeU64LE(data, 1, redeemDelaySlots);
   writeU64LE(data, 9, feeBps);
   writeU128LE(data, 17, minDeposit);
-  data[33] = bump;
+  writeU64LE(data, 33, navHaircutBps);
+  data[41] = bump;
   return Buffer.from(data);
 }
 
-/// Set the HLP config (redeem timelock, deposit/redeem fee, min deposit).
-/// Market-authority-signed; the config PDA is created on first use. `cfgPda` is
-/// `hlpConfigPda(...)`.
+/// Set the HLP config (redeem timelock, deposit/redeem fee, min deposit, and the
+/// NAV haircut on the House's positive marked PnL). Market-authority-signed; the
+/// config PDA is created on first use. `cfgPda` is `hlpConfigPda(...)`.
 export function setHlpParamsIx(args: {
   programId: PublicKey;
   cfgPda: PublicKey;
@@ -1523,6 +1526,8 @@ export function setHlpParamsIx(args: {
   redeemDelaySlots: bigint;
   feeBps: bigint;
   minDeposit: bigint;
+  /// Haircut (bps) on the House's positive marked PnL in NAV (0 = raw equity). */
+  navHaircutBps: bigint;
   bump: number;
 }): TransactionInstruction {
   return new TransactionInstruction({
@@ -1537,6 +1542,7 @@ export function setHlpParamsIx(args: {
       args.redeemDelaySlots,
       args.feeBps,
       args.minDeposit,
+      args.navHaircutBps,
       args.bump,
     ),
   });
@@ -1685,5 +1691,42 @@ export function executeRedeemHlpIx(args: {
       { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
     ],
     data: encodeExecuteRedeemHlp(args.positionBump),
+  });
+}
+
+// ---------- House LP (HLP), Phase 2b harvest ----------
+
+export function encodeHarvestHlp(amount: bigint): Buffer {
+  const data = new Uint8Array(1 + 16);
+  data[0] = Tag.HarvestHlp;
+  writeU128LE(data, 1, amount);
+  return Buffer.from(data);
+}
+
+/// Harvest House capital back into the HLP buffer (refills redemption liquidity).
+/// Withdraws from the engine House into the buffer; the engine refuses while the
+/// House is positioned, so this only lands in flat windows. Market-authority-signed.
+/// `marketVault` is `wrapper.vault`, `vault` the HLP buffer, `housePortfolio` the
+/// `[HOUSE_SEED, market]` PDA.
+export function harvestHlpIx(args: {
+  programId: PublicKey;
+  market: PublicKey;
+  housePortfolio: PublicKey;
+  marketVault: PublicKey;
+  vault: PublicKey;
+  authority: PublicKey;
+  amount: bigint;
+}): TransactionInstruction {
+  return new TransactionInstruction({
+    programId: args.programId,
+    keys: [
+      { pubkey: args.market, isSigner: false, isWritable: true },
+      { pubkey: args.housePortfolio, isSigner: false, isWritable: true },
+      { pubkey: args.marketVault, isSigner: false, isWritable: true },
+      { pubkey: args.vault, isSigner: false, isWritable: true },
+      { pubkey: args.authority, isSigner: true, isWritable: false },
+      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+    ],
+    data: encodeHarvestHlp(args.amount),
   });
 }

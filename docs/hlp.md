@@ -1,15 +1,18 @@
 # House LP (HLP): permissionless House vault (design)
 
-Status: Phase 2a implemented (redemption model A). The full LP cycle is wired:
+Status: Phase 2a + 2b implemented (redemption model A). The full LP cycle is wired:
 share/NAV math core (host-tested), `CreateHlpVault`, `SetHlpParams`, `DepositHlp`,
-`DeployHlp` (buffer -> engine House via the FundHouseVault path), and the two-step
+`DeployHlp` (buffer -> engine House via the FundHouseVault path), the two-step
 `RequestRedeemHlp` / `ExecuteRedeemHlp` (priced at execute-time NAV, paid from and
-bounded by the free buffer). NAV uses the engine's public `account_equity_from_parts`
-(full marked equity, conservative on losses; the haircut version is private). Still
-ahead (Phase 2b): keeper sweep/harvest automation, an optional haircut margin on the
-positive-PnL NAV term, and governance. This documents the mechanism, the share/NAV
-math, the central redemption constraint the engine imposes, the options, and the
-open decisions.
+bounded by the free buffer), and `HarvestHlp` (engine House -> buffer to refill
+redemption liquidity, opportunistic during flat windows). NAV is the buffer balance
+plus the House's marked equity, with a configurable `nav_haircut_bps` discount on the
+House's positive marked PnL (losses never discounted, so NAV stays conservative on
+the dangerous side). Governance is the market authority, which an operator can point
+at a multisig/timelock. Remaining: keeper automation that schedules deploy/harvest,
+optional secondary share transfer, and the SBF integration test that validates the
+handlers at runtime. This documents the mechanism, the share/NAV math, the central
+redemption constraint the engine imposes, the options, and the open decisions.
 
 ## What it changes, and why it matches the tweet
 

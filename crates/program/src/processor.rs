@@ -34,9 +34,10 @@ use crate::{
         engine_total_insurance, deposit_domain_insurance_buffer, withdraw_domain_insurance_buffer,
     },
     hlp::{
-        assets_to_shares, house_marked_equity, hlp_params_of, hlp_position_of, shares_to_assets,
-        set_hlp_params_buffer, set_hlp_position_buffer, set_hlp_total_shares_buffer, HlpConfig,
-        HlpPosition, HLP_POSITION_SEED, HLP_SEED, HLP_VAULT_SEED,
+        assets_to_shares, house_marked_equity_haircut, hlp_params_of, hlp_position_of,
+        shares_to_assets, set_hlp_params_buffer, set_hlp_position_buffer,
+        set_hlp_total_shares_buffer, HlpConfig, HlpPosition, HLP_POSITION_SEED, HLP_SEED,
+        HLP_VAULT_SEED,
     },
 };
 
@@ -375,6 +376,7 @@ pub fn process_instruction(
             redeem_delay_slots,
             fee_bps,
             min_deposit,
+            nav_haircut_bps,
             bump,
         } => process_set_hlp_params(
             program_id,
@@ -382,6 +384,7 @@ pub fn process_instruction(
             redeem_delay_slots,
             fee_bps,
             min_deposit,
+            nav_haircut_bps,
             bump,
         ),
         OpenPerpsInstruction::DepositHlp {
@@ -397,6 +400,9 @@ pub fn process_instruction(
         } => process_request_redeem_hlp(program_id, accounts, shares, position_bump),
         OpenPerpsInstruction::ExecuteRedeemHlp { position_bump } => {
             process_execute_redeem_hlp(program_id, accounts, position_bump)
+        }
+        OpenPerpsInstruction::HarvestHlp { amount } => {
+            process_harvest_hlp(program_id, accounts, amount)
         }
     }
 }
@@ -2881,6 +2887,7 @@ fn process_set_hlp_params(
     redeem_delay_slots: u64,
     fee_bps: u64,
     min_deposit: u128,
+    nav_haircut_bps: u64,
     bump: u8,
 ) -> ProgramResult {
     let [cfg_pda, market, authority, _system_program, ..] = accounts else {
@@ -2940,7 +2947,14 @@ fn process_set_hlp_params(
     let mut data = cfg_pda
         .try_borrow_mut_data()
         .map_err(|_| OpenPerpsError::InvalidAccountData)?;
-    set_hlp_params_buffer(&mut data, market_key, redeem_delay_slots, fee_bps, min_deposit)?;
+    set_hlp_params_buffer(
+        &mut data,
+        market_key,
+        redeem_delay_slots,
+        fee_bps,
+        min_deposit,
+        nav_haircut_bps,
+    )?;
     Ok(())
 }
 
@@ -3040,7 +3054,7 @@ fn process_deposit_hlp(
         let hdata = house_portfolio
             .try_borrow_data()
             .map_err(|_| OpenPerpsError::InvalidAccountData)?;
-        house_marked_equity(&hdata)?
+        house_marked_equity_haircut(&hdata, params.nav_haircut_bps)?
     };
     let nav = buffer_before
         .checked_add(house_equity)
@@ -3377,7 +3391,7 @@ fn process_execute_redeem_hlp(
         let hdata = house_portfolio
             .try_borrow_data()
             .map_err(|_| OpenPerpsError::InvalidAccountData)?;
-        house_marked_equity(&hdata)?
+        house_marked_equity_haircut(&hdata, params.nav_haircut_bps)?
     };
     let nav = buffer_balance
         .checked_add(house_equity)
@@ -3429,6 +3443,83 @@ fn process_execute_redeem_hlp(
         ];
         let signer = Signer::from(seeds.as_ref());
         token_transfer_signed(hlp_vault, owner_token, hlp_vault, amount_u64, &[signer])?;
+    }
+    Ok(())
+}
+
+/// Harvest `amount` of House capital back into the HLP buffer, refilling redemption
+/// liquidity. Withdraws from the engine House (the `WithdrawHouseVault` path) into
+/// the buffer vault; the engine refuses while the House holds open positions, so
+/// this is opportunistic (during flat windows). Authority-only.
+fn process_harvest_hlp(program_id: &Pubkey, accounts: &[AccountInfo], amount: u128) -> ProgramResult {
+    let [market, house_portfolio, market_vault, hlp_vault, authority, _token_program, ..] = accounts
+    else {
+        return Err(OpenPerpsError::InvalidInstruction.into());
+    };
+    if !authority.is_signer() {
+        return Err(OpenPerpsError::MissingRequiredSignature.into());
+    }
+    if !market.is_writable()
+        || !house_portfolio.is_writable()
+        || !market_vault.is_writable()
+        || !hlp_vault.is_writable()
+    {
+        return Err(OpenPerpsError::InvalidAccountData.into());
+    }
+    if unsafe { market.owner() } != program_id || unsafe { house_portfolio.owner() } != program_id {
+        return Err(OpenPerpsError::InvalidAccountOwner.into());
+    }
+
+    let market_key = *market.key();
+    let (house_bump, vault_bump) = {
+        let data = market
+            .try_borrow_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        let wrapper = market_wrapper_header(&data)?;
+        if !wrapper.is_initialized() {
+            return Err(OpenPerpsError::UninitializedAccount.into());
+        }
+        if wrapper.authority != *authority.key() {
+            return Err(OpenPerpsError::MissingRequiredSignature.into());
+        }
+        if wrapper.house_bump == 0 {
+            return Err(OpenPerpsError::UninitializedAccount.into());
+        }
+        if *market_vault.key() != wrapper.vault {
+            return Err(OpenPerpsError::InvalidAccountData.into());
+        }
+        (wrapper.house_bump, wrapper.vault_bump)
+    };
+    verify_house_pda(&market_key, house_portfolio, house_bump, program_id)?;
+    let (vault_derived, _) = find_program_address(&[HLP_VAULT_SEED, market_key.as_ref()], program_id);
+    if *hlp_vault.key() != vault_derived {
+        return Err(OpenPerpsError::InvalidAccountData.into());
+    }
+
+    let amount_u64: u64 = amount
+        .try_into()
+        .map_err(|_| OpenPerpsError::ArithmeticOverflow)?;
+
+    // Engine debit first (refuses unless the House is flat), then move the tokens
+    // from the market vault into the HLP buffer (the market vault PDA signs).
+    {
+        let mut market_data = market
+            .try_borrow_mut_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        let mut house_data = house_portfolio
+            .try_borrow_mut_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        withdraw_buffer(&mut market_data, &mut house_data, amount).map_v16()?;
+    }
+    if amount_u64 > 0 {
+        let bump_arr = [vault_bump];
+        let seeds = [
+            Seed::from(VAULT_SEED),
+            Seed::from(market_key.as_ref()),
+            Seed::from(bump_arr.as_ref()),
+        ];
+        let signer = Signer::from(seeds.as_ref());
+        token_transfer_signed(market_vault, hlp_vault, market_vault, amount_u64, &[signer])?;
     }
     Ok(())
 }
