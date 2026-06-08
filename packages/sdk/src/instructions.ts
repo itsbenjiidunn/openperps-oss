@@ -61,6 +61,9 @@ export const Tag = {
   CreateHlpVault: 33,
   SetHlpParams: 34,
   DepositHlp: 35,
+  DeployHlp: 36,
+  RequestRedeemHlp: 37,
+  ExecuteRedeemHlp: 38,
 } as const;
 
 /// Side encoding for `PlaceOrder`.
@@ -1577,5 +1580,110 @@ export function depositHlpIx(args: {
       { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
     ],
     data: encodeDepositHlp(args.amount, args.positionBump),
+  });
+}
+
+// ---------- House LP (HLP), Phase 2a deploy + redeem path ----------
+
+export function encodeDeployHlp(amount: bigint): Buffer {
+  const data = new Uint8Array(1 + 16);
+  data[0] = Tag.DeployHlp;
+  writeU128LE(data, 1, amount);
+  return Buffer.from(data);
+}
+
+/// Deploy quote tokens from the HLP buffer into the engine House (the FundHouseVault
+/// path). Market-authority-signed. `vault` is the HLP buffer (`hlpVaultPda`),
+/// `marketVault` is `wrapper.vault`, `housePortfolio` the `[HOUSE_SEED, market]` PDA.
+export function deployHlpIx(args: {
+  programId: PublicKey;
+  market: PublicKey;
+  housePortfolio: PublicKey;
+  vault: PublicKey;
+  marketVault: PublicKey;
+  authority: PublicKey;
+  amount: bigint;
+}): TransactionInstruction {
+  return new TransactionInstruction({
+    programId: args.programId,
+    keys: [
+      { pubkey: args.market, isSigner: false, isWritable: true },
+      { pubkey: args.housePortfolio, isSigner: false, isWritable: true },
+      { pubkey: args.vault, isSigner: false, isWritable: true },
+      { pubkey: args.marketVault, isSigner: false, isWritable: true },
+      { pubkey: args.authority, isSigner: true, isWritable: false },
+      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+    ],
+    data: encodeDeployHlp(args.amount),
+  });
+}
+
+export function encodeRequestRedeemHlp(
+  shares: bigint,
+  positionBump: number,
+): Buffer {
+  const data = new Uint8Array(1 + 16 + 1);
+  data[0] = Tag.RequestRedeemHlp;
+  writeU128LE(data, 1, shares);
+  data[17] = positionBump;
+  return Buffer.from(data);
+}
+
+/// Request redemption of `shares`: records a pending (shares, unlock = now + delay)
+/// on the LP's position. No funds move; pricing is at execute time. `position` is
+/// `hlpPositionPda(programId, market, owner)`.
+export function requestRedeemHlpIx(args: {
+  programId: PublicKey;
+  cfgPda: PublicKey;
+  market: PublicKey;
+  owner: PublicKey;
+  position: PublicKey;
+  shares: bigint;
+  positionBump: number;
+}): TransactionInstruction {
+  return new TransactionInstruction({
+    programId: args.programId,
+    keys: [
+      { pubkey: args.cfgPda, isSigner: false, isWritable: false },
+      { pubkey: args.market, isSigner: false, isWritable: false },
+      { pubkey: args.owner, isSigner: true, isWritable: false },
+      { pubkey: args.position, isSigner: false, isWritable: true },
+    ],
+    data: encodeRequestRedeemHlp(args.shares, args.positionBump),
+  });
+}
+
+export function encodeExecuteRedeemHlp(positionBump: number): Buffer {
+  return Buffer.from([Tag.ExecuteRedeemHlp, positionBump]);
+}
+
+/// Execute a requested redemption once its timelock elapses: prices the pending
+/// shares at the live NAV, pays out from the buffer (bounded by the free buffer),
+/// burns the shares. Market-authority not required (the LP owner signs). `vault` is
+/// the HLP buffer, `housePortfolio` the `[HOUSE_SEED, market]` PDA.
+export function executeRedeemHlpIx(args: {
+  programId: PublicKey;
+  cfgPda: PublicKey;
+  market: PublicKey;
+  owner: PublicKey;
+  ownerToken: PublicKey;
+  vault: PublicKey;
+  position: PublicKey;
+  housePortfolio: PublicKey;
+  positionBump: number;
+}): TransactionInstruction {
+  return new TransactionInstruction({
+    programId: args.programId,
+    keys: [
+      { pubkey: args.cfgPda, isSigner: false, isWritable: true },
+      { pubkey: args.market, isSigner: false, isWritable: false },
+      { pubkey: args.owner, isSigner: true, isWritable: false },
+      { pubkey: args.ownerToken, isSigner: false, isWritable: true },
+      { pubkey: args.vault, isSigner: false, isWritable: true },
+      { pubkey: args.position, isSigner: false, isWritable: true },
+      { pubkey: args.housePortfolio, isSigner: false, isWritable: false },
+      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+    ],
+    data: encodeExecuteRedeemHlp(args.positionBump),
   });
 }

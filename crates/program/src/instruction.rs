@@ -45,6 +45,9 @@ pub mod tag {
     pub const CREATE_HLP_VAULT: u8 = 33;
     pub const SET_HLP_PARAMS: u8 = 34;
     pub const DEPOSIT_HLP: u8 = 35;
+    pub const DEPLOY_HLP: u8 = 36;
+    pub const REQUEST_REDEEM_HLP: u8 = 37;
+    pub const EXECUTE_REDEEM_HLP: u8 = 38;
 }
 
 /// Maximum legs in a single `PlaceBatchOrder`. The engine also rejects a batch
@@ -597,6 +600,54 @@ pub enum OpenPerpsInstruction {
         amount: u128,
         position_bump: u8,
     },
+    /// Deploy `amount` quote tokens from the HLP buffer into the engine House (the
+    /// `FundHouseVault` path: buffer -> market vault + engine House capital credit).
+    /// Authority-only, since deploying reduces the free buffer that bounds
+    /// redemption liquidity. The House PnL then accrues to NAV, to LP shares.
+    ///
+    /// Accounts:
+    ///   0. `[writable]` market account (engine House capital + vault credited)
+    ///   1. `[writable]` House portfolio PDA `[HOUSE_SEED, market]`
+    ///   2. `[writable]` HLP buffer vault PDA `[HLP_VAULT_SEED, market]` (source, PDA-signed)
+    ///   3. `[writable]` market vault SPL TokenAccount (`wrapper.vault`, destination)
+    ///   4. `[signer]`   market authority
+    ///   5. `[]`         SPL Token program
+    DeployHlp {
+        amount: u128,
+    },
+    /// Request redemption of `shares`: records a pending (shares, unlock = now +
+    /// `redeem_delay_slots`) on the LP's position after checking the LP holds them.
+    /// No funds move; the LP is priced at the NAV when `ExecuteRedeemHlp` runs (after
+    /// the delay), so a redemption cannot snipe a momentary NAV. `position_bump` is
+    /// for the `[HLP_POSITION_SEED, market, owner]` PDA.
+    ///
+    /// Accounts:
+    ///   0. `[]`         HLP config PDA `[HLP_SEED, market]` (read for the delay)
+    ///   1. `[]`         market account
+    ///   2. `[signer]`   LP owner
+    ///   3. `[writable]` the LP's position PDA `[HLP_POSITION_SEED, market, owner]`
+    RequestRedeemHlp {
+        shares: u128,
+        position_bump: u8,
+    },
+    /// Execute a requested redemption once its timelock elapses: prices the pending
+    /// shares at the live NAV (buffer + House marked equity), pays out from the buffer
+    /// (bounded by the free buffer balance; `HlpBufferInsufficient` if it would
+    /// exceed it), burns the shares, and clears the pending slot. The redeem fee stays
+    /// in the buffer. `position_bump` is for the position PDA.
+    ///
+    /// Accounts:
+    ///   0. `[writable]` HLP config PDA `[HLP_SEED, market]` (total_shares updated)
+    ///   1. `[]`         market account (read for the House + vault PDAs)
+    ///   2. `[signer]`   LP owner
+    ///   3. `[writable]` owner's SPL TokenAccount (destination)
+    ///   4. `[writable]` HLP buffer vault PDA `[HLP_VAULT_SEED, market]` (source, PDA-signed)
+    ///   5. `[writable]` the LP's position PDA `[HLP_POSITION_SEED, market, owner]`
+    ///   6. `[]`         House portfolio PDA `[HOUSE_SEED, market]` (read for equity)
+    ///   7. `[]`         SPL Token program
+    ExecuteRedeemHlp {
+        position_bump: u8,
+    },
 }
 
 impl OpenPerpsInstruction {
@@ -808,6 +859,16 @@ impl OpenPerpsInstruction {
             tag::DEPOSIT_HLP => Ok(Self::DepositHlp {
                 amount: read_u128(rest, 0)?,
                 position_bump: read_u8(rest, 16)?,
+            }),
+            tag::DEPLOY_HLP => Ok(Self::DeployHlp {
+                amount: read_u128(rest, 0)?,
+            }),
+            tag::REQUEST_REDEEM_HLP => Ok(Self::RequestRedeemHlp {
+                shares: read_u128(rest, 0)?,
+                position_bump: read_u8(rest, 16)?,
+            }),
+            tag::EXECUTE_REDEEM_HLP => Ok(Self::ExecuteRedeemHlp {
+                position_bump: read_u8(rest, 0)?,
             }),
             _ => Err(OpenPerpsError::InvalidInstruction),
         }
@@ -1242,6 +1303,32 @@ mod tests {
                 amount: 5_000_000,
                 position_bump: 253,
             }
+        );
+    }
+
+    #[test]
+    fn unpack_hlp_deploy_and_redeem() {
+        let mut dep = vec![tag::DEPLOY_HLP];
+        dep.extend_from_slice(&3_000_000u128.to_le_bytes());
+        assert_eq!(
+            OpenPerpsInstruction::unpack(&dep).unwrap(),
+            OpenPerpsInstruction::DeployHlp { amount: 3_000_000 }
+        );
+
+        let mut req = vec![tag::REQUEST_REDEEM_HLP];
+        req.extend_from_slice(&1_234u128.to_le_bytes());
+        req.push(252);
+        assert_eq!(
+            OpenPerpsInstruction::unpack(&req).unwrap(),
+            OpenPerpsInstruction::RequestRedeemHlp {
+                shares: 1_234,
+                position_bump: 252,
+            }
+        );
+
+        assert_eq!(
+            OpenPerpsInstruction::unpack(&[tag::EXECUTE_REDEEM_HLP, 251]).unwrap(),
+            OpenPerpsInstruction::ExecuteRedeemHlp { position_bump: 251 }
         );
     }
 }

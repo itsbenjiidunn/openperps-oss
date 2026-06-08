@@ -1,11 +1,15 @@
 # House LP (HLP): permissionless House vault (design)
 
-Status: in progress (P2). Redemption model (A) chosen. Implemented so far: the
-share/NAV math core (host-tested), and the setup + deposit path (`CreateHlpVault`,
-`SetHlpParams`, `DepositHlp`). Still to land: `DeployHlp` (buffer -> engine House)
-and the two-step redemption (`RequestRedeemHlp` / `ExecuteRedeemHlp`). This
-documents the mechanism, the share/NAV math, the central redemption constraint the
-engine imposes, the options, and the open decisions.
+Status: Phase 2a implemented (redemption model A). The full LP cycle is wired:
+share/NAV math core (host-tested), `CreateHlpVault`, `SetHlpParams`, `DepositHlp`,
+`DeployHlp` (buffer -> engine House via the FundHouseVault path), and the two-step
+`RequestRedeemHlp` / `ExecuteRedeemHlp` (priced at execute-time NAV, paid from and
+bounded by the free buffer). NAV uses the engine's public `account_equity_from_parts`
+(full marked equity, conservative on losses; the haircut version is private). Still
+ahead (Phase 2b): keeper sweep/harvest automation, an optional haircut margin on the
+positive-PnL NAV term, and governance. This documents the mechanism, the share/NAV
+math, the central redemption constraint the engine imposes, the options, and the
+open decisions.
 
 ## What it changes, and why it matches the tweet
 
