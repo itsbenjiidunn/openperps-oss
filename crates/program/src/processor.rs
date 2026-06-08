@@ -29,8 +29,9 @@ use crate::{
         twap_observe_buffer, TwapState, TWAP_SEED,
         house_cap_of, set_house_cap_buffer, portfolio_abs_position_for_asset,
         HouseCapAccount, HOUSE_CAP_SEED,
-        InsuranceConfig, INSURANCE_SEED, INSURANCE_CFG_SEED, set_insurance_params_buffer,
-        insurance_params_of, set_insurance_pending_buffer,
+        InsuranceConfig, INSURANCE_CFG_SEED, set_insurance_params_buffer,
+        insurance_params_of, set_insurance_pending_buffer, insurance_domain_index,
+        engine_total_insurance, deposit_domain_insurance_buffer, withdraw_domain_insurance_buffer,
     },
 };
 
@@ -335,12 +336,11 @@ pub fn process_instruction(
         OpenPerpsInstruction::SetRequireVerifiable { required } => {
             process_set_require_verifiable(program_id, accounts, required)
         }
-        OpenPerpsInstruction::CreateInsuranceVault => {
-            process_create_insurance_vault(program_id, accounts)
-        }
-        OpenPerpsInstruction::FundInsuranceVault { amount } => {
-            process_fund_insurance_vault(program_id, accounts, amount)
-        }
+        OpenPerpsInstruction::FundInsurance {
+            asset_index,
+            side,
+            amount,
+        } => process_fund_insurance(program_id, accounts, asset_index, side, amount),
         OpenPerpsInstruction::SetInsuranceParams {
             min_balance,
             withdraw_delay_slots,
@@ -352,9 +352,14 @@ pub fn process_instruction(
             withdraw_delay_slots,
             bump,
         ),
-        OpenPerpsInstruction::RequestInsuranceWithdraw { amount, bump } => {
-            process_request_insurance_withdraw(program_id, accounts, amount, bump)
-        }
+        OpenPerpsInstruction::RequestInsuranceWithdraw {
+            asset_index,
+            side,
+            amount,
+            bump,
+        } => process_request_insurance_withdraw(
+            program_id, accounts, asset_index, side, amount, bump,
+        ),
         OpenPerpsInstruction::ExecuteInsuranceWithdraw { bump } => {
             process_execute_insurance_withdraw(program_id, accounts, bump)
         }
@@ -2434,109 +2439,35 @@ fn process_set_require_verifiable(
     Ok(())
 }
 
-/// Derive and verify the canonical insurance vault PDA `[INSURANCE_SEED, market]`,
-/// returning its bump (used to PDA-sign transfers out). Uses `find_program_address`
-/// (NOT a caller-supplied bump), so the vault account cannot be omitted or
-/// substituted. Callers that read the balance also check `owner == TOKEN_PROGRAM_ID`.
-fn verify_insurance_vault(
-    market_key: &Pubkey,
-    insurance_vault: &AccountInfo,
-    program_id: &Pubkey,
-) -> Result<u8, OpenPerpsError> {
-    let (derived, bump) = find_program_address(&[INSURANCE_SEED, market_key.as_ref()], program_id);
-    if *insurance_vault.key() != derived {
-        return Err(OpenPerpsError::InvalidAccountData);
-    }
-    Ok(bump)
-}
-
-/// Create the per-market insurance fund vault: an SPL token account at
-/// `[INSURANCE_SEED, market]` for the market's quote mint. Authority-only,
-/// one-time. Mirrors `CreateVault`; the new account is a PDA that signs its own
-/// transfers out during a withdrawal. No engine interaction.
-fn process_create_insurance_vault(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
-    let [market, authority, insurance_vault, quote_mint, _system_program, _token_program, ..] =
-        accounts
-    else {
-        return Err(OpenPerpsError::InvalidInstruction.into());
-    };
-    if !authority.is_signer() {
-        return Err(OpenPerpsError::MissingRequiredSignature.into());
-    }
-    if !insurance_vault.is_writable() {
-        return Err(OpenPerpsError::InvalidAccountData.into());
-    }
-    if unsafe { market.owner() } != program_id {
-        return Err(OpenPerpsError::InvalidAccountOwner.into());
-    }
-
-    let expected_quote_mint = {
-        let data = market
-            .try_borrow_data()
-            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
-        let wrapper = market_wrapper_header(&data)?;
-        if !wrapper.is_initialized() {
-            return Err(OpenPerpsError::UninitializedAccount.into());
-        }
-        if wrapper.authority != *authority.key() {
-            return Err(OpenPerpsError::MissingRequiredSignature.into());
-        }
-        wrapper.quote_mint
-    };
-    if *quote_mint.key() != expected_quote_mint {
-        return Err(OpenPerpsError::InvalidAccountData.into());
-    }
-
-    let market_key = *market.key();
-    let (derived, bump) = find_program_address(&[INSURANCE_SEED, market_key.as_ref()], program_id);
-    if *insurance_vault.key() != derived {
-        return Err(OpenPerpsError::InvalidAccountData.into());
-    }
-
-    let bump_arr = [bump];
-    let seeds = [
-        Seed::from(INSURANCE_SEED),
-        Seed::from(market_key.as_ref()),
-        Seed::from(bump_arr.as_ref()),
-    ];
-    let signer = Signer::from(seeds.as_ref());
-
-    let rent = Rent::get()?;
-    let lamports = rent.minimum_balance(SPL_TOKEN_ACCOUNT_LEN as usize);
-    system_create_account(
-        authority,
-        insurance_vault,
-        lamports,
-        SPL_TOKEN_ACCOUNT_LEN,
-        &TOKEN_PROGRAM_ID,
-        &[signer],
-    )?;
-    token_initialize_account3(insurance_vault, quote_mint, insurance_vault.key())?;
-    Ok(())
-}
-
-/// Fund the insurance vault. Permissionless: anyone may transfer quote tokens into
-/// the backstop (its balance can only ever rise, so there is no drain vector here).
-/// Plain SPL custody into the verified vault PDA; no engine interaction.
-fn process_fund_insurance_vault(
+/// Fund the engine's per-(asset, side) domain insurance. Permissionless: anyone may
+/// transfer quote tokens into the backstop, which only ever raises the engine's
+/// total insurance `I` and the domain budget. The wrapper moves the tokens into the
+/// market vault, then calls the engine's verified `deposit_domain_insurance_not_atomic`
+/// (which raises vault + `I` + budget atomically and re-checks `V >= C_tot + I`). The
+/// engine owns the accounting; the wrapper never hand-edits it.
+fn process_fund_insurance(
     program_id: &Pubkey,
     accounts: &[AccountInfo],
+    asset_index: u32,
+    side: u8,
     amount: u128,
 ) -> ProgramResult {
-    let [market, funder, funder_token, insurance_vault, _token_program, ..] = accounts else {
+    let [market, funder, funder_token, vault_token, _token_program, ..] = accounts else {
         return Err(OpenPerpsError::InvalidInstruction.into());
     };
     if !funder.is_signer() {
         return Err(OpenPerpsError::MissingRequiredSignature.into());
     }
-    if !funder_token.is_writable() || !insurance_vault.is_writable() {
+    if !market.is_writable() || !funder_token.is_writable() || !vault_token.is_writable() {
         return Err(OpenPerpsError::InvalidAccountData.into());
     }
     if unsafe { market.owner() } != program_id {
         return Err(OpenPerpsError::InvalidAccountOwner.into());
     }
+    if side > 1 {
+        return Err(OpenPerpsError::InvalidInstructionData.into());
+    }
 
-    let market_key = *market.key();
     {
         let data = market
             .try_borrow_data()
@@ -2545,15 +2476,27 @@ fn process_fund_insurance_vault(
         if !wrapper.is_initialized() {
             return Err(OpenPerpsError::UninitializedAccount.into());
         }
+        if *vault_token.key() != wrapper.vault {
+            return Err(OpenPerpsError::InvalidAccountData.into());
+        }
     }
-    verify_insurance_vault(&market_key, insurance_vault, program_id)?;
 
     let amount_u64: u64 = amount
         .try_into()
         .map_err(|_| OpenPerpsError::ArithmeticOverflow)?;
-    if amount_u64 > 0 {
-        token_transfer(funder_token, insurance_vault, funder, amount_u64)?;
+    if amount_u64 == 0 {
+        return Ok(());
     }
+
+    // Tokens first (the engine deposit only increments its vault counter; the real
+    // balance must back it), then the engine transition under a fresh market borrow.
+    token_transfer(funder_token, vault_token, funder, amount_u64)?;
+
+    let domain = insurance_domain_index(asset_index, side);
+    let mut market_data = market
+        .try_borrow_mut_data()
+        .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    deposit_domain_insurance_buffer(&mut market_data, domain, amount).map_v16()?;
     Ok(())
 }
 
@@ -2632,17 +2575,19 @@ fn process_set_insurance_params(
     Ok(())
 }
 
-/// Request an insurance withdrawal. Records a pending (amount, unlock = now +
-/// `withdraw_delay_slots`) after checking the amount leaves the floor intact against
-/// the live balance, so a drain is announced the full timelock ahead. Authority-only;
-/// no funds move here. No engine interaction.
+/// Request an insurance withdrawal from an (asset, side) domain. Records a pending
+/// (amount, unlock = now + `withdraw_delay_slots`, domain) after checking the amount
+/// leaves the floor on the engine's total insurance `I` intact, so a drain is
+/// announced the full timelock ahead. Authority-only; no funds move here.
 fn process_request_insurance_withdraw(
     program_id: &Pubkey,
     accounts: &[AccountInfo],
+    asset_index: u32,
+    side: u8,
     amount: u128,
     bump: u8,
 ) -> ProgramResult {
-    let [cfg_pda, market, authority, insurance_vault, ..] = accounts else {
+    let [cfg_pda, market, authority, ..] = accounts else {
         return Err(OpenPerpsError::InvalidInstruction.into());
     };
     if !authority.is_signer() {
@@ -2653,6 +2598,9 @@ fn process_request_insurance_withdraw(
     }
     if unsafe { market.owner() } != program_id || unsafe { cfg_pda.owner() } != program_id {
         return Err(OpenPerpsError::InvalidAccountOwner.into());
+    }
+    if side > 1 {
+        return Err(OpenPerpsError::InvalidInstructionData.into());
     }
 
     let market_key = *market.key();
@@ -2679,19 +2627,13 @@ fn process_request_insurance_withdraw(
         return Err(OpenPerpsError::InvalidAccountData.into());
     }
 
-    // Verify the insurance vault PDA, then read its live balance.
-    verify_insurance_vault(&market_key, insurance_vault, program_id)?;
-    if unsafe { insurance_vault.owner() } != &TOKEN_PROGRAM_ID {
-        return Err(OpenPerpsError::InvalidAccountOwner.into());
-    }
-    let balance = {
-        let vdata = insurance_vault
+    // Read the live engine insurance `I` and the floor.
+    let total_insurance = {
+        let data = market
             .try_borrow_data()
             .map_err(|_| OpenPerpsError::InvalidAccountData)?;
-        crate::dexamm::token_account_amount(&vdata)
-            .map_err(|_| OpenPerpsError::InvalidAccountData)?
+        engine_total_insurance(&data)?
     };
-
     let params = {
         let data = cfg_pda
             .try_borrow_data()
@@ -2699,8 +2641,8 @@ fn process_request_insurance_withdraw(
         insurance_params_of(&data, &market_key)?
     };
 
-    // The amount must leave the floor intact against the live balance.
-    let available = (balance as u128).saturating_sub(params.min_balance);
+    // The amount must leave the floor intact against the live total insurance.
+    let available = total_insurance.saturating_sub(params.min_balance);
     if amount == 0 || amount > available {
         return Err(OpenPerpsError::InsuranceFloorBreach.into());
     }
@@ -2711,28 +2653,33 @@ fn process_request_insurance_withdraw(
     let mut data = cfg_pda
         .try_borrow_mut_data()
         .map_err(|_| OpenPerpsError::InvalidAccountData)?;
-    set_insurance_pending_buffer(&mut data, &market_key, amount, unlock_slot)?;
+    set_insurance_pending_buffer(&mut data, &market_key, amount, unlock_slot, asset_index, side)?;
     Ok(())
 }
 
 /// Execute a previously requested insurance withdrawal once its timelock has
-/// elapsed. Re-checks the floor against the live balance (it may have fallen since
-/// the request), transfers out signed by the vault PDA, then clears the pending
-/// slot. Authority-only. No engine interaction.
+/// elapsed. Re-checks the floor against the live engine insurance `I`, calls the
+/// engine's verified `withdraw_domain_insurance_not_atomic` for the pending domain
+/// (which lowers vault + `I` + budget and refuses to pull below the domain's
+/// available insurance), transfers the tokens out signed by the market vault PDA,
+/// then clears the pending slot. Authority-only.
 fn process_execute_insurance_withdraw(
     program_id: &Pubkey,
     accounts: &[AccountInfo],
     bump: u8,
 ) -> ProgramResult {
-    let [cfg_pda, market, authority, insurance_vault, authority_token, _token_program, ..] =
-        accounts
+    let [cfg_pda, market, authority, vault_token, authority_token, _token_program, ..] = accounts
     else {
         return Err(OpenPerpsError::InvalidInstruction.into());
     };
     if !authority.is_signer() {
         return Err(OpenPerpsError::MissingRequiredSignature.into());
     }
-    if !cfg_pda.is_writable() || !insurance_vault.is_writable() || !authority_token.is_writable() {
+    if !cfg_pda.is_writable()
+        || !market.is_writable()
+        || !vault_token.is_writable()
+        || !authority_token.is_writable()
+    {
         return Err(OpenPerpsError::InvalidAccountData.into());
     }
     if unsafe { market.owner() } != program_id || unsafe { cfg_pda.owner() } != program_id {
@@ -2740,7 +2687,7 @@ fn process_execute_insurance_withdraw(
     }
 
     let market_key = *market.key();
-    {
+    let vault_bump = {
         let data = market
             .try_borrow_data()
             .map_err(|_| OpenPerpsError::InvalidAccountData)?;
@@ -2751,7 +2698,11 @@ fn process_execute_insurance_withdraw(
         if wrapper.authority != *authority.key() {
             return Err(OpenPerpsError::MissingRequiredSignature.into());
         }
-    }
+        if *vault_token.key() != wrapper.vault {
+            return Err(OpenPerpsError::InvalidAccountData.into());
+        }
+        wrapper.vault_bump
+    };
 
     let derived = create_program_address(
         &[INSURANCE_CFG_SEED, market_key.as_ref(), &[bump]],
@@ -2760,11 +2711,6 @@ fn process_execute_insurance_withdraw(
     .map_err(|_| OpenPerpsError::InvalidAccountData)?;
     if *cfg_pda.key() != derived {
         return Err(OpenPerpsError::InvalidAccountData.into());
-    }
-
-    let vault_bump = verify_insurance_vault(&market_key, insurance_vault, program_id)?;
-    if unsafe { insurance_vault.owner() } != &TOKEN_PROGRAM_ID {
-        return Err(OpenPerpsError::InvalidAccountOwner.into());
     }
 
     let params = {
@@ -2781,16 +2727,15 @@ fn process_execute_insurance_withdraw(
         return Err(OpenPerpsError::InsuranceWithdrawLocked.into());
     }
 
-    let balance = {
-        let vdata = insurance_vault
+    // Re-check the floor against the live `I`, so the floor invariant holds at the
+    // exact moment funds leave (not just when the withdrawal was requested).
+    let total_insurance = {
+        let data = market
             .try_borrow_data()
             .map_err(|_| OpenPerpsError::InvalidAccountData)?;
-        crate::dexamm::token_account_amount(&vdata)
-            .map_err(|_| OpenPerpsError::InvalidAccountData)?
+        engine_total_insurance(&data)?
     };
-    // Re-check the floor against the live balance, so the floor invariant holds at
-    // the exact moment funds leave (not just when the withdrawal was requested).
-    let available = (balance as u128).saturating_sub(params.min_balance);
+    let available = total_insurance.saturating_sub(params.min_balance);
     if params.pending_amount > available {
         return Err(OpenPerpsError::InsuranceFloorBreach.into());
     }
@@ -2799,26 +2744,32 @@ fn process_execute_insurance_withdraw(
         .try_into()
         .map_err(|_| OpenPerpsError::ArithmeticOverflow)?;
 
+    // Engine first (it lowers vault + `I` + the domain budget and validates every
+    // invariant); the real tokens follow so the vault counter and balance stay in
+    // sync. The engine refuses to pull below the domain's available insurance.
+    let domain = insurance_domain_index(params.pending_asset_index, params.pending_side);
+    {
+        let mut market_data = market
+            .try_borrow_mut_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        withdraw_domain_insurance_buffer(&mut market_data, domain, params.pending_amount)
+            .map_v16()?;
+    }
+
     let bump_arr = [vault_bump];
     let seeds = [
-        Seed::from(INSURANCE_SEED),
+        Seed::from(VAULT_SEED),
         Seed::from(market_key.as_ref()),
         Seed::from(bump_arr.as_ref()),
     ];
     let signer = Signer::from(seeds.as_ref());
-    token_transfer_signed(
-        insurance_vault,
-        authority_token,
-        insurance_vault,
-        amount_u64,
-        &[signer],
-    )?;
+    token_transfer_signed(vault_token, authority_token, vault_token, amount_u64, &[signer])?;
 
     // Clear the pending slot only after the transfer succeeded.
     let mut data = cfg_pda
         .try_borrow_mut_data()
         .map_err(|_| OpenPerpsError::InvalidAccountData)?;
-    set_insurance_pending_buffer(&mut data, &market_key, 0, 0)?;
+    set_insurance_pending_buffer(&mut data, &market_key, 0, 0, 0, 0)?;
     Ok(())
 }
 

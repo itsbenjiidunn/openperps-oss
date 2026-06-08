@@ -166,14 +166,10 @@ export const TWAP_SEED = new TextEncoder().encode("twap");
  * full seeds are `[HOUSE_CAP_SEED, market]`. */
 export const HOUSE_CAP_SEED = new TextEncoder().encode("housecap");
 
-/** Insurance fund vault PDA seed prefix; matches Rust `state::INSURANCE_SEED`. The
- * full seeds are `[INSURANCE_SEED, market]` (the SPL token account that holds the
- * per-market backstop). */
-export const INSURANCE_SEED = new TextEncoder().encode("insurance");
-
 /** Insurance fund config PDA seed prefix; matches Rust `state::INSURANCE_CFG_SEED`.
- * The full seeds are `[INSURANCE_CFG_SEED, market]` (the withdrawal floor + timelock
- * + pending-withdraw state). */
+ * The full seeds are `[INSURANCE_CFG_SEED, market]`. The insurance capital lives in
+ * the engine's own domain insurance ledger inside the market vault; this PDA holds
+ * only the withdrawal governance (floor + timelock + pending-withdraw state). */
 export const INSURANCE_CFG_SEED = new TextEncoder().encode("inscfg");
 
 /** DelegateAccount size: discriminator(8) + portfolio(32) + delegate(32). */

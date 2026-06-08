@@ -155,21 +155,15 @@ pub const TWAP_SEED: &[u8] = b"twap";
 /// liquidation, and the per-portfolio deposit cap.
 pub const HOUSE_CAP_SEED: &[u8] = b"housecap";
 
-/// PDA seed prefix for a market's insurance fund vault (an SPL token account).
-/// Full seeds: `[INSURANCE_SEED, market.key()]`. Per-market (isolated, mirroring
-/// the House model): a deficit on one market can only ever draw its own fund, so
-/// a manipulated thin-pool market cannot drain the backstop another market funded.
-/// The vault holds the same quote mint as the market vault; it is funded from seed
-/// deposits (or protocol revenue in a later phase) and is designed to pay a
-/// liquidation shortfall before the House (the deficit-cover path is a later phase).
-pub const INSURANCE_SEED: &[u8] = b"insurance";
-
 /// PDA seed prefix for a market's insurance fund config. Full seeds:
-/// `[INSURANCE_CFG_SEED, market.key()]`. Holds the withdrawal floor and the
-/// optional withdrawal timelock (plus pending-withdraw state), separate from the
-/// token vault because a vault PDA is owned by SPL Token and cannot also store
-/// program data. Both knobs are RAISE-ONLY (a ratchet), so the fund can only ever
-/// become more trustworthy; loosening is deferred to a later governance phase.
+/// `[INSURANCE_CFG_SEED, market.key()]`. The insurance capital itself lives in the
+/// engine's own per-(asset, side) domain insurance ledger inside the market vault
+/// (funded via `deposit_domain_insurance_not_atomic`, consumed automatically by the
+/// engine's liquidation waterfall), so there is no separate token vault. This PDA
+/// holds only the wrapper's withdrawal governance: the floor on total engine
+/// insurance `I`, the optional withdrawal timelock, and the pending-withdraw slot.
+/// Both knobs are RAISE-ONLY (a ratchet), so the fund can only ever become more
+/// trustworthy; loosening is deferred to a later governance phase.
 pub const INSURANCE_CFG_SEED: &[u8] = b"inscfg";
 
 /// PDA seed prefix for a user's portfolio under a market. Full seed list is
@@ -420,15 +414,16 @@ pub fn house_cap_of(buf: &[u8]) -> Result<([u8; 32], u128), OpenPerpsError> {
     Ok((acc.market, u128::from_le_bytes(acc.max_base_position)))
 }
 
-/// Per-market insurance fund config. Sits beside the insurance token vault (which,
-/// being SPL-Token-owned, cannot itself hold program data). Holds the withdrawal
-/// floor (`min_balance`, quote atoms) a withdrawal can never breach, the optional
-/// withdrawal timelock (`withdraw_delay_slots`), and the single pending-withdraw
-/// slot (amount + unlock slot) the two-step request/execute flow uses. Both the
-/// floor and the delay are RAISE-ONLY via `SetInsuranceParams`, so the fund's
-/// guarantees can only strengthen. Byte arrays keep it alignment-1 and padding-free
-/// (Pod-safe). `reserved` leaves room for the later revenue-cut parameters
-/// (fee/penalty cut bps, per-event payout cap) without a new account layout.
+/// Per-market insurance fund config. The insurance capital itself lives in the
+/// engine's per-(asset, side) domain insurance ledger inside the market vault; this
+/// PDA holds only the wrapper's withdrawal governance. It records the withdrawal
+/// floor (`min_balance`, quote atoms) on the engine's total insurance `I` that a
+/// withdrawal can never breach, the optional withdrawal timelock
+/// (`withdraw_delay_slots`), and the single pending-withdraw slot (amount + unlock
+/// slot + the (asset, side) domain to draw from). Both the floor and the delay are
+/// RAISE-ONLY via `SetInsuranceParams`, so the fund's guarantees can only strengthen.
+/// Byte arrays keep it alignment-1 and padding-free (Pod-safe). `reserved` leaves
+/// room for later revenue-cut parameters without a new account layout.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Pod, Zeroable)]
 pub struct InsuranceConfig {
@@ -438,7 +433,9 @@ pub struct InsuranceConfig {
     pub withdraw_delay_slots: [u8; 8],
     pub pending_amount: [u8; 16],
     pub pending_unlock_slot: [u8; 8],
-    pub reserved: [u8; 32],
+    pub pending_asset_index: [u8; 4],
+    pub pending_side: u8,
+    pub reserved: [u8; 27],
 }
 
 impl InsuranceConfig {
@@ -449,13 +446,15 @@ impl InsuranceConfig {
 }
 
 /// Decoded insurance config: the withdrawal floor, the withdrawal timelock, and
-/// the pending-withdraw slot (amount + unlock slot).
+/// the pending-withdraw slot (amount + unlock slot + the (asset, side) domain).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct InsuranceParams {
     pub min_balance: u128,
     pub withdraw_delay_slots: u64,
     pub pending_amount: u128,
     pub pending_unlock_slot: u64,
+    pub pending_asset_index: u32,
+    pub pending_side: u8,
 }
 
 /// Set/raise a market's insurance params (the caller checks the market authority).
@@ -488,6 +487,8 @@ pub fn set_insurance_params_buffer(
         cfg.market = market;
         cfg.pending_amount = 0u128.to_le_bytes();
         cfg.pending_unlock_slot = 0u64.to_le_bytes();
+        cfg.pending_asset_index = 0u32.to_le_bytes();
+        cfg.pending_side = 0;
     }
     cfg.min_balance = min_balance.to_le_bytes();
     cfg.withdraw_delay_slots = withdraw_delay_slots.to_le_bytes();
@@ -516,16 +517,21 @@ pub fn insurance_params_of(
         withdraw_delay_slots: u64::from_le_bytes(cfg.withdraw_delay_slots),
         pending_amount: u128::from_le_bytes(cfg.pending_amount),
         pending_unlock_slot: u64::from_le_bytes(cfg.pending_unlock_slot),
+        pending_asset_index: u32::from_le_bytes(cfg.pending_asset_index),
+        pending_side: cfg.pending_side,
     })
 }
 
-/// Write the pending-withdraw slot (amount + unlock slot). `amount == 0` clears it.
-/// Requires the config to be initialized and bound to `market`.
+/// Write the pending-withdraw slot (amount + unlock slot + the (asset, side) domain
+/// to draw from). `amount == 0` clears it. Requires the config to be initialized and
+/// bound to `market`.
 pub fn set_insurance_pending_buffer(
     buf: &mut [u8],
     market: &[u8; 32],
     amount: u128,
     unlock_slot: u64,
+    asset_index: u32,
+    side: u8,
 ) -> Result<(), OpenPerpsError> {
     if buf.len() < InsuranceConfig::LEN {
         return Err(OpenPerpsError::AccountDataTooSmall);
@@ -539,7 +545,54 @@ pub fn set_insurance_pending_buffer(
     }
     cfg.pending_amount = amount.to_le_bytes();
     cfg.pending_unlock_slot = unlock_slot.to_le_bytes();
+    cfg.pending_asset_index = asset_index.to_le_bytes();
+    cfg.pending_side = side;
     Ok(())
+}
+
+/// The (asset, side) insurance domain index the engine uses, matching its internal
+/// `insurance_domain_index`: `asset_index * 2 + side` with `side` 0 = Long, 1 =
+/// Short. The engine re-validates the domain inside its deposit/withdraw calls, so
+/// an out-of-range value fails the instruction cleanly.
+pub fn insurance_domain_index(asset_index: u32, side: u8) -> usize {
+    (asset_index as usize) * 2 + (side as usize)
+}
+
+/// The engine's current total insurance capital `I` (quote atoms), read from the
+/// engine market header. The wrapper's withdrawal floor is enforced against this.
+pub fn engine_total_insurance(data: &[u8]) -> Result<u128, OpenPerpsError> {
+    Ok(market_header(data)?.insurance.get())
+}
+
+/// Fund an (asset, side) domain's engine insurance by `amount` (the wrapper has
+/// already moved `amount` quote atoms into the market vault). Calls the engine's
+/// verified `deposit_domain_insurance_not_atomic`, which raises the engine vault,
+/// total insurance `I`, and the domain budget atomically and re-checks every
+/// solvency invariant (`V >= C_tot + I`). The engine owns the accounting; the
+/// wrapper never hand-edits `vault`/`I`/`c_tot`.
+pub fn deposit_domain_insurance_buffer(
+    market_buf: &mut [u8],
+    domain: usize,
+    amount: u128,
+) -> Result<(), V16Error> {
+    let (m_h, m_s) = market_engine_split_mut(market_buf).map_err(|_| V16Error::InvalidConfig)?;
+    let mut mg = MarketGroupV16ViewMut::new(m_h, m_s);
+    mg.deposit_domain_insurance_not_atomic(domain, amount)
+}
+
+/// Withdraw `amount` from an (asset, side) domain's engine insurance (the wrapper
+/// then moves `amount` quote atoms out of the market vault). Calls the engine's
+/// verified `withdraw_domain_insurance_not_atomic`, which lowers the engine vault,
+/// `I`, and the domain budget atomically; the engine refuses to pull below the
+/// domain's available insurance or below the vault balance.
+pub fn withdraw_domain_insurance_buffer(
+    market_buf: &mut [u8],
+    domain: usize,
+    amount: u128,
+) -> Result<(), V16Error> {
+    let (m_h, m_s) = market_engine_split_mut(market_buf).map_err(|_| V16Error::InvalidConfig)?;
+    let mut mg = MarketGroupV16ViewMut::new(m_h, m_s);
+    mg.withdraw_domain_insurance_not_atomic(domain, amount)
 }
 
 /// The absolute open position size (base units) a portfolio holds in asset

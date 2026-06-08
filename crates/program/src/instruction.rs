@@ -38,11 +38,10 @@ pub mod tag {
     pub const PLACE_BATCH_ORDER: u8 = 26;
     pub const SET_HOUSE_CAP: u8 = 27;
     pub const SET_REQUIRE_VERIFIABLE: u8 = 28;
-    pub const CREATE_INSURANCE_VAULT: u8 = 29;
-    pub const FUND_INSURANCE_VAULT: u8 = 30;
-    pub const SET_INSURANCE_PARAMS: u8 = 31;
-    pub const REQUEST_INSURANCE_WITHDRAW: u8 = 32;
-    pub const EXECUTE_INSURANCE_WITHDRAW: u8 = 33;
+    pub const FUND_INSURANCE: u8 = 29;
+    pub const SET_INSURANCE_PARAMS: u8 = 30;
+    pub const REQUEST_INSURANCE_WITHDRAW: u8 = 31;
+    pub const EXECUTE_INSURANCE_WITHDRAW: u8 = 32;
 }
 
 /// Maximum legs in a single `PlaceBatchOrder`. The engine also rejects a batch
@@ -478,30 +477,23 @@ pub enum OpenPerpsInstruction {
     SetRequireVerifiable {
         required: u8,
     },
-    /// Create the per-market insurance fund vault: an SPL token account at
-    /// `[INSURANCE_SEED, market]`, holding the same quote mint as the market vault.
-    /// Authority-only, one-time. The fund is designed to pay a liquidation shortfall
-    /// before the House in a later phase; here it is the empty, fundable backstop.
+    /// Fund the engine's per-(asset, side) domain insurance by `amount`.
+    /// Permissionless: anyone may transfer quote tokens into the backstop (it can
+    /// only ever raise the engine's total insurance `I` and the domain budget). The
+    /// wrapper moves the tokens into the market vault, then calls the engine's
+    /// verified `deposit_domain_insurance_not_atomic`. `side` is 0 = Long, 1 = Short.
     ///
     /// Accounts:
-    ///   0. `[]`                 market account (read for authority + quote_mint)
-    ///   1. `[signer, writable]` authority, pays rent for the vault account
-    ///   2. `[writable]`         insurance vault PDA `[INSURANCE_SEED, market]`
-    ///   3. `[]`                 quote_mint
-    ///   4. `[]`                 system program
-    ///   5. `[]`                 token program
-    CreateInsuranceVault,
-    /// Fund the insurance vault. Permissionless: anyone may transfer quote tokens
-    /// into the backstop (it can only ever raise the balance). The signer signs the
-    /// SPL transfer from their own token account.
-    ///
-    /// Accounts:
-    ///   0. `[]`         market account (read for the vault PDA + quote_mint)
+    ///   0. `[writable]` market account (engine vault / insurance / budget updated)
     ///   1. `[signer]`   funder (signs the SPL Transfer)
     ///   2. `[writable]` funder's SPL TokenAccount (source)
-    ///   3. `[writable]` insurance vault PDA `[INSURANCE_SEED, market]` (destination)
+    ///   3. `[writable]` market vault SPL TokenAccount (destination, `wrapper.vault`)
     ///   4. `[]`         SPL Token program
-    FundInsuranceVault { amount: u128 },
+    FundInsurance {
+        asset_index: u32,
+        side: u8,
+        amount: u128,
+    },
     /// Set (and ratchet) the insurance fund's withdrawal floor and timelock. Only
     /// the market authority may call; the `[INSURANCE_CFG_SEED, market]` PDA is
     /// created on first use. `min_balance` (the floor a withdrawal can never breach)
@@ -518,31 +510,35 @@ pub enum OpenPerpsInstruction {
         withdraw_delay_slots: u64,
         bump: u8,
     },
-    /// Request an insurance withdrawal: records a pending (amount, unlock slot =
-    /// now + `withdraw_delay_slots`) after checking `amount` leaves the floor intact.
-    /// Authority-only. The withdrawal becomes executable once the unlock slot passes,
-    /// so a drain is always announced `withdraw_delay_slots` ahead. `bump` is the
-    /// config PDA bump.
+    /// Request an insurance withdrawal from an (asset, side) domain: records a
+    /// pending (amount, unlock slot = now + `withdraw_delay_slots`, domain) after
+    /// checking `amount` leaves the floor on the engine's total insurance `I` intact.
+    /// Authority-only; no funds move. The withdrawal becomes executable once the
+    /// unlock slot passes, so a drain is always announced `withdraw_delay_slots`
+    /// ahead. `side` is 0 = Long, 1 = Short. `bump` is the config PDA bump.
     ///
     /// Accounts:
     ///   0. `[writable]` insurance config PDA `[INSURANCE_CFG_SEED, market]`
-    ///   1. `[]`         market account (read for authority)
+    ///   1. `[]`         market account (read for authority + engine insurance `I`)
     ///   2. `[signer]`   market authority
-    ///   3. `[]`         insurance vault PDA `[INSURANCE_SEED, market]` (read for balance)
     RequestInsuranceWithdraw {
+        asset_index: u32,
+        side: u8,
         amount: u128,
         bump: u8,
     },
     /// Execute a previously requested insurance withdrawal once its timelock has
-    /// elapsed. Re-checks the floor against the live balance, transfers out signed by
-    /// the insurance vault PDA, and clears the pending slot. Authority-only. `bump`
-    /// is the config PDA bump (the vault bump is derived on-chain).
+    /// elapsed. Re-checks the floor against the live engine insurance `I`, calls the
+    /// engine's verified `withdraw_domain_insurance_not_atomic` for the pending
+    /// domain, transfers the tokens out signed by the market vault PDA, and clears
+    /// the pending slot. Authority-only. `bump` is the config PDA bump (the vault
+    /// bump comes from the wrapper header).
     ///
     /// Accounts:
     ///   0. `[writable]` insurance config PDA `[INSURANCE_CFG_SEED, market]`
-    ///   1. `[]`         market account (read for authority)
+    ///   1. `[writable]` market account (engine vault / insurance / budget updated)
     ///   2. `[signer]`   market authority
-    ///   3. `[writable]` insurance vault PDA `[INSURANCE_SEED, market]` (source, PDA-signed)
+    ///   3. `[writable]` market vault SPL TokenAccount (source, PDA-signed, `wrapper.vault`)
     ///   4. `[writable]` authority's SPL TokenAccount (destination)
     ///   5. `[]`         SPL Token program
     ExecuteInsuranceWithdraw {
@@ -728,9 +724,10 @@ impl OpenPerpsInstruction {
             tag::SET_REQUIRE_VERIFIABLE => Ok(Self::SetRequireVerifiable {
                 required: read_u8(rest, 0)?,
             }),
-            tag::CREATE_INSURANCE_VAULT => Ok(Self::CreateInsuranceVault),
-            tag::FUND_INSURANCE_VAULT => Ok(Self::FundInsuranceVault {
-                amount: read_u128(rest, 0)?,
+            tag::FUND_INSURANCE => Ok(Self::FundInsurance {
+                asset_index: read_u32(rest, 0)?,
+                side: read_u8(rest, 4)?,
+                amount: read_u128(rest, 5)?,
             }),
             tag::SET_INSURANCE_PARAMS => Ok(Self::SetInsuranceParams {
                 min_balance: read_u128(rest, 0)?,
@@ -738,8 +735,10 @@ impl OpenPerpsInstruction {
                 bump: read_u8(rest, 24)?,
             }),
             tag::REQUEST_INSURANCE_WITHDRAW => Ok(Self::RequestInsuranceWithdraw {
-                amount: read_u128(rest, 0)?,
-                bump: read_u8(rest, 16)?,
+                asset_index: read_u32(rest, 0)?,
+                side: read_u8(rest, 4)?,
+                amount: read_u128(rest, 5)?,
+                bump: read_u8(rest, 21)?,
             }),
             tag::EXECUTE_INSURANCE_WITHDRAW => Ok(Self::ExecuteInsuranceWithdraw {
                 bump: read_u8(rest, 0)?,
@@ -1087,20 +1086,18 @@ mod tests {
     }
 
     #[test]
-    fn unpack_create_insurance_vault() {
-        assert_eq!(
-            OpenPerpsInstruction::unpack(&[tag::CREATE_INSURANCE_VAULT]).unwrap(),
-            OpenPerpsInstruction::CreateInsuranceVault
-        );
-    }
-
-    #[test]
-    fn unpack_fund_insurance_vault() {
-        let mut data = vec![tag::FUND_INSURANCE_VAULT];
+    fn unpack_fund_insurance() {
+        let mut data = vec![tag::FUND_INSURANCE];
+        data.extend_from_slice(&2u32.to_le_bytes()); // asset_index
+        data.push(1); // side = Short
         data.extend_from_slice(&1_500_000u128.to_le_bytes());
         assert_eq!(
             OpenPerpsInstruction::unpack(&data).unwrap(),
-            OpenPerpsInstruction::FundInsuranceVault { amount: 1_500_000 }
+            OpenPerpsInstruction::FundInsurance {
+                asset_index: 2,
+                side: 1,
+                amount: 1_500_000,
+            }
         );
     }
 
@@ -1123,11 +1120,15 @@ mod tests {
     #[test]
     fn unpack_request_insurance_withdraw() {
         let mut data = vec![tag::REQUEST_INSURANCE_WITHDRAW];
+        data.extend_from_slice(&3u32.to_le_bytes()); // asset_index
+        data.push(0); // side = Long
         data.extend_from_slice(&50_000u128.to_le_bytes());
-        data.push(253);
+        data.push(253); // bump
         assert_eq!(
             OpenPerpsInstruction::unpack(&data).unwrap(),
             OpenPerpsInstruction::RequestInsuranceWithdraw {
+                asset_index: 3,
+                side: 0,
                 amount: 50_000,
                 bump: 253,
             }

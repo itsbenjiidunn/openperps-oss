@@ -13,11 +13,13 @@
 use openperps_program::error::OpenPerpsError;
 use openperps_program::state::{
     accrue_asset_buffer, activate_market_buffer, crank_oracle_buffer, crank_refresh_buffer,
-    init_market_buffer, init_portfolio_buffer, insurance_params_of, liquidate_buffer,
+    deposit_domain_insurance_buffer, engine_total_insurance, init_market_buffer,
+    init_portfolio_buffer, insurance_domain_index, insurance_params_of, liquidate_buffer,
     market_account_size, market_engine_split_mut, market_requires_verifiable,
     portfolio_abs_position_for_asset, portfolio_account_size, portfolio_split_mut,
     resolve_market_buffer, set_insurance_params_buffer, set_insurance_pending_buffer,
-    set_require_verifiable_buffer, trade_buffer, withdraw_buffer, InsuranceConfig,
+    set_require_verifiable_buffer, trade_buffer, withdraw_buffer, withdraw_domain_insurance_buffer,
+    InsuranceConfig,
 };
 use percolator::v16::{AssetLifecycleV16, MarketGroupV16ViewMut, PortfolioV16ViewMut, SideV16};
 
@@ -209,14 +211,19 @@ fn insurance_config_roundtrip_and_ratchet() {
         Err(OpenPerpsError::ProvenanceMismatch)
     );
 
-    // The pending slot round-trips and clears, params untouched.
-    set_insurance_pending_buffer(&mut cfg, &market, 50_000, 12_345).unwrap();
+    // The pending slot round-trips (amount + unlock + domain) and clears, params
+    // untouched.
+    set_insurance_pending_buffer(&mut cfg, &market, 50_000, 12_345, 2, 1).unwrap();
     let p = insurance_params_of(&cfg, &market).unwrap();
     assert_eq!(p.pending_amount, 50_000);
     assert_eq!(p.pending_unlock_slot, 12_345);
+    assert_eq!(p.pending_asset_index, 2);
+    assert_eq!(p.pending_side, 1);
     assert_eq!(p.min_balance, 300_000);
-    set_insurance_pending_buffer(&mut cfg, &market, 0, 0).unwrap();
-    assert_eq!(insurance_params_of(&cfg, &market).unwrap().pending_amount, 0);
+    set_insurance_pending_buffer(&mut cfg, &market, 0, 0, 0, 0).unwrap();
+    let p = insurance_params_of(&cfg, &market).unwrap();
+    assert_eq!(p.pending_amount, 0);
+    assert_eq!(p.pending_asset_index, 0);
 
     // Helpers refuse an uninitialized buffer.
     let mut empty = vec![0u8; InsuranceConfig::LEN];
@@ -225,9 +232,40 @@ fn insurance_config_roundtrip_and_ratchet() {
         Err(OpenPerpsError::UninitializedAccount)
     );
     assert_eq!(
-        set_insurance_pending_buffer(&mut empty, &market, 1, 1),
+        set_insurance_pending_buffer(&mut empty, &market, 1, 1, 0, 0),
         Err(OpenPerpsError::UninitializedAccount)
     );
+}
+
+#[test]
+fn fund_and_withdraw_domain_insurance_moves_engine_i() {
+    // Insurance Phase 1a (engine-integrated): funding a domain raises the engine's
+    // total insurance `I`; withdrawing lowers it. The wrapper buffers are thin
+    // pass-throughs to the engine's verified deposit/withdraw, which keep
+    // `V >= C_tot + I`.
+    let (mut market_buf, _) = fresh_buffers();
+    setup_market(&mut market_buf, [0x77; 32]);
+    activate_market_buffer(&mut market_buf, 0, 100_000_000, 1).unwrap();
+    assert_eq!(engine_total_insurance(&market_buf).unwrap(), 0);
+
+    let long = insurance_domain_index(0, 0);
+    let short = insurance_domain_index(0, 1);
+    assert_eq!((long, short), (0, 1));
+
+    deposit_domain_insurance_buffer(&mut market_buf, long, 1_000_000).unwrap();
+    assert_eq!(engine_total_insurance(&market_buf).unwrap(), 1_000_000);
+
+    deposit_domain_insurance_buffer(&mut market_buf, long, 500_000).unwrap();
+    deposit_domain_insurance_buffer(&mut market_buf, short, 200_000).unwrap();
+    assert_eq!(engine_total_insurance(&market_buf).unwrap(), 1_700_000);
+
+    // Withdraw part of the long domain; `I` falls by exactly that amount.
+    withdraw_domain_insurance_buffer(&mut market_buf, long, 300_000).unwrap();
+    assert_eq!(engine_total_insurance(&market_buf).unwrap(), 1_400_000);
+
+    // The engine refuses to over-withdraw a domain past its available insurance.
+    assert!(withdraw_domain_insurance_buffer(&mut market_buf, short, 999_999).is_err());
+    assert_eq!(engine_total_insurance(&market_buf).unwrap(), 1_400_000);
 }
 
 #[test]

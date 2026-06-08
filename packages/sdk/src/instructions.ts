@@ -13,7 +13,6 @@ import {
   DEXPOOL_SEED,
   HOUSE_CAP_SEED,
   INSURANCE_CFG_SEED,
-  INSURANCE_SEED,
   ORACLE_SEED,
   PORTFOLIO_SEED,
   TWAP_SEED,
@@ -51,11 +50,10 @@ export const Tag = {
   PlaceBatchOrder: 26,
   SetHouseCap: 27,
   SetRequireVerifiable: 28,
-  CreateInsuranceVault: 29,
-  FundInsuranceVault: 30,
-  SetInsuranceParams: 31,
-  RequestInsuranceWithdraw: 32,
-  ExecuteInsuranceWithdraw: 33,
+  FundInsurance: 29,
+  SetInsuranceParams: 30,
+  RequestInsuranceWithdraw: 31,
+  ExecuteInsuranceWithdraw: 32,
 } as const;
 
 /// Side encoding for `PlaceOrder`.
@@ -1232,19 +1230,13 @@ export function setRequireVerifiableIx(args: {
   });
 }
 
-// ---------- Insurance fund (Phase 1a) ----------
-
-/** The per-market insurance vault PDA (an SPL token account); matches Rust
- * `[INSURANCE_SEED, market]`. */
-export function insuranceVaultPda(
-  programId: PublicKey,
-  market: PublicKey,
-): [PublicKey, number] {
-  return PublicKey.findProgramAddressSync(
-    [INSURANCE_SEED, market.toBuffer()],
-    programId,
-  );
-}
+// ---------- Insurance fund (Phase 1a, engine-integrated) ----------
+//
+// Insurance capital lives in the engine's own per-(asset, side) domain insurance
+// ledger inside the market vault: funding raises the engine's total insurance `I`
+// and the domain budget; the engine's liquidation waterfall consumes it
+// automatically. There is no separate vault. `side` is 0 = Long, 1 = Short (the
+// `Side` enum). This config PDA holds only the withdrawal governance.
 
 /** The per-market insurance config PDA (floor + timelock + pending); matches Rust
  * `[INSURANCE_CFG_SEED, market]`. */
@@ -1258,62 +1250,44 @@ export function insuranceCfgPda(
   );
 }
 
-export function encodeCreateInsuranceVault(): Buffer {
-  return Buffer.from([Tag.CreateInsuranceVault]);
-}
-
-/// Create the per-market insurance vault (an SPL token account at
-/// `[INSURANCE_SEED, market]` for the market's quote mint). Market-authority-signed,
-/// one-time. `vault` is `insuranceVaultPda(programId, market)[0]`.
-export function createInsuranceVaultIx(args: {
-  programId: PublicKey;
-  market: PublicKey;
-  authority: PublicKey;
-  vault: PublicKey;
-  quoteMint: PublicKey;
-}): TransactionInstruction {
-  return new TransactionInstruction({
-    programId: args.programId,
-    keys: [
-      { pubkey: args.market, isSigner: false, isWritable: false },
-      { pubkey: args.authority, isSigner: true, isWritable: true },
-      { pubkey: args.vault, isSigner: false, isWritable: true },
-      { pubkey: args.quoteMint, isSigner: false, isWritable: false },
-      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
-    ],
-    data: encodeCreateInsuranceVault(),
-  });
-}
-
-export function encodeFundInsuranceVault(amount: bigint): Buffer {
-  const data = new Uint8Array(1 + 16);
-  data[0] = Tag.FundInsuranceVault;
-  writeU128LE(data, 1, amount);
+export function encodeFundInsurance(
+  assetIndex: number,
+  side: number,
+  amount: bigint,
+): Buffer {
+  const data = new Uint8Array(1 + 4 + 1 + 16);
+  data[0] = Tag.FundInsurance;
+  writeU32LE(data, 1, assetIndex);
+  data[5] = side;
+  writeU128LE(data, 6, amount);
   return Buffer.from(data);
 }
 
-/// Fund the insurance vault. Permissionless: any signer may transfer quote tokens
-/// into the backstop from their own token account (balance can only rise).
-export function fundInsuranceVaultIx(args: {
+/// Fund the engine's per-(asset, side) domain insurance. Permissionless: any signer
+/// may transfer quote tokens into the backstop from their own token account, raising
+/// the engine's total insurance `I` and the domain budget. `vaultToken` is the market
+/// vault (`wrapper.vault`).
+export function fundInsuranceIx(args: {
   programId: PublicKey;
   market: PublicKey;
   funder: PublicKey;
   funderToken: PublicKey;
-  /** The PDA from `insuranceVaultPda(programId, market)`. */
-  insuranceVault: PublicKey;
+  vaultToken: PublicKey;
+  assetIndex: number;
+  /** 0 = Long, 1 = Short (the `Side` enum). */
+  side: number;
   amount: bigint;
 }): TransactionInstruction {
   return new TransactionInstruction({
     programId: args.programId,
     keys: [
-      { pubkey: args.market, isSigner: false, isWritable: false },
+      { pubkey: args.market, isSigner: false, isWritable: true },
       { pubkey: args.funder, isSigner: true, isWritable: false },
       { pubkey: args.funderToken, isSigner: false, isWritable: true },
-      { pubkey: args.insuranceVault, isSigner: false, isWritable: true },
+      { pubkey: args.vaultToken, isSigner: false, isWritable: true },
       { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
     ],
-    data: encodeFundInsuranceVault(args.amount),
+    data: encodeFundInsurance(args.assetIndex, args.side, args.amount),
   });
 }
 
@@ -1362,27 +1336,33 @@ export function setInsuranceParamsIx(args: {
 }
 
 export function encodeRequestInsuranceWithdraw(
+  assetIndex: number,
+  side: number,
   amount: bigint,
   bump: number,
 ): Buffer {
-  const data = new Uint8Array(1 + 16 + 1);
+  const data = new Uint8Array(1 + 4 + 1 + 16 + 1);
   data[0] = Tag.RequestInsuranceWithdraw;
-  writeU128LE(data, 1, amount);
-  data[17] = bump;
+  writeU32LE(data, 1, assetIndex);
+  data[5] = side;
+  writeU128LE(data, 6, amount);
+  data[22] = bump;
   return Buffer.from(data);
 }
 
-/// Request an insurance withdrawal: records a pending (amount, unlock = now + delay)
-/// after checking the amount leaves the floor intact. Market-authority-signed; no
-/// funds move. `bump` is the config PDA bump.
+/// Request an insurance withdrawal from an (asset, side) domain: records a pending
+/// (amount, unlock = now + delay, domain) after checking the amount leaves the floor
+/// on the engine's total insurance `I` intact. Market-authority-signed; no funds
+/// move. `bump` is the config PDA bump.
 export function requestInsuranceWithdrawIx(args: {
   programId: PublicKey;
   /** The PDA from `insuranceCfgPda(programId, market)`. */
   cfgPda: PublicKey;
   market: PublicKey;
   authority: PublicKey;
-  /** The PDA from `insuranceVaultPda(programId, market)` (read for its balance). */
-  insuranceVault: PublicKey;
+  assetIndex: number;
+  /** 0 = Long, 1 = Short (the `Side` enum). */
+  side: number;
   amount: bigint;
   bump: number;
 }): TransactionInstruction {
@@ -1392,9 +1372,13 @@ export function requestInsuranceWithdrawIx(args: {
       { pubkey: args.cfgPda, isSigner: false, isWritable: true },
       { pubkey: args.market, isSigner: false, isWritable: false },
       { pubkey: args.authority, isSigner: true, isWritable: false },
-      { pubkey: args.insuranceVault, isSigner: false, isWritable: false },
     ],
-    data: encodeRequestInsuranceWithdraw(args.amount, args.bump),
+    data: encodeRequestInsuranceWithdraw(
+      args.assetIndex,
+      args.side,
+      args.amount,
+      args.bump,
+    ),
   });
 }
 
@@ -1403,17 +1387,17 @@ export function encodeExecuteInsuranceWithdraw(bump: number): Buffer {
 }
 
 /// Execute a previously requested insurance withdrawal once its timelock has
-/// elapsed. Re-checks the floor against the live balance, transfers out signed by the
-/// vault PDA, and clears the pending slot. Market-authority-signed. `bump` is the
-/// config PDA bump (the vault bump is derived on-chain).
+/// elapsed. Re-checks the floor against the live engine insurance `I`, calls the
+/// engine's verified domain-insurance withdraw, transfers the tokens out signed by
+/// the market vault PDA, and clears the pending slot. Market-authority-signed.
+/// `vaultToken` is the market vault (`wrapper.vault`); `bump` is the config PDA bump.
 export function executeInsuranceWithdrawIx(args: {
   programId: PublicKey;
   /** The PDA from `insuranceCfgPda(programId, market)`. */
   cfgPda: PublicKey;
   market: PublicKey;
   authority: PublicKey;
-  /** The PDA from `insuranceVaultPda(programId, market)` (source, PDA-signed). */
-  insuranceVault: PublicKey;
+  vaultToken: PublicKey;
   authorityToken: PublicKey;
   bump: number;
 }): TransactionInstruction {
@@ -1421,9 +1405,9 @@ export function executeInsuranceWithdrawIx(args: {
     programId: args.programId,
     keys: [
       { pubkey: args.cfgPda, isSigner: false, isWritable: true },
-      { pubkey: args.market, isSigner: false, isWritable: false },
+      { pubkey: args.market, isSigner: false, isWritable: true },
       { pubkey: args.authority, isSigner: true, isWritable: false },
-      { pubkey: args.insuranceVault, isSigner: false, isWritable: true },
+      { pubkey: args.vaultToken, isSigner: false, isWritable: true },
       { pubkey: args.authorityToken, isSigner: false, isWritable: true },
       { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
     ],
