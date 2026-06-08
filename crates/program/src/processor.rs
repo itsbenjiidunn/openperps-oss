@@ -1816,7 +1816,8 @@ fn process_crank_oracle(
     let mut m_data = market
         .try_borrow_mut_data()
         .map_err(|_| OpenPerpsError::InvalidAccountData)?;
-    crank_oracle_buffer(&mut m_data, asset_index, spot, now_slot).map_v16()?;
+    // Devnet-only mock oracle: no skew funding (test price toy).
+    crank_oracle_buffer(&mut m_data, asset_index, spot, now_slot, 0).map_v16()?;
     Ok(())
 }
 
@@ -1831,6 +1832,67 @@ const MAX_PYTH_CONF_BPS: u64 = 200;
 /// Reject a Pyth price whose spot diverges from the EMA by more than this
 /// fraction (in bps): a single-tick spike or glitch. 1000 bps = 10%.
 const MAX_PYTH_EMA_DIVERGENCE_BPS: u64 = 1_000;
+
+/// Skew funding for a crank: read the House's net position in `asset_index` and
+/// the market's House cap (the saturation reference), and return the clamped
+/// funding rate to feed the accrue path. The House portfolio is the account at
+/// `house_idx`, the House-cap PDA at `house_idx + 1`; both are verified against
+/// their canonical addresses so they cannot be substituted. Returns 0 (no
+/// funding) when the market has no cap, no House, or those accounts are absent /
+/// uninitialized, so cranking such a market is unaffected. Funding is the
+/// House-risk/balancing term (see `state::skew_funding_rate_e9`), not a mark
+/// premium, because the mark here is the oracle price.
+fn crank_skew_funding(
+    program_id: &Pubkey,
+    accounts: &[AccountInfo],
+    house_idx: usize,
+    market_key: &Pubkey,
+    house_bump: u8,
+    asset_index: u32,
+) -> Result<i128, OpenPerpsError> {
+    if house_bump == 0 {
+        return Ok(0);
+    }
+    // House cap = the saturation reference; canonical PDA, uninitialized => no cap.
+    let cap = {
+        let cap_acc = match accounts.get(house_idx + 1) {
+            Some(a) => a,
+            None => return Ok(0),
+        };
+        let (canonical, _) =
+            find_program_address(&[HOUSE_CAP_SEED, market_key.as_ref()], program_id);
+        if *cap_acc.key() != canonical || unsafe { cap_acc.owner() } != program_id {
+            return Ok(0);
+        }
+        let d = cap_acc
+            .try_borrow_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        let (mkt, cap) = house_cap_of(&d)?;
+        if mkt != *market_key {
+            return Ok(0);
+        }
+        cap
+    };
+    if cap == 0 {
+        return Ok(0);
+    }
+    // House net position (verified canonical House PDA) -> skew funding.
+    let house_acc = match accounts.get(house_idx) {
+        Some(a) => a,
+        None => return Ok(0),
+    };
+    if unsafe { house_acc.owner() } != program_id {
+        return Ok(0);
+    }
+    verify_house_pda(market_key, house_acc, house_bump, program_id)?;
+    let house_net = {
+        let d = house_acc
+            .try_borrow_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        crate::state::signed_position_for_asset(&d, asset_index)?
+    };
+    Ok(crate::state::skew_funding_rate_e9(house_net, cap))
+}
 
 /// Permissionless Pyth crank for a `PYTH` market: read a verified `PriceUpdateV2`
 /// account (owned by the receiver program), bind it to the market's feed id,
@@ -1864,7 +1926,8 @@ fn process_crank_pyth(
     let now_slot = clock.slot;
     let now_unix = clock.unix_timestamp;
 
-    let mark = {
+    let market_key = *market.key();
+    let (mark, house_bump) = {
         let m_data = market
             .try_borrow_data()
             .map_err(|_| OpenPerpsError::InvalidAccountData)?;
@@ -1875,6 +1938,7 @@ fn process_crank_pyth(
         if wrapper.oracle_kind != crate::state::oracle_kind::PYTH {
             return Err(OpenPerpsError::InvalidAccountData.into());
         }
+        let house_bump = wrapper.house_bump;
         let feed_id = wrapper.oracle_feed_id;
         let pu_data = price_update
             .try_borrow_data()
@@ -1894,13 +1958,18 @@ fn process_crank_pyth(
             return Err(OpenPerpsError::StalePythPrice.into());
         }
         // PRICE_SCALE is 1e6, so the mark carries 6 quote decimals.
-        crate::pyth::price_to_mark(pp.price, pp.expo, 6).map_err(|_| OpenPerpsError::StalePythPrice)?
+        let mark = crate::pyth::price_to_mark(pp.price, pp.expo, 6)
+            .map_err(|_| OpenPerpsError::StalePythPrice)?;
+        (mark, house_bump)
     };
+
+    // Skew funding from the House's net position (House portfolio @3, cap @4).
+    let funding = crank_skew_funding(program_id, accounts, 3, &market_key, house_bump, asset_index)?;
 
     let mut m_data = market
         .try_borrow_mut_data()
         .map_err(|_| OpenPerpsError::InvalidAccountData)?;
-    accrue_asset_buffer(&mut m_data, asset_index, now_slot, mark, 0, /* protective */ true)
+    accrue_asset_buffer(&mut m_data, asset_index, now_slot, mark, funding, /* protective */ true)
         .map_v16()?;
     Ok(())
 }
@@ -2028,7 +2097,7 @@ fn process_crank_dex_spot(
         return Err(OpenPerpsError::InvalidAccountData.into());
     }
 
-    let spot = {
+    let (spot, house_bump) = {
         let m_data = market
             .try_borrow_data()
             .map_err(|_| OpenPerpsError::InvalidAccountData)?;
@@ -2039,6 +2108,7 @@ fn process_crank_dex_spot(
         if wrapper.oracle_kind != crate::state::oracle_kind::DEX_EWMA {
             return Err(OpenPerpsError::InvalidAccountData.into());
         }
+        let house_bump = wrapper.house_bump;
         let cfg = {
             let c_data = config_pda
                 .try_borrow_data()
@@ -2065,8 +2135,9 @@ fn process_crank_dex_spot(
         };
         crate::dexamm::check_depth(reserve_quote, u64::from_le_bytes(cfg.min_quote_depth))
             .map_err(|_| OpenPerpsError::PoolTooThin)?;
-        crate::dexamm::cp_spot_to_mark(reserve_base, reserve_quote, cfg.base_decimals as u32)
-            .map_err(|_| OpenPerpsError::PoolTooThin)?
+        let spot = crate::dexamm::cp_spot_to_mark(reserve_base, reserve_quote, cfg.base_decimals as u32)
+            .map_err(|_| OpenPerpsError::PoolTooThin)?;
+        (spot, house_bump)
     };
 
     let clock = Clock::get()?;
@@ -2107,10 +2178,13 @@ fn process_crank_dex_spot(
     };
 
     if let Some(price) = twap {
+        // Skew funding from the House's net position (House portfolio @7, cap @8).
+        let funding =
+            crank_skew_funding(program_id, accounts, 7, &market_key, house_bump, asset_index)?;
         let mut m_data = market
             .try_borrow_mut_data()
             .map_err(|_| OpenPerpsError::InvalidAccountData)?;
-        crank_oracle_buffer(&mut m_data, asset_index, price, now_slot).map_v16()?;
+        crank_oracle_buffer(&mut m_data, asset_index, price, now_slot, funding).map_v16()?;
     }
     Ok(())
 }

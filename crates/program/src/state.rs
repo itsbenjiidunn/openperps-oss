@@ -13,7 +13,7 @@ use percolator::v16::{
     MarketGroupV16ViewMut, PermissionlessCrankActionV16, PermissionlessCrankRequestV16,
     PortfolioAccountV16Account, PortfolioLegV16, PortfolioLegV16Account,
     PortfolioV16ViewMut, ProvenanceHeaderV16,
-    ProvenanceHeaderV16Account, TradeOutcomeV16, TradeRequestV16, V16ConfigAccount, V16Error,
+    ProvenanceHeaderV16Account, SideV16, TradeOutcomeV16, TradeRequestV16, V16ConfigAccount, V16Error,
     V16PodU128, V16PodU16, V16PodU32, V16PodU64, V16_MAX_PORTFOLIO_ASSETS_N,
 };
 
@@ -636,6 +636,61 @@ pub fn portfolio_abs_position_for_asset(
     Ok(total)
 }
 
+/// The NET signed open position (base units) a portfolio holds in asset
+/// `asset_index`: long legs add, short legs subtract. For the House (the
+/// counterparty to every user trade) this equals the net user skew, which drives
+/// the skew funding rate.
+pub fn signed_position_for_asset(
+    buf: &[u8],
+    asset_index: u32,
+) -> Result<i128, OpenPerpsError> {
+    let header_len = core::mem::size_of::<PortfolioAccountV16Account>();
+    if buf.len() < header_len {
+        return Err(OpenPerpsError::AccountDataTooSmall);
+    }
+    let header: &PortfolioAccountV16Account = bytemuck::try_from_bytes(&buf[..header_len])
+        .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    let mut net: i128 = 0;
+    for leg_acct in header.legs.iter() {
+        let leg = leg_acct
+            .try_to_runtime()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        if leg.active && leg.asset_index == asset_index {
+            let abs = i128::try_from(leg.basis_pos_q.unsigned_abs())
+                .map_err(|_| OpenPerpsError::ArithmeticOverflow)?;
+            net = match leg.side {
+                SideV16::Long => net.checked_add(abs),
+                SideV16::Short => net.checked_sub(abs),
+            }
+            .ok_or(OpenPerpsError::ArithmeticOverflow)?;
+        }
+    }
+    Ok(net)
+}
+
+/// Skew funding rate (e9 per slot) for an oracle-marked B-book perp, from the
+/// House's net signed position `house_net` and a saturation reference `ref_oi`
+/// (the House exposure cap, base units). The mark is the oracle price, so funding
+/// is NOT a mark-vs-index convergence term; it prices the House's directional
+/// risk and balances user open interest:
+///
+/// `rate = clamp(-house_net * MAX / ref_oi, ±MAX)`, `MAX = ORACLE_FUNDING_MAX_E9`.
+///
+/// House net SHORT (`house_net < 0`, i.e. users net long) gives a POSITIVE rate
+/// so longs pay shorts (the engine's sign convention), compensating the House for
+/// the short risk it carries and nudging users back toward balance. Saturates at
+/// `±MAX` when `|house_net| >= ref_oi`. With no cap set (`ref_oi == 0`) there is
+/// no reference, so funding is zero (a market opts into funding by setting a cap).
+pub fn skew_funding_rate_e9(house_net: i128, ref_oi: u128) -> i128 {
+    let max = ORACLE_FUNDING_MAX_E9;
+    let ref_i = match i128::try_from(ref_oi) {
+        Ok(r) if r > 0 => r,
+        _ => return 0,
+    };
+    let scaled = house_net.saturating_mul(max) / ref_i;
+    (-scaled).clamp(-max, max)
+}
+
 /// Per-market DEX pool binding for `CrankDexSpot`: the two SPL token vaults whose
 /// live balances are the constant-product reserves, the base token's decimals,
 /// and the minimum quote-side depth (LE `u64`, quote atoms). Byte arrays keep it
@@ -1062,6 +1117,7 @@ pub fn crank_oracle_buffer(
     asset_index: u32,
     spot_price: u64,
     now_slot: u64,
+    funding_rate_e9: i128,
 ) -> Result<(), V16Error> {
     let old_ema = {
         let (_, markets) =
@@ -1081,16 +1137,10 @@ pub fn crank_oracle_buffer(
     } else {
         ewma_step(old_ema, spot_price, ORACLE_EWMA_ALPHA_BPS)
     };
-    // Funding follows the mark-vs-index premium: when the mark (EWMA) is above
-    // the pool spot, longs pay shorts (positive rate), and vice-versa. Clamped
-    // to the engine's `max_abs_funding_e9_per_slot` (see default_market_config).
-    let funding_rate_e9: i128 = if new_ema > spot_price {
-        ORACLE_FUNDING_MAX_E9
-    } else if new_ema < spot_price {
-        -ORACLE_FUNDING_MAX_E9
-    } else {
-        0
-    };
+    // `funding_rate_e9` is the skew funding the handler derived from the House's
+    // net position (see `skew_funding_rate_e9`), already clamped to
+    // `ORACLE_FUNDING_MAX_E9`. The mark here is the EWMA of the pool spot, so
+    // funding is the House-risk/balancing term, not a mark-vs-index premium.
     accrue_asset_buffer(
         market_buf,
         asset_index,
@@ -2003,5 +2053,25 @@ mod tests {
         let mut buf = vec![0u8; portfolio_account_size(2).unwrap()];
         init_portfolio_buffer(&mut buf, [1u8; 32], [2u8; 32], [3u8; 32]).unwrap();
         assert_eq!(portfolio_abs_position_for_asset(&buf, 0).unwrap(), 0);
+    }
+
+    #[test]
+    fn skew_funding_sign_proportion_and_clamp() {
+        let max = ORACLE_FUNDING_MAX_E9; // 10
+        let cap: u128 = 1_000;
+        // No cap reference -> no funding (a market opts in by setting a cap).
+        assert_eq!(skew_funding_rate_e9(-500, 0), 0);
+        // Flat House -> no funding.
+        assert_eq!(skew_funding_rate_e9(0, cap), 0);
+        // House net SHORT (users net long) -> POSITIVE (longs pay). At net = cap,
+        // funding saturates to +MAX.
+        assert_eq!(skew_funding_rate_e9(-(cap as i128), cap), max);
+        // Half the cap -> half the rate (proportional).
+        assert_eq!(skew_funding_rate_e9(-(cap as i128) / 2, cap), max / 2);
+        // House net LONG (users net short) -> NEGATIVE (shorts pay).
+        assert_eq!(skew_funding_rate_e9(cap as i128, cap), -max);
+        // Beyond the cap is clamped, not unbounded.
+        assert_eq!(skew_funding_rate_e9(-(cap as i128) * 5, cap), max);
+        assert_eq!(skew_funding_rate_e9(cap as i128 * 5, cap), -max);
     }
 }

@@ -404,10 +404,16 @@ pub enum OpenPerpsInstruction {
     /// price comes from the verified Pyth account (owner = receiver program,
     /// feed id bound to the market, Full verification, fresh), not the signer.
     ///
+    /// Funding is priced from the House's net position (skew funding): House
+    /// portfolio @3 and House-cap PDA @4 are read (verified canonical, read-only);
+    /// with no House cap set they are inert and funding is zero.
+    ///
     /// Accounts:
     ///   0. `[writable]` market account
     ///   1. `[]`         Pyth `PriceUpdateV2` account (owned by the receiver)
     ///   2. `[signer]`   any signer (pays fee)
+    ///   3. `[]`         House portfolio PDA `[HOUSE_SEED, market]` (read-only)
+    ///   4. `[]`         House-cap PDA `[HOUSE_CAP_SEED, market]` (read-only)
     CrankPyth {
         asset_index: u32,
     },
@@ -443,6 +449,8 @@ pub enum OpenPerpsInstruction {
     ///   4. `[writable]` TWAP-state PDA (`[TWAP_SEED, market, asset_index]`)
     ///   5. `[signer, writable]` cranker (pays fee + the TWAP PDA rent on first use)
     ///   6. `[]`         system program (for the first-use TWAP PDA create)
+    ///   7. `[]`         House portfolio PDA `[HOUSE_SEED, market]` (read-only, skew funding)
+    ///   8. `[]`         House-cap PDA `[HOUSE_CAP_SEED, market]` (read-only, skew funding)
     CrankDexSpot {
         asset_index: u32,
         bump: u8,

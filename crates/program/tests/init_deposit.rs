@@ -465,11 +465,12 @@ fn crank_oracle_accrues_funding_on_matched_position() {
         slots[0].engine.asset.try_to_runtime().unwrap().f_long_num
     };
 
-    // pool spot below the mark → EWMA stays above spot → positive funding.
+    // Crank with an explicit positive skew funding (the handler now derives this
+    // from the House net position; here we pass the max to assert it accrues).
     // The EWMA folds 90M into the 100M mark for a ~2% (2M) move; under the
     // 10 bps/slot price-move cap that needs at least ~20 slots of budget, so we
     // crank at slot 30 (dt = 29) rather than crowding it into a few slots.
-    crank_oracle_buffer(&mut m, 0, 90_000_000, 30).unwrap();
+    crank_oracle_buffer(&mut m, 0, 90_000_000, 30, 10).unwrap();
 
     let (_, slots) = market_engine_split_mut(&mut m).unwrap();
     let asset = slots[0].engine.asset.try_to_runtime().unwrap();
@@ -942,4 +943,33 @@ fn position_reader_reflects_a_trade() {
     assert_eq!(portfolio_abs_position_for_asset(&long_buf, 0).unwrap(), 1_000_000);
     assert_eq!(portfolio_abs_position_for_asset(&short_buf, 0).unwrap(), 1_000_000);
     assert_eq!(portfolio_abs_position_for_asset(&long_buf, 1).unwrap(), 0);
+}
+
+#[test]
+fn signed_position_reflects_side() {
+    // Backs the skew funding (A): `signed_position_for_asset` must report the net
+    // SIGNED position so the crank can derive funding from the House's net skew.
+    // In a PlaceOrder the user is long and the House is short, so the House (the
+    // short side here) reads NEGATIVE and the long side POSITIVE.
+    use openperps_program::state::signed_position_for_asset;
+    let mid = [0x97; 32];
+    let owner = [0x98; 32];
+
+    let mut market_buf = vec![0u8; market_account_size(CAP as usize).unwrap()];
+    let mut long_buf = vec![0u8; portfolio_account_size(CAP as usize).unwrap()];
+    let mut short_buf = vec![0u8; portfolio_account_size(CAP as usize).unwrap()];
+
+    setup_market(&mut market_buf, mid);
+    activate_market_buffer(&mut market_buf, 0, 100_000_000, 1).unwrap();
+    init_portfolio_buffer(&mut long_buf, mid, [1; 32], owner).unwrap();
+    init_portfolio_buffer(&mut short_buf, mid, [2; 32], owner).unwrap();
+    deposit(&mut market_buf, &mut long_buf, 50_000_000);
+    deposit(&mut market_buf, &mut short_buf, 50_000_000);
+
+    trade_buffer(&mut market_buf, &mut long_buf, &mut short_buf, 0, 1_000_000, 100_000_000, 10)
+        .unwrap();
+
+    assert_eq!(signed_position_for_asset(&long_buf, 0).unwrap(), 1_000_000);
+    assert_eq!(signed_position_for_asset(&short_buf, 0).unwrap(), -1_000_000);
+    assert_eq!(signed_position_for_asset(&long_buf, 1).unwrap(), 0);
 }

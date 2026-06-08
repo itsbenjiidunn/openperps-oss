@@ -15,6 +15,7 @@ import {
   HLP_SEED,
   HLP_VAULT_SEED,
   HOUSE_CAP_SEED,
+  HOUSE_SEED,
   INSURANCE_CFG_SEED,
   ORACLE_SEED,
   PORTFOLIO_SEED,
@@ -406,6 +407,17 @@ export function encodeCrankPyth(assetIndex: number): Buffer {
 /// `PriceUpdateV2` account (owned by the receiver program, bound to the market's
 /// feed id). `priceUpdate` is the sponsored feed account, for example the devnet
 /// SOL/USD account 7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE. Any signer.
+/** The per-market House portfolio PDA; matches Rust `[HOUSE_SEED, market]`. */
+export function housePortfolioPda(
+  programId: PublicKey,
+  market: PublicKey,
+): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync(
+    [HOUSE_SEED, market.toBuffer()],
+    programId,
+  );
+}
+
 export function crankPythIx(args: {
   programId: PublicKey;
   market: PublicKey;
@@ -413,12 +425,18 @@ export function crankPythIx(args: {
   signer: PublicKey;
   assetIndex: number;
 }): TransactionInstruction {
+  // House portfolio + cap (read-only) let the crank price skew funding from the
+  // House's net position; derived here so callers are unchanged.
+  const [housePortfolio] = housePortfolioPda(args.programId, args.market);
+  const [houseCap] = houseCapPda(args.programId, args.market);
   return new TransactionInstruction({
     programId: args.programId,
     keys: [
       { pubkey: args.market, isSigner: false, isWritable: true },
       { pubkey: args.priceUpdate, isSigner: false, isWritable: false },
       { pubkey: args.signer, isSigner: true, isWritable: false },
+      { pubkey: housePortfolio, isSigner: false, isWritable: false },
+      { pubkey: houseCap, isSigner: false, isWritable: false },
     ],
     data: encodeCrankPyth(args.assetIndex),
   });
@@ -527,6 +545,9 @@ export function crankDexSpotIx(args: {
   assetIndex: number;
 }): TransactionInstruction {
   const [twap, bump] = twapPda(args.programId, args.market, args.assetIndex);
+  // House portfolio + cap (read-only) for skew funding; derived so callers are unchanged.
+  const [housePortfolio] = housePortfolioPda(args.programId, args.market);
+  const [houseCap] = houseCapPda(args.programId, args.market);
   return new TransactionInstruction({
     programId: args.programId,
     keys: [
@@ -537,6 +558,8 @@ export function crankDexSpotIx(args: {
       { pubkey: twap, isSigner: false, isWritable: true },
       { pubkey: args.signer, isSigner: true, isWritable: true },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+      { pubkey: housePortfolio, isSigner: false, isWritable: false },
+      { pubkey: houseCap, isSigner: false, isWritable: false },
     ],
     data: encodeCrankDexSpot(args.assetIndex, bump),
   });
