@@ -60,7 +60,16 @@ creation and the protocol enforces the consequences. Core signals:
   concentration**, **Pyth feed availability** as context filters.
 
 Rule of thumb: `(thin depth OR low liq/FDV) AND high realized vol -> Volatile`;
-deep + low-vol + mature + Pyth-listed -> Stable; anything in between -> Volatile.
+deep + low-vol + mature + Pyth-listed -> Stable; anything in between -> Volatile. A
+large-cap inherently has a small liquidity/FDV ratio, so that ratio only flags a
+NON-major (a token without deep absolute depth).
+
+The SDK ships this as `classifyMarketTier(signals, thresholds?)`, which returns a
+suggested `risk_tier` code, an oracle posture (verifiable vs MANUAL) with a
+suggested `oracle_kind`, a confidence, and human-readable reasons. Thresholds
+default to a starting heuristic and are overridable per venue. It is a
+recommendation for the integrator; the operator makes the final call and the
+protocol only enforces the chosen tier.
 
 **A brand-new launch (e.g. a 0-LP token) has no history and must default to the
 conservative tier (Volatile / `MANUAL` oracle).** It graduates as depth grows and

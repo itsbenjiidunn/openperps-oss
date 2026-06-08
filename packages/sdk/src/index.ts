@@ -11,3 +11,4 @@ export * from "./trade-resolution.ts";
 export * from "./market-creation.ts";
 export * from "./trade-build.ts";
 export * from "./market-create-build.ts";
+export * from "./classify.ts";
