@@ -30,6 +30,11 @@ Who may call each instruction, verified against the program handlers.
 | `SetDexPool` | Market authority | Binds a DEX-priced market's pool: the two reserve vaults, base decimals, and minimum quote depth (`[DEXPOOL_SEED, market]` PDA). |
 | `SetHouseCap` | Market authority | Sets the House exposure cap: the max net House position per asset, base units (`[HOUSE_CAP_SEED, market]` PDA; zero disables it). Enforced in `PlaceOrder` / `PlaceBatchOrder`. |
 | `SetRequireVerifiable` | Market authority | Sets the market header's require-verifiable flag. When enabled, `AccrueAsset` is forced to a delta-0 accrual so the authority cannot move the mark; only `CrankPyth` / `CrankDexSpot` price it. |
+| `CreateInsuranceVault` | Market authority | One-time; creates the per-market insurance vault (an SPL token account at `[INSURANCE_SEED, market]`) for the quote mint. |
+| `FundInsuranceVault` | Permissionless | Anyone may transfer quote tokens into the insurance vault; the balance can only ever rise. |
+| `SetInsuranceParams` | Market authority | Sets the insurance withdrawal floor and timelock (`[INSURANCE_CFG_SEED, market]` PDA, created on first use). Both are raise-only (a ratchet). |
+| `RequestInsuranceWithdraw` | Market authority | Records a pending insurance withdrawal (amount + unlock slot) if it leaves the floor intact; no funds move. |
+| `ExecuteInsuranceWithdraw` | Market authority | Pays out a requested insurance withdrawal once its timelock elapses, re-checking the floor against the live balance; the vault PDA signs the transfer out. |
 | `CreateMockPool` / `MockSwap` | Permissionless | Token-less test-only price source; excluded from a `--no-default-features` build. |
 
 ## Oracle authority

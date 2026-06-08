@@ -43,6 +43,19 @@ pub enum OpenPerpsError {
     /// A trade would push the House's net position in the asset past the market's
     /// configured House exposure cap (`SetHouseCap`).
     HouseExposureCapExceeded = 14,
+    /// A `SetInsuranceParams` tried to LOWER the insurance fund's withdrawal floor
+    /// or shorten its withdrawal timelock. Both are raise-only (a ratchet), so the
+    /// fund's guarantees can only strengthen.
+    InsuranceParamLoosened = 15,
+    /// An insurance withdrawal would pull the fund below its configured floor
+    /// (`min_balance`), or no balance is available above the floor.
+    InsuranceFloorBreach = 16,
+    /// An insurance withdrawal was executed before its timelock unlock slot, or
+    /// requested with no funds available.
+    InsuranceWithdrawLocked = 17,
+    /// `ExecuteInsuranceWithdraw` ran with no pending withdrawal recorded (the
+    /// authority must `RequestInsuranceWithdraw` first).
+    InsuranceNoPending = 18,
 }
 
 impl From<OpenPerpsError> for ProgramError {

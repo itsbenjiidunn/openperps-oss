@@ -155,6 +155,23 @@ pub const TWAP_SEED: &[u8] = b"twap";
 /// liquidation, and the per-portfolio deposit cap.
 pub const HOUSE_CAP_SEED: &[u8] = b"housecap";
 
+/// PDA seed prefix for a market's insurance fund vault (an SPL token account).
+/// Full seeds: `[INSURANCE_SEED, market.key()]`. Per-market (isolated, mirroring
+/// the House model): a deficit on one market can only ever draw its own fund, so
+/// a manipulated thin-pool market cannot drain the backstop another market funded.
+/// The vault holds the same quote mint as the market vault; it is funded from seed
+/// deposits (or protocol revenue in a later phase) and is designed to pay a
+/// liquidation shortfall before the House (the deficit-cover path is a later phase).
+pub const INSURANCE_SEED: &[u8] = b"insurance";
+
+/// PDA seed prefix for a market's insurance fund config. Full seeds:
+/// `[INSURANCE_CFG_SEED, market.key()]`. Holds the withdrawal floor and the
+/// optional withdrawal timelock (plus pending-withdraw state), separate from the
+/// token vault because a vault PDA is owned by SPL Token and cannot also store
+/// program data. Both knobs are RAISE-ONLY (a ratchet), so the fund can only ever
+/// become more trustworthy; loosening is deferred to a later governance phase.
+pub const INSURANCE_CFG_SEED: &[u8] = b"inscfg";
+
 /// PDA seed prefix for a user's portfolio under a market. Full seed list is
 /// `[PORTFOLIO_SEED, owner.key(), market.key()]`. Makes a user's account on a
 /// given market group DETERMINISTIC, one account per (owner, market), derivable
@@ -180,6 +197,9 @@ pub const TWAP_DISCRIMINATOR: [u8; 8] = *b"OPTWAP00";
 
 /// Magic bytes at the start of a [`HouseCapAccount`].
 pub const HOUSE_CAP_DISCRIMINATOR: [u8; 8] = *b"OPHOUSEC";
+
+/// Magic bytes at the start of an [`InsuranceConfig`].
+pub const INSURANCE_CFG_DISCRIMINATOR: [u8; 8] = *b"OPINSCFG";
 
 /// Tiny PDA holding the session key authorized to place orders for one
 /// portfolio. Owner-set; all-zero `delegate` means revoked. `portfolio` binds
@@ -398,6 +418,128 @@ pub fn house_cap_of(buf: &[u8]) -> Result<([u8; 32], u128), OpenPerpsError> {
         return Ok(([0u8; 32], 0));
     }
     Ok((acc.market, u128::from_le_bytes(acc.max_base_position)))
+}
+
+/// Per-market insurance fund config. Sits beside the insurance token vault (which,
+/// being SPL-Token-owned, cannot itself hold program data). Holds the withdrawal
+/// floor (`min_balance`, quote atoms) a withdrawal can never breach, the optional
+/// withdrawal timelock (`withdraw_delay_slots`), and the single pending-withdraw
+/// slot (amount + unlock slot) the two-step request/execute flow uses. Both the
+/// floor and the delay are RAISE-ONLY via `SetInsuranceParams`, so the fund's
+/// guarantees can only strengthen. Byte arrays keep it alignment-1 and padding-free
+/// (Pod-safe). `reserved` leaves room for the later revenue-cut parameters
+/// (fee/penalty cut bps, per-event payout cap) without a new account layout.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Pod, Zeroable)]
+pub struct InsuranceConfig {
+    pub discriminator: [u8; 8],
+    pub market: [u8; 32],
+    pub min_balance: [u8; 16],
+    pub withdraw_delay_slots: [u8; 8],
+    pub pending_amount: [u8; 16],
+    pub pending_unlock_slot: [u8; 8],
+    pub reserved: [u8; 32],
+}
+
+impl InsuranceConfig {
+    pub const LEN: usize = core::mem::size_of::<Self>();
+    pub fn is_initialized(&self) -> bool {
+        self.discriminator == INSURANCE_CFG_DISCRIMINATOR
+    }
+}
+
+/// Decoded insurance config: the withdrawal floor, the withdrawal timelock, and
+/// the pending-withdraw slot (amount + unlock slot).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct InsuranceParams {
+    pub min_balance: u128,
+    pub withdraw_delay_slots: u64,
+    pub pending_amount: u128,
+    pub pending_unlock_slot: u64,
+}
+
+/// Set/raise a market's insurance params (the caller checks the market authority).
+/// On first use the freshly-zeroed PDA is initialized. On a later call both
+/// `min_balance` and `withdraw_delay_slots` may only be RAISED (a ratchet); a
+/// request to lower either is rejected with `InsuranceParamLoosened`, so the fund's
+/// floor and announcement window can never be quietly weakened. The pending-withdraw
+/// slot is preserved across a params update.
+pub fn set_insurance_params_buffer(
+    buf: &mut [u8],
+    market: [u8; 32],
+    min_balance: u128,
+    withdraw_delay_slots: u64,
+) -> Result<(), OpenPerpsError> {
+    if buf.len() < InsuranceConfig::LEN {
+        return Err(OpenPerpsError::AccountDataTooSmall);
+    }
+    let cfg: &mut InsuranceConfig = pod_from_bytes_mut(&mut buf[..InsuranceConfig::LEN])?;
+    if cfg.is_initialized() {
+        if cfg.market != market {
+            return Err(OpenPerpsError::ProvenanceMismatch);
+        }
+        if min_balance < u128::from_le_bytes(cfg.min_balance)
+            || withdraw_delay_slots < u64::from_le_bytes(cfg.withdraw_delay_slots)
+        {
+            return Err(OpenPerpsError::InsuranceParamLoosened);
+        }
+    } else {
+        cfg.discriminator = INSURANCE_CFG_DISCRIMINATOR;
+        cfg.market = market;
+        cfg.pending_amount = 0u128.to_le_bytes();
+        cfg.pending_unlock_slot = 0u64.to_le_bytes();
+    }
+    cfg.min_balance = min_balance.to_le_bytes();
+    cfg.withdraw_delay_slots = withdraw_delay_slots.to_le_bytes();
+    Ok(())
+}
+
+/// Read a market's insurance params; errors if uninitialized or bound to a
+/// different market (so a wrong PDA cannot be substituted in).
+pub fn insurance_params_of(
+    buf: &[u8],
+    market: &[u8; 32],
+) -> Result<InsuranceParams, OpenPerpsError> {
+    if buf.len() < InsuranceConfig::LEN {
+        return Err(OpenPerpsError::AccountDataTooSmall);
+    }
+    let cfg: &InsuranceConfig = bytemuck::try_from_bytes(&buf[..InsuranceConfig::LEN])
+        .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    if !cfg.is_initialized() {
+        return Err(OpenPerpsError::UninitializedAccount);
+    }
+    if cfg.market != *market {
+        return Err(OpenPerpsError::ProvenanceMismatch);
+    }
+    Ok(InsuranceParams {
+        min_balance: u128::from_le_bytes(cfg.min_balance),
+        withdraw_delay_slots: u64::from_le_bytes(cfg.withdraw_delay_slots),
+        pending_amount: u128::from_le_bytes(cfg.pending_amount),
+        pending_unlock_slot: u64::from_le_bytes(cfg.pending_unlock_slot),
+    })
+}
+
+/// Write the pending-withdraw slot (amount + unlock slot). `amount == 0` clears it.
+/// Requires the config to be initialized and bound to `market`.
+pub fn set_insurance_pending_buffer(
+    buf: &mut [u8],
+    market: &[u8; 32],
+    amount: u128,
+    unlock_slot: u64,
+) -> Result<(), OpenPerpsError> {
+    if buf.len() < InsuranceConfig::LEN {
+        return Err(OpenPerpsError::AccountDataTooSmall);
+    }
+    let cfg: &mut InsuranceConfig = pod_from_bytes_mut(&mut buf[..InsuranceConfig::LEN])?;
+    if !cfg.is_initialized() {
+        return Err(OpenPerpsError::UninitializedAccount);
+    }
+    if cfg.market != *market {
+        return Err(OpenPerpsError::ProvenanceMismatch);
+    }
+    cfg.pending_amount = amount.to_le_bytes();
+    cfg.pending_unlock_slot = unlock_slot.to_le_bytes();
+    Ok(())
 }
 
 /// The absolute open position size (base units) a portfolio holds in asset

@@ -10,12 +10,14 @@
 //! because the engine never reads them; their on-chain wiring is verified by
 //! the SBF smoke script.
 
+use openperps_program::error::OpenPerpsError;
 use openperps_program::state::{
     accrue_asset_buffer, activate_market_buffer, crank_oracle_buffer, crank_refresh_buffer,
-    init_market_buffer, init_portfolio_buffer, liquidate_buffer, market_account_size,
-    market_engine_split_mut, market_requires_verifiable, portfolio_abs_position_for_asset,
-    portfolio_account_size, portfolio_split_mut, resolve_market_buffer,
-    set_require_verifiable_buffer, trade_buffer, withdraw_buffer,
+    init_market_buffer, init_portfolio_buffer, insurance_params_of, liquidate_buffer,
+    market_account_size, market_engine_split_mut, market_requires_verifiable,
+    portfolio_abs_position_for_asset, portfolio_account_size, portfolio_split_mut,
+    resolve_market_buffer, set_insurance_params_buffer, set_insurance_pending_buffer,
+    set_require_verifiable_buffer, trade_buffer, withdraw_buffer, InsuranceConfig,
 };
 use percolator::v16::{AssetLifecycleV16, MarketGroupV16ViewMut, PortfolioV16ViewMut, SideV16};
 
@@ -169,6 +171,63 @@ fn require_verifiable_flag_roundtrip() {
     assert!(market_requires_verifiable(&market_buf).unwrap());
     set_require_verifiable_buffer(&mut market_buf, 0).unwrap();
     assert!(!market_requires_verifiable(&market_buf).unwrap());
+}
+
+#[test]
+fn insurance_config_roundtrip_and_ratchet() {
+    // Insurance Phase 1a: the per-market config PDA holding the withdrawal floor,
+    // the timelock, and the pending-withdraw slot. Both knobs are raise-only.
+    let market = [0x42; 32];
+    let mut cfg = vec![0u8; InsuranceConfig::LEN];
+
+    // First set initializes; reads back the floor + delay, pending is empty.
+    set_insurance_params_buffer(&mut cfg, market, 250_000, 216_000).unwrap();
+    let p = insurance_params_of(&cfg, &market).unwrap();
+    assert_eq!(p.min_balance, 250_000);
+    assert_eq!(p.withdraw_delay_slots, 216_000);
+    assert_eq!(p.pending_amount, 0);
+    assert_eq!(p.pending_unlock_slot, 0);
+
+    // Raising either knob is allowed.
+    set_insurance_params_buffer(&mut cfg, market, 300_000, 216_000).unwrap();
+    set_insurance_params_buffer(&mut cfg, market, 300_000, 300_000).unwrap();
+    assert_eq!(insurance_params_of(&cfg, &market).unwrap().min_balance, 300_000);
+
+    // Lowering the floor or shortening the delay is rejected (ratchet).
+    assert_eq!(
+        set_insurance_params_buffer(&mut cfg, market, 299_999, 300_000),
+        Err(OpenPerpsError::InsuranceParamLoosened)
+    );
+    assert_eq!(
+        set_insurance_params_buffer(&mut cfg, market, 300_000, 299_999),
+        Err(OpenPerpsError::InsuranceParamLoosened)
+    );
+
+    // A wrong market cannot read or re-set the config.
+    assert_eq!(
+        insurance_params_of(&cfg, &[0x43; 32]),
+        Err(OpenPerpsError::ProvenanceMismatch)
+    );
+
+    // The pending slot round-trips and clears, params untouched.
+    set_insurance_pending_buffer(&mut cfg, &market, 50_000, 12_345).unwrap();
+    let p = insurance_params_of(&cfg, &market).unwrap();
+    assert_eq!(p.pending_amount, 50_000);
+    assert_eq!(p.pending_unlock_slot, 12_345);
+    assert_eq!(p.min_balance, 300_000);
+    set_insurance_pending_buffer(&mut cfg, &market, 0, 0).unwrap();
+    assert_eq!(insurance_params_of(&cfg, &market).unwrap().pending_amount, 0);
+
+    // Helpers refuse an uninitialized buffer.
+    let mut empty = vec![0u8; InsuranceConfig::LEN];
+    assert_eq!(
+        insurance_params_of(&empty, &market),
+        Err(OpenPerpsError::UninitializedAccount)
+    );
+    assert_eq!(
+        set_insurance_pending_buffer(&mut empty, &market, 1, 1),
+        Err(OpenPerpsError::UninitializedAccount)
+    );
 }
 
 #[test]
