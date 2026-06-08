@@ -38,6 +38,9 @@
     },
     "./package.json": "./package.json"
   },
+  "bin": {
+    "openperps-relayer": "./dist/bin/relayer.js"
+  },
   "files": [
     "dist",
     "README.md",
@@ -48,6 +51,7 @@
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "typecheck": "tsc --noEmit",
     "test": "node --test --import tsx \"test/**/*.test.ts\"",
+    "relayer": "tsx src/bin/relayer.ts",
     "prepublishOnly": "npm run clean && npm run build"
   },
   "dependencies": {

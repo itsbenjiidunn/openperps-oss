@@ -24,3 +24,17 @@ export type {
   KeeperLogLevel,
   KeeperMarket,
 } from "./types.ts";
+export {
+  runRelayer,
+  startHealthServer,
+  healthResponse,
+  parseRelayerEnv,
+  keeperMarketFromConfig,
+  KEEPER_TIER_PARAMS,
+} from "./daemon.ts";
+export type {
+  RelayerConfig,
+  RelayerEnv,
+  HealthServerOptions,
+  KeeperMarketOverrides,
+} from "./daemon.ts";

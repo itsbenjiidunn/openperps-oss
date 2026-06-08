@@ -44,6 +44,42 @@ import { createLivePriceProvider } from "@openperps/sdk";
 const priceProvider = createLivePriceProvider(); // DexScreener -> Jupiter -> last-known
 ```
 
+## Run as a relayer daemon
+
+`runKeeper` is the loop; `runRelayer` is the deployable process around it. It
+defaults the price source to the live provider, derives each market's catch-up
+bounds from its risk tier (`keeperMarketFromConfig`), serves `/health`, and runs
+until aborted, so a MANUAL/relayer market gets a live mark pushed on-chain
+without you writing any of that:
+
+```ts
+import { Connection, Keypair } from "@solana/web3.js";
+import { runRelayer, keeperMarketFromConfig } from "@openperps/keeper";
+
+const controller = new AbortController();
+await runRelayer({
+  connection: new Connection(process.env.OPENPERPS_RPC!, "confirmed"),
+  authority: Keypair.fromSecretKey(/* oracle authority key */),
+  markets: marketConfigs.map((c) => keeperMarketFromConfig(c)),
+  healthServer: { port: 18810 }, // GET /health -> 200 healthy, 503 stale/failing
+  signal: controller.signal,
+});
+```
+
+Or run the bundled CLI (`openperps-relayer`), configured by environment:
+
+```bash
+OPENPERPS_RPC=https://api.devnet.solana.com \
+OPENPERPS_KEEPER_KEYPAIR=./keeper.json \
+OPENPERPS_MARKETS=./markets.json \
+npx openperps-relayer
+# optional: OPENPERPS_INTERVAL_MS (60000), OPENPERPS_HEALTH_PORT (18810), OPENPERPS_HEALTH_HOST (0.0.0.0)
+```
+
+`OPENPERPS_MARKETS` is a market-config json (or array) as produced by the SDK's
+`createPerpMarket`; each is validated on load. The CLI installs SIGINT/SIGTERM
+handlers for a clean shutdown.
+
 ## Authority
 
 For `AccrueAsset`, the keeper `authority` keypair must match the market's oracle
