@@ -28,8 +28,10 @@ shares the host app's single instance of each.
   market on any token.
 - **Account decoders.** `decodePortfolioSummary`, `decodePortfolioPositions`,
   and the layout offsets read market, portfolio, and position state.
-- **Price providers.** Bring your own `PriceProvider` (Pyth, a pool read, your
-  own oracle) or use `createStaticPriceProvider` for tests and demos.
+- **Price providers.** `createLivePriceProvider` feeds any Solana token from
+  DexScreener then Jupiter (with last-known hold) for relayer markets that have
+  no Pyth feed, or bring your own `PriceProvider` (Pyth, a pool read, your own
+  oracle); `createStaticPriceProvider` is for tests and demos.
 - **Instruction encoders.** Low-level `accrueAssetIx`, `liquidateIx`, and the
   rest, mirroring the Rust program, for when you need to compose by hand.
 

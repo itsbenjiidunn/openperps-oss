@@ -31,8 +31,18 @@ await runKeeper(
 );
 ```
 
-Bring your own `PriceProvider` (Birdeye, Pyth, a pool read, Geyser, or your own
-oracle) instead of the static demo provider.
+For a relayer market with no Pyth feed (custom SPL, memecoins), use
+`createLivePriceProvider` from `@openperps/sdk`: it reads the token's USD price
+off DexScreener then Jupiter, scales it to the market's price decimals, and holds
+the last good price when both are momentarily down. Or bring your own
+`PriceProvider` (Birdeye, Pyth, a pool read, Geyser, your own oracle) instead of
+the static demo provider.
+
+```ts
+import { createLivePriceProvider } from "@openperps/sdk";
+
+const priceProvider = createLivePriceProvider(); // DexScreener -> Jupiter -> last-known
+```
 
 ## Authority
 
