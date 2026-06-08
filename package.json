@@ -11,6 +11,7 @@
     "clean": "npm run clean --workspaces --if-present",
     "typecheck": "npm run build -w @openperps/sdk && npm run typecheck --workspaces --if-present",
     "test": "npm run build -w @openperps/sdk && npm run test --workspaces --if-present",
+    "onchain-suite": "bash scripts/run-onchain-suite.sh",
     "prepare": "npm run build"
   }
 }

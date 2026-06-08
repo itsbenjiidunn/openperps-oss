@@ -301,6 +301,18 @@ npm run typecheck  # builds the sdk, then type-checks every package
 > [!NOTE]
 > The build order matters: `react` and `keeper` depend on the compiled `@openperps/sdk`, so the root `build` / `test` / `typecheck` scripts always build the SDK first. The apps and examples consume the same packages locally, so **run `npm run build` once at the root** before installing or building them.
 
+### On-chain integration suite
+
+Host tests drive the engine through the same buffer helpers the handlers use, but they cannot exercise SPL-token CPI, PDA creation, or the runtime account contract between the on-chain handlers and the SDK. The on-chain suite covers that gap: it builds the program, spins up a local `solana-test-validator`, deploys, and runs the integration scripts (oracle + deposit cap, the core trade lifecycle and its guards, and the full HLP cycle) against real accounts, then tears the validator down.
+
+```bash
+npm run onchain-suite          # build + run the full suite
+SKIP_BUILD=1 npm run onchain-suite   # reuse an existing target/deploy/*.so
+```
+
+> [!NOTE]
+> Requires the Solana toolchain (`solana`, `cargo-build-sbf`, `solana-test-validator`) on `PATH`. On Windows the platform-tools rust must be >= 1.79; on Linux/CI the default toolchain works.
+
 ---
 
 ## How the on-chain program works
