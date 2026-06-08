@@ -15,6 +15,7 @@
 pub mod cpi;
 pub mod dexamm;
 pub mod error;
+pub mod hlp;
 pub mod instruction;
 pub mod processor;
 pub mod pyth;
