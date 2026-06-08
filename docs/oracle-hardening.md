@@ -21,15 +21,36 @@ they fall to `DEX_EWMA` off a possibly-thin pool, or to `MANUAL`. A production
 market should not be priced by a single authority key, and a market on a thin
 pool needs tight caps.
 
-## Hardening 1: require-verifiable flag (implemented)
+## Hardening 1 / P1: require-verifiable flag, default + ratchet (implemented)
 
-A per-market `require_verifiable` flag in the market header, set by the
-authority-gated `SetRequireVerifiable` instruction. When set, `process_accrue_asset`
-forces the non-oracle (delta-0) path: the authority's requested price is ignored
-and the current mark re-asserted, so the authority key can never move the mark and
-only `CrankPyth` / `CrankDexSpot` price it. An operator marks a production market
-as "no single-key pricing," closing the centralized-relayer manipulation and
-liveness risk for that market.
+A per-market `require_verifiable` flag in the market header. When set,
+`process_accrue_asset` forces the non-oracle (delta-0) path: the authority's
+requested price is ignored and the current mark re-asserted, so the relayer key can
+never move the mark and only `CrankPyth` / `CrankDexSpot` price it. This closes the
+centralized-relayer manipulation and liveness risk for that market.
+
+**Default by oracle kind (the trust tier).** `InitMarket` defaults the flag from
+`oracle_kind`, so a market self-describes its pricing trust tier:
+
+- `PYTH` / `DEX_EWMA` (has a verifiable source) -> default **ON** (verifiable
+  tier): neutral, no single key can move the mark.
+- `MANUAL` (no verifiable source) -> default **OFF** (relayer tier): the explicit
+  opt-out for long-tail / no-feed / 0-LP listings, priced by the relayer.
+
+**Ratchet.** `SetRequireVerifiable` only moves the flag 0 -> 1; turning it back OFF
+is rejected (`VerifiableCannotDowngrade`). A market's pricing trust can only ever
+strengthen, never silently revert to a single relayer key. The natural lifecycle
+(list `MANUAL`, graduate to verifiable once a pool/feed is deep enough) runs in the
+allowed direction.
+
+**Tier guidance for volatile / pump-dump tokens.** The verifiable `DEX_EWMA` mark
+is deliberately smoothed (TWAP + EWMA + per-slot clamp) to resist thin-pool
+manipulation, which makes it **lag a violent move**, late liquidations and bad-debt
+risk on a real pump/dump, and a thin pool can fail the depth floor and stop
+pricing. So a volatile / thin-pool token should be listed `MANUAL` (the relayer can
+track a Jupiter-aggregated price), and only graduated to verifiable once its pool is
+deep enough that the TWAP lag is tolerable. The default leaves `MANUAL` markets on
+the relayer, so "long-short any token" including violent movers is unaffected.
 
 - The flag lives in the market header (a repurposed reserved byte, so the layout
   and `MARKET_HEADER_VERSION` are unchanged), and the gate reads it from the market
@@ -37,7 +58,7 @@ liveness risk for that market.
   substitute.
 - It forces a delta-0 accrual rather than rejecting, so the permissionless
   stale-clear the trade flow relies on (which only advances `slot_last`) keeps
-  working. Off by default, so every existing market is unchanged.
+  working.
 - It is a config gate, no new math.
 
 ## Hardening 2: stale-pause parameter

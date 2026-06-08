@@ -155,24 +155,52 @@ fn init_market_rejects_double_init() {
 }
 
 #[test]
-fn require_verifiable_flag_roundtrip() {
-    // Hardening 1: the per-market require-verifiable flag. Off by default (every
-    // existing market keeps the authority relayer path); set, it makes the
-    // AccrueAsset gate force a delta-0 accrual so only the verifiable cranks move
-    // the mark. The handler reads the flag from the market header, no extra
-    // account.
-    let (mut market_buf, _) = fresh_buffers();
-    setup_market(&mut market_buf, [0x55; 32]);
-    assert!(!market_requires_verifiable(&market_buf).unwrap());
+fn require_verifiable_default_and_ratchet() {
+    // P1 oracle-neutrality. A PYTH/DEX_EWMA market is verifiable-by-default (the
+    // relayer key cannot move its mark); a MANUAL market stays relayer-priced. The
+    // flag ratchets 0 -> 1 only, so a market's pricing trust can only strengthen.
 
-    set_require_verifiable_buffer(&mut market_buf, 1).unwrap();
-    assert!(market_requires_verifiable(&market_buf).unwrap());
+    // PYTH (DUMMY_ORACLE_KIND == 1) defaults verifiable ON.
+    let (mut pyth, _) = fresh_buffers();
+    setup_market(&mut pyth, [0x55; 32]);
+    assert!(market_requires_verifiable(&pyth).unwrap());
 
-    // Any non-zero enables; zero disables.
-    set_require_verifiable_buffer(&mut market_buf, 7).unwrap();
-    assert!(market_requires_verifiable(&market_buf).unwrap());
-    set_require_verifiable_buffer(&mut market_buf, 0).unwrap();
-    assert!(!market_requires_verifiable(&market_buf).unwrap());
+    // Re-asserting ON is a no-op; turning it OFF is rejected (one-way ratchet).
+    set_require_verifiable_buffer(&mut pyth, 1).unwrap();
+    assert!(market_requires_verifiable(&pyth).unwrap());
+    assert_eq!(
+        set_require_verifiable_buffer(&mut pyth, 0),
+        Err(OpenPerpsError::VerifiableCannotDowngrade)
+    );
+    assert!(market_requires_verifiable(&pyth).unwrap());
+
+    // MANUAL (oracle_kind 0) defaults verifiable OFF: the relayer opt-out tier for
+    // a no-feed / long-tail listing.
+    let mut manual = vec![0u8; market_account_size(CAP as usize).unwrap()];
+    init_market_buffer(
+        &mut manual,
+        [0x56; 32],
+        CAP,
+        DUMMY_AUTHORITY,
+        DUMMY_QUOTE_MINT,
+        DUMMY_VAULT,
+        DUMMY_VAULT_BUMP,
+        DUMMY_BASE_MINT,
+        0, // MANUAL
+        DUMMY_ORACLE_FEED_ID,
+        DUMMY_ORACLE_POOL,
+    )
+    .unwrap();
+    assert!(!market_requires_verifiable(&manual).unwrap());
+
+    // It can graduate to verifiable (0 -> 1) once a pool/feed is deep enough, then
+    // it too is locked verifiable.
+    set_require_verifiable_buffer(&mut manual, 1).unwrap();
+    assert!(market_requires_verifiable(&manual).unwrap());
+    assert_eq!(
+        set_require_verifiable_buffer(&mut manual, 0),
+        Err(OpenPerpsError::VerifiableCannotDowngrade)
+    );
 }
 
 #[test]

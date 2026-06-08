@@ -12,6 +12,7 @@ export const OFFSET_WRAPPER_VERSION = 8;
 export const OFFSET_WRAPPER_VAULT_BUMP = 12;
 export const OFFSET_WRAPPER_HOUSE_BUMP = 13;
 export const OFFSET_WRAPPER_ORACLE_KIND = 14;
+export const OFFSET_WRAPPER_REQUIRE_VERIFIABLE = 15;
 export const OFFSET_WRAPPER_AUTHORITY = 16; // [u8; 32]
 export const OFFSET_WRAPPER_QUOTE_MINT = 48; // [u8; 32]
 export const OFFSET_WRAPPER_VAULT = 80; // [u8; 32]
@@ -23,6 +24,22 @@ export const OFFSET_WRAPPER_ORACLE_POOL = 176; // [u8; 32]
 export const ORACLE_KIND_MANUAL = 0;
 export const ORACLE_KIND_PYTH = 1;
 export const ORACLE_KIND_DEX_EWMA = 2;
+
+/** Market pricing trust tier, read from the wrapper header's `require_verifiable`
+ * byte. `"verifiable"` = no single key can move the mark (only `CrankPyth` /
+ * `CrankDexSpot` price it); `"relayer"` = a relayer/authority key prices it via
+ * `AccrueAsset`. `InitMarket` defaults PYTH/DEX_EWMA to verifiable and MANUAL to
+ * relayer. Apps can surface this as a trust badge. */
+export type MarketTrustTier = "verifiable" | "relayer";
+
+export function marketTrustTier(data: Uint8Array): MarketTrustTier {
+  return data[OFFSET_WRAPPER_REQUIRE_VERIFIABLE] !== 0 ? "verifiable" : "relayer";
+}
+
+/** The market's `oracle_kind` discriminant, read from the wrapper header. */
+export function marketOracleKind(data: Uint8Array): number {
+  return data[OFFSET_WRAPPER_ORACLE_KIND] ?? ORACLE_KIND_MANUAL;
+}
 
 /** Mock-pool account size + price scale, mirror Rust `state`. */
 export const MOCK_POOL_SIZE = 120;

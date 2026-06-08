@@ -810,10 +810,12 @@ pub struct OpenPerpsMarketHeader {
     pub oracle_kind: u8,
     /// When 1, `AccrueAsset` may not move this market's mark: the authority-set
     /// price is ignored (forced to a delta-0 accrual), so only the verifiable
-    /// cranks (`CrankPyth` / `CrankDexSpot`) price it. 0, the default for every
-    /// existing market, keeps the authority relayer path. Repurposed from the
-    /// former reserved pad byte, so the layout and `MARKET_HEADER_VERSION` are
-    /// unchanged.
+    /// cranks (`CrankPyth` / `CrankDexSpot`) price it. `InitMarket` defaults this to
+    /// 1 for a `PYTH` or `DEX_EWMA` market (it has a verifiable source) and 0 for a
+    /// `MANUAL` market (relayer-priced, the opt-out tier for no-feed listings).
+    /// `SetRequireVerifiable` ratchets it 0 -> 1 only, so trust can only strengthen.
+    /// Repurposed from the former reserved pad byte, so the layout and
+    /// `MARKET_HEADER_VERSION` are unchanged.
     pub require_verifiable: u8,
     /// Whoever signed `InitMarket`, only this key can activate / configure
     /// the market group later, including funding / withdrawing the House.
@@ -1211,7 +1213,11 @@ pub fn market_requires_verifiable(data: &[u8]) -> Result<bool, OpenPerpsError> {
 }
 
 /// Set the wrapper header's `require_verifiable` flag (the caller checks the
-/// market authority). Any non-zero value enables it.
+/// market authority). A one-way ratchet: any non-zero value turns it ON, but a
+/// market already verifiable cannot be turned back OFF (that would silently revert
+/// its pricing trust to a single relayer key), so trust can only ever strengthen.
+/// The natural lifecycle (start relayer-priced, graduate to verifiable once a
+/// pool/feed is deep enough) runs in the allowed 0 -> 1 direction.
 pub fn set_require_verifiable_buffer(data: &mut [u8], required: u8) -> Result<(), OpenPerpsError> {
     if data.len() < OpenPerpsMarketHeader::LEN {
         return Err(OpenPerpsError::AccountDataTooSmall);
@@ -1220,6 +1226,9 @@ pub fn set_require_verifiable_buffer(data: &mut [u8], required: u8) -> Result<()
         pod_from_bytes_mut(&mut data[..OpenPerpsMarketHeader::LEN])?;
     if !wrapper.is_initialized() {
         return Err(OpenPerpsError::UninitializedAccount);
+    }
+    if wrapper.require_verifiable != 0 && required == 0 {
+        return Err(OpenPerpsError::VerifiableCannotDowngrade);
     }
     wrapper.require_verifiable = u8::from(required != 0);
     Ok(())
@@ -1347,6 +1356,16 @@ pub fn init_market_buffer(
     wrapper.version = MARKET_HEADER_VERSION;
     wrapper.vault_bump = vault_bump;
     wrapper.oracle_kind = oracle_kind;
+    // P1 oracle-neutrality: a market backed by a verifiable source (Pyth pull
+    // oracle or a DEX pool + TWAP) is verifiable-by-default, so the relayer key can
+    // never move its mark. A MANUAL market has no verifiable source, so it stays
+    // relayer-priced, the explicit opt-out tier for long-tail / no-feed listings.
+    // The flag is a one-way ratchet thereafter (`set_require_verifiable_buffer`),
+    // and the lifecycle (list MANUAL, graduate to verifiable once a pool/feed is
+    // deep enough) runs in the allowed direction.
+    wrapper.require_verifiable = u8::from(
+        oracle_kind == self::oracle_kind::PYTH || oracle_kind == self::oracle_kind::DEX_EWMA,
+    );
     wrapper.authority = authority;
     wrapper.quote_mint = quote_mint;
     wrapper.vault = vault;

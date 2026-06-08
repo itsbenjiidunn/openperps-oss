@@ -56,6 +56,11 @@ pub enum OpenPerpsError {
     /// `ExecuteInsuranceWithdraw` ran with no pending withdrawal recorded (the
     /// authority must `RequestInsuranceWithdraw` first).
     InsuranceNoPending = 18,
+    /// `SetRequireVerifiable` tried to turn the market's verifiable-oracle flag
+    /// back OFF. The flag is a one-way ratchet (relayer -> verifiable only), so a
+    /// market's pricing trust can only ever strengthen, never silently revert to a
+    /// single relayer key.
+    VerifiableCannotDowngrade = 19,
 }
 
 impl From<OpenPerpsError> for ProgramError {
