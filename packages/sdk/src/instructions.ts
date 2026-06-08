@@ -1141,8 +1141,11 @@ export function encodeSetOracleAuthority(
 }
 
 /// Set or rotate a market's oracle authority (the key allowed to move the mark
-/// via AccrueAsset). Market-authority-signed; the all-zero pubkey revokes back
-/// to the program constant. The PDA is created on first use.
+/// via AccrueAsset). Market-authority-signed; the PDA is created on first use and
+/// rotation needs no program upgrade. The all-zero pubkey clears it: on a devnet
+/// build that reverts to the shared relayer constant, but a production build has
+/// no shared key, so clearing it freezes the mark (only delta-0 stale-lock clears
+/// remain). A MANUAL market should name its own relayer/keeper key here.
 export function setOracleAuthorityIx(args: {
   programId: PublicKey;
   /** The PDA from `oracleAuthorityPda(programId, market)`. */

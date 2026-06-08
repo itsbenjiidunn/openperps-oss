@@ -58,10 +58,14 @@ in place, and the open items.
 
 ## Open items
 
-- The operator-controlled oracle path (`AccrueAsset`) sets the mark from a single
-  pinned key, rotatable per market via `SetOracleAuthority` without a program
-  upgrade. A verifiable feed for every asset is on the roadmap; the Pyth path
-  (`CrankPyth`) already provides one for supported feeds.
+- The operator-controlled oracle path (`AccrueAsset`) sets the mark from a
+  per-market key. A production build has **no shared default relayer key**: each
+  market names its own oracle authority via `SetOracleAuthority` (the SDK one-call
+  listing does this at creation), rotatable without a program upgrade, so no
+  single key governs many markets and a market that never sets one simply has a
+  frozen mark rather than trusting a global key. A verifiable feed for every asset
+  is on the roadmap; the Pyth path (`CrankPyth`) already provides one for
+  supported feeds.
 - DEX-EWMA prices off a capped program-side TWAP on top of the pool-depth gate;
   reading an AMM-native price cumulative (e.g. Raydium observations) to drop the
   sampled-spot assumption is the next layer.

@@ -31,7 +31,14 @@ import {
   buildMarketCreationInstructions,
   type MarketCreationBuild,
 } from "./market-create-build.ts";
-import { depositCapPda, houseCapPda, setDepositCapIx, setHouseCapIx } from "./instructions.ts";
+import {
+  depositCapPda,
+  houseCapPda,
+  oracleAuthorityPda,
+  setDepositCapIx,
+  setHouseCapIx,
+  setOracleAuthorityIx,
+} from "./instructions.ts";
 import type { OpenPerpsMarketCreationIntent } from "./intents.ts";
 import type { OpenPerpsCluster, OpenPerpsMarketConfig, OpenPerpsRiskTier } from "./config.ts";
 import { usdToPriceInt, type FetchLike } from "./price.ts";
@@ -198,6 +205,12 @@ export type BuildPerpMarketListingInput = ResolvePerpListingInput & {
   oracleFeedId?: Uint8Array;
   /// DEX pool when the listing should price off a DEX-EWMA crank.
   oraclePool?: PublicKey;
+  /// The market's oracle authority: the key (the integrator's relayer/keeper)
+  /// allowed to move the mark via AccrueAsset. A production program has no shared
+  /// relayer key, so a MANUAL (memecoin) market must name its own here or its
+  /// mark stays frozen. Defaults to the market `authority`. Verifiable markets
+  /// (PYTH / DEX_EWMA) are priced by their crank and ignore this.
+  oracleAuthority?: PublicKey;
   /// Append SetHouseCap with this max net House position (base units).
   houseCapBase?: bigint;
   /// Append SetDepositCap with this per-portfolio cap (quote atoms). DEX-priced
@@ -248,6 +261,26 @@ export function buildPerpMarketListing(input: BuildPerpMarketListingInput): Perp
   });
 
   const instructions = [...build.instructions];
+
+  // A MANUAL (relayer) market must name its own oracle authority: a production
+  // program has no shared relayer key, so without this its mark stays frozen.
+  // Default it to the market authority; an integrator passes its keeper key.
+  // Verifiable markets (PYTH / DEX_EWMA) are priced by their crank, so this is
+  // only added for them when an authority is explicitly requested.
+  if (oracleKind === ORACLE_KIND_MANUAL || input.oracleAuthority !== undefined) {
+    const newAuthority = input.oracleAuthority ?? input.authority;
+    const [pda, bump] = oracleAuthorityPda(input.programId, input.market);
+    instructions.push(
+      setOracleAuthorityIx({
+        programId: input.programId,
+        oracleAuthorityPda: pda,
+        market: input.market,
+        authority: input.authority,
+        newAuthority,
+        bump,
+      }),
+    );
+  }
 
   if (input.houseCapBase !== undefined) {
     const [pda, bump] = houseCapPda(input.programId, input.market);

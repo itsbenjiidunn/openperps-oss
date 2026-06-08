@@ -53,11 +53,14 @@ use crate::state::{
 /// SPL Token v1 account data length (fixed).
 const SPL_TOKEN_ACCOUNT_LEN: u64 = 165;
 
-/// The only key allowed to MOVE a market's mark via AccrueAsset (see the oracle
-/// gate in `process_accrue_asset`). This is the off-chain price relayer's
-/// keypair; delta-0 accruals (stale-lock clears) stay permissionless. Rotating
-/// the relayer key requires a program upgrade.
+/// DEVNET-ONLY shared relayer key: the default mark mover via AccrueAsset for a
+/// market that has not set its own oracle authority. A production build has NO
+/// shared key (see `resolve_oracle_authority`), so every real market must name
+/// its own rotatable authority via `SetOracleAuthority` (the SDK one-call listing
+/// does this at creation) and no single key can govern many markets. Delta-0
+/// accruals (stale-lock clears) stay permissionless either way.
 /// `8C6zm6vmyk7kiNxGDQze62DdsfFJC7zbZF8FwFBsvXKP`
+#[cfg(feature = "devnet")]
 const ORACLE_AUTHORITY: Pubkey = [
     106, 217, 250, 24, 98, 232, 106, 23, 98, 81, 231, 177, 129, 19, 153, 186, 245, 127, 20, 230,
     67, 118, 117, 89, 222, 228, 165, 212, 72, 230, 40, 138,
@@ -66,12 +69,17 @@ const ORACLE_AUTHORITY: Pubkey = [
 /// Resolve the oracle authority for a market's price gate. If the optional
 /// per-market oracle authority PDA (the account at `pda_index`) is present, owned
 /// by this program, initialized, bound to this market, and non-zero, that key
-/// governs; otherwise the global relayer constant does. A valid such account can
-/// only exist at the canonical `[ORACLE_SEED, market]` PDA (SetOracleAuthority
-/// creates it there under the market authority), so a discriminator + market
-/// match is enough to trust it. Markets that never set one stay on the relayer.
-/// `pda_index` is the slot the caller's account layout reserves for the optional
-/// PDA (AccrueAsset = 2, CrankRefresh = 3), since their fixed accounts differ.
+/// governs. A valid such account can only exist at the canonical
+/// `[ORACLE_SEED, market]` PDA (SetOracleAuthority creates it there under the
+/// market authority), so a discriminator + market match is enough to trust it.
+///
+/// Fallback when no per-market authority is set: on devnet, the shared relayer
+/// constant; on a production build, the all-zero key, i.e. NO authority. A signer
+/// is never the zero key, so a production market that has not set its own
+/// authority cannot have its mark moved by anyone (only delta-0 stale-lock
+/// clears). That removes the single-shared-key trust point: every real market
+/// names its own rotatable authority. `pda_index` is the slot the caller's
+/// account layout reserves for the optional PDA (AccrueAsset = 2, CrankRefresh = 3).
 fn resolve_oracle_authority(
     program_id: &Pubkey,
     accounts: &[AccountInfo],
@@ -89,7 +97,14 @@ fn resolve_oracle_authority(
             }
         }
     }
-    ORACLE_AUTHORITY
+    #[cfg(feature = "devnet")]
+    {
+        ORACLE_AUTHORITY
+    }
+    #[cfg(not(feature = "devnet"))]
+    {
+        [0u8; 32]
+    }
 }
 
 /// Shared oracle price gate for `AccrueAsset` and `CrankRefresh`. The requested

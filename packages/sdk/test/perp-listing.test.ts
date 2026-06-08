@@ -151,6 +151,7 @@ test("build: memecoin emits the lifecycle + SetHouseCap, MANUAL, Volatile", () =
     Tag.CreateVault,
     Tag.CreateHouseVault,
     Tag.ActivateMarket,
+    Tag.SetOracleAuthority, // MANUAL market names its own relayer key
     Tag.SetHouseCap,
   ]);
   assert.equal(listing.oracleKind, ORACLE_KIND_MANUAL);
@@ -187,7 +188,43 @@ test("build: a House deposit inserts FundHouseVault (needs authorityQuoteToken)"
     Tag.CreateHouseVault,
     Tag.FundHouseVault,
     Tag.ActivateMarket,
+    Tag.SetOracleAuthority,
   ]);
+});
+
+test("listing sets a MANUAL market's oracle authority; verifiable markets skip it", () => {
+  // MANUAL (memecoin): names its own relayer key, defaulting to the authority.
+  const keeper = Keypair.generate().publicKey;
+  const manual = buildPerpMarketListing({
+    baseMint,
+    quoteMint,
+    signals: memecoinSignals,
+    priceUsd: 0.01,
+    symbol: "PUMP",
+    programId,
+    authority,
+    market,
+    marketRentLamports: 1,
+    oracleAuthority: keeper,
+  });
+  assert.ok(tagsOf(manual.instructions).includes(Tag.SetOracleAuthority));
+
+  // DEX_EWMA (verifiable, deep pool): priced by its crank, so no oracle authority
+  // is added unless one is explicitly requested.
+  const verifiable = buildPerpMarketListing({
+    baseMint,
+    quoteMint,
+    signals: deepSignals,
+    priceUsd: 2,
+    symbol: "DEEP",
+    programId,
+    authority,
+    market,
+    marketRentLamports: 1,
+    oraclePool: Keypair.generate().publicKey,
+  });
+  assert.equal(verifiable.oracleKind, ORACLE_KIND_DEX_EWMA);
+  assert.ok(!tagsOf(verifiable.instructions).includes(Tag.SetOracleAuthority));
 });
 
 test("build: a verifiable suggestion falls back to MANUAL without a binding", () => {
