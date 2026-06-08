@@ -13,6 +13,12 @@ export {
   runKeeper,
 } from "./keeper.ts";
 export type { RunKeeperOptions, SlotState } from "./keeper.ts";
+export { planHlpRebalance, readHlpState, rebalanceHlp } from "./hlp.ts";
+export type {
+  HlpRebalanceConfig,
+  HlpState,
+  HlpRebalanceAction,
+} from "./hlp.ts";
 export type {
   KeeperDeps,
   KeeperLogLevel,
