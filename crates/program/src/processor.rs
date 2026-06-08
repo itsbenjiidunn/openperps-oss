@@ -33,6 +33,11 @@ use crate::{
         insurance_params_of, set_insurance_pending_buffer, insurance_domain_index,
         engine_total_insurance, deposit_domain_insurance_buffer, withdraw_domain_insurance_buffer,
     },
+    hlp::{
+        assets_to_shares, house_marked_equity, hlp_params_of, hlp_position_of,
+        set_hlp_params_buffer, set_hlp_position_buffer, set_hlp_total_shares_buffer, HlpConfig,
+        HlpPosition, HLP_POSITION_SEED, HLP_SEED, HLP_VAULT_SEED,
+    },
 };
 
 // Buffer initializers used only by the devnet-only mock-pool handlers; gated so
@@ -365,6 +370,24 @@ pub fn process_instruction(
         OpenPerpsInstruction::ExecuteInsuranceWithdraw { bump } => {
             process_execute_insurance_withdraw(program_id, accounts, bump)
         }
+        OpenPerpsInstruction::CreateHlpVault => process_create_hlp_vault(program_id, accounts),
+        OpenPerpsInstruction::SetHlpParams {
+            redeem_delay_slots,
+            fee_bps,
+            min_deposit,
+            bump,
+        } => process_set_hlp_params(
+            program_id,
+            accounts,
+            redeem_delay_slots,
+            fee_bps,
+            min_deposit,
+            bump,
+        ),
+        OpenPerpsInstruction::DepositHlp {
+            amount,
+            position_bump,
+        } => process_deposit_hlp(program_id, accounts, amount, position_bump),
     }
 }
 
@@ -2774,6 +2797,317 @@ fn process_execute_insurance_withdraw(
         .try_borrow_mut_data()
         .map_err(|_| OpenPerpsError::InvalidAccountData)?;
     set_insurance_pending_buffer(&mut data, &market_key, 0, 0, 0, 0)?;
+    Ok(())
+}
+
+/// Create the per-market HLP free-buffer vault: an SPL token account at
+/// `[HLP_VAULT_SEED, market]` for the market's quote mint. Authority-only, one-time.
+/// Mirrors `CreateVault`; the new account is a PDA that signs its own transfers out
+/// during a redemption. No engine interaction.
+fn process_create_hlp_vault(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
+    let [market, authority, hlp_vault, quote_mint, _system_program, _token_program, ..] = accounts
+    else {
+        return Err(OpenPerpsError::InvalidInstruction.into());
+    };
+    if !authority.is_signer() {
+        return Err(OpenPerpsError::MissingRequiredSignature.into());
+    }
+    if !hlp_vault.is_writable() {
+        return Err(OpenPerpsError::InvalidAccountData.into());
+    }
+    if unsafe { market.owner() } != program_id {
+        return Err(OpenPerpsError::InvalidAccountOwner.into());
+    }
+
+    let expected_quote_mint = {
+        let data = market
+            .try_borrow_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        let wrapper = market_wrapper_header(&data)?;
+        if !wrapper.is_initialized() {
+            return Err(OpenPerpsError::UninitializedAccount.into());
+        }
+        if wrapper.authority != *authority.key() {
+            return Err(OpenPerpsError::MissingRequiredSignature.into());
+        }
+        wrapper.quote_mint
+    };
+    if *quote_mint.key() != expected_quote_mint {
+        return Err(OpenPerpsError::InvalidAccountData.into());
+    }
+
+    let market_key = *market.key();
+    let (derived, bump) = find_program_address(&[HLP_VAULT_SEED, market_key.as_ref()], program_id);
+    if *hlp_vault.key() != derived {
+        return Err(OpenPerpsError::InvalidAccountData.into());
+    }
+
+    let bump_arr = [bump];
+    let seeds = [
+        Seed::from(HLP_VAULT_SEED),
+        Seed::from(market_key.as_ref()),
+        Seed::from(bump_arr.as_ref()),
+    ];
+    let signer = Signer::from(seeds.as_ref());
+    let rent = Rent::get()?;
+    let lamports = rent.minimum_balance(SPL_TOKEN_ACCOUNT_LEN as usize);
+    system_create_account(
+        authority,
+        hlp_vault,
+        lamports,
+        SPL_TOKEN_ACCOUNT_LEN,
+        &TOKEN_PROGRAM_ID,
+        &[signer],
+    )?;
+    token_initialize_account3(hlp_vault, quote_mint, hlp_vault.key())?;
+    Ok(())
+}
+
+/// Set the HLP config. Only the market authority may call; the `[HLP_SEED, market]`
+/// PDA is created on first use. No engine interaction.
+fn process_set_hlp_params(
+    program_id: &Pubkey,
+    accounts: &[AccountInfo],
+    redeem_delay_slots: u64,
+    fee_bps: u64,
+    min_deposit: u128,
+    bump: u8,
+) -> ProgramResult {
+    let [cfg_pda, market, authority, _system_program, ..] = accounts else {
+        return Err(OpenPerpsError::InvalidInstruction.into());
+    };
+    if !authority.is_signer() {
+        return Err(OpenPerpsError::MissingRequiredSignature.into());
+    }
+    if !cfg_pda.is_writable() {
+        return Err(OpenPerpsError::InvalidAccountData.into());
+    }
+    if unsafe { market.owner() } != program_id {
+        return Err(OpenPerpsError::InvalidAccountOwner.into());
+    }
+
+    let market_key = *market.key();
+    {
+        let data = market
+            .try_borrow_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        let wrapper = market_wrapper_header(&data)?;
+        if !wrapper.is_initialized() {
+            return Err(OpenPerpsError::UninitializedAccount.into());
+        }
+        if wrapper.authority != *authority.key() {
+            return Err(OpenPerpsError::MissingRequiredSignature.into());
+        }
+    }
+
+    let derived =
+        create_program_address(&[HLP_SEED, market_key.as_ref(), &[bump]], program_id)
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    if *cfg_pda.key() != derived {
+        return Err(OpenPerpsError::InvalidAccountData.into());
+    }
+
+    if unsafe { cfg_pda.owner() } != program_id {
+        let rent = Rent::get()?;
+        let lamports = rent.minimum_balance(HlpConfig::LEN);
+        let bump_arr = [bump];
+        let seeds = [
+            Seed::from(HLP_SEED),
+            Seed::from(market_key.as_ref()),
+            Seed::from(bump_arr.as_ref()),
+        ];
+        let signer = Signer::from(seeds.as_ref());
+        system_create_account(
+            authority,
+            cfg_pda,
+            lamports,
+            HlpConfig::LEN as u64,
+            program_id,
+            &[signer],
+        )?;
+    }
+
+    let mut data = cfg_pda
+        .try_borrow_mut_data()
+        .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    set_hlp_params_buffer(&mut data, market_key, redeem_delay_slots, fee_bps, min_deposit)?;
+    Ok(())
+}
+
+/// Deposit `amount` quote tokens into the HLP buffer and mint LP shares priced at
+/// the pre-deposit NAV (= buffer balance + the House portfolio's marked equity).
+/// Permissionless. The tokens land in the buffer vault (not the engine House); a
+/// later `DeployHlp` moves them into the House. The fee on deposit stays in the
+/// buffer, accruing to NAV so a round-trip is unprofitable. No engine interaction.
+fn process_deposit_hlp(
+    program_id: &Pubkey,
+    accounts: &[AccountInfo],
+    amount: u128,
+    position_bump: u8,
+) -> ProgramResult {
+    let [cfg_pda, market, depositor, depositor_token, hlp_vault, position_pda, house_portfolio, _system_program, _token_program, ..] =
+        accounts
+    else {
+        return Err(OpenPerpsError::InvalidInstruction.into());
+    };
+    if !depositor.is_signer() {
+        return Err(OpenPerpsError::MissingRequiredSignature.into());
+    }
+    if !cfg_pda.is_writable()
+        || !depositor_token.is_writable()
+        || !hlp_vault.is_writable()
+        || !position_pda.is_writable()
+    {
+        return Err(OpenPerpsError::InvalidAccountData.into());
+    }
+    if unsafe { market.owner() } != program_id
+        || unsafe { cfg_pda.owner() } != program_id
+        || unsafe { house_portfolio.owner() } != program_id
+    {
+        return Err(OpenPerpsError::InvalidAccountOwner.into());
+    }
+
+    let market_key = *market.key();
+    let depositor_key = *depositor.key();
+
+    // Verify the House portfolio (read for its marked equity) and the buffer vault.
+    let house_bump = {
+        let data = market
+            .try_borrow_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        let wrapper = market_wrapper_header(&data)?;
+        if !wrapper.is_initialized() {
+            return Err(OpenPerpsError::UninitializedAccount.into());
+        }
+        if wrapper.house_bump == 0 {
+            return Err(OpenPerpsError::UninitializedAccount.into());
+        }
+        wrapper.house_bump
+    };
+    verify_house_pda(&market_key, house_portfolio, house_bump, program_id)?;
+    let (vault_derived, _) = find_program_address(&[HLP_VAULT_SEED, market_key.as_ref()], program_id);
+    if *hlp_vault.key() != vault_derived {
+        return Err(OpenPerpsError::InvalidAccountData.into());
+    }
+    if unsafe { hlp_vault.owner() } != &TOKEN_PROGRAM_ID {
+        return Err(OpenPerpsError::InvalidAccountOwner.into());
+    }
+    // Verify the per-LP position PDA's canonical address.
+    let pos_derived = create_program_address(
+        &[
+            HLP_POSITION_SEED,
+            market_key.as_ref(),
+            depositor_key.as_ref(),
+            &[position_bump],
+        ],
+        program_id,
+    )
+    .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    if *position_pda.key() != pos_derived {
+        return Err(OpenPerpsError::InvalidAccountData.into());
+    }
+
+    let params = {
+        let data = cfg_pda
+            .try_borrow_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        hlp_params_of(&data, &market_key)?
+    };
+    if amount < params.min_deposit {
+        return Err(OpenPerpsError::HlpBelowMinDeposit.into());
+    }
+
+    // Price shares at the PRE-deposit NAV (buffer balance before this transfer, plus
+    // the House's marked equity), so the depositor mints at the current price.
+    let buffer_before = {
+        let vdata = hlp_vault
+            .try_borrow_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        crate::dexamm::token_account_amount(&vdata)
+            .map_err(|_| OpenPerpsError::InvalidAccountData)? as u128
+    };
+    let house_equity = {
+        let hdata = house_portfolio
+            .try_borrow_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        house_marked_equity(&hdata)?
+    };
+    let nav = buffer_before
+        .checked_add(house_equity)
+        .ok_or(OpenPerpsError::ArithmeticOverflow)?;
+
+    // The deposit fee stays in the buffer (accrues to NAV), so a round-trip loses it.
+    let fee = amount
+        .checked_mul(params.fee_bps as u128)
+        .ok_or(OpenPerpsError::ArithmeticOverflow)?
+        / 10_000;
+    let amount_net = amount.saturating_sub(fee);
+    let shares = assets_to_shares(amount_net, params.total_shares, nav);
+    if shares == 0 {
+        return Err(OpenPerpsError::HlpBelowMinDeposit.into());
+    }
+
+    let amount_u64: u64 = amount
+        .try_into()
+        .map_err(|_| OpenPerpsError::ArithmeticOverflow)?;
+    token_transfer(depositor_token, hlp_vault, depositor, amount_u64)?;
+
+    // Create the per-LP position PDA on first deposit (the depositor pays rent).
+    if unsafe { position_pda.owner() } != program_id {
+        let rent = Rent::get()?;
+        let lamports = rent.minimum_balance(HlpPosition::LEN);
+        let bump_arr = [position_bump];
+        let seeds = [
+            Seed::from(HLP_POSITION_SEED),
+            Seed::from(market_key.as_ref()),
+            Seed::from(depositor_key.as_ref()),
+            Seed::from(bump_arr.as_ref()),
+        ];
+        let signer = Signer::from(seeds.as_ref());
+        system_create_account(
+            depositor,
+            position_pda,
+            lamports,
+            HlpPosition::LEN as u64,
+            program_id,
+            &[signer],
+        )?;
+    }
+
+    let existing = {
+        let pdata = position_pda
+            .try_borrow_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        hlp_position_of(&pdata, &market_key, &depositor_key)?
+    };
+    let new_shares = existing
+        .shares
+        .checked_add(shares)
+        .ok_or(OpenPerpsError::ArithmeticOverflow)?;
+    {
+        let mut pdata = position_pda
+            .try_borrow_mut_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        set_hlp_position_buffer(
+            &mut pdata,
+            market_key,
+            depositor_key,
+            new_shares,
+            existing.pending_redeem_shares,
+            existing.pending_unlock_slot,
+        )?;
+    }
+
+    let new_total = params
+        .total_shares
+        .checked_add(shares)
+        .ok_or(OpenPerpsError::ArithmeticOverflow)?;
+    {
+        let mut cdata = cfg_pda
+            .try_borrow_mut_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        set_hlp_total_shares_buffer(&mut cdata, &market_key, new_total)?;
+    }
     Ok(())
 }
 

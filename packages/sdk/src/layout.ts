@@ -196,6 +196,19 @@ export const HOUSE_CAP_SEED = new TextEncoder().encode("housecap");
  * only the withdrawal governance (floor + timelock + pending-withdraw state). */
 export const INSURANCE_CFG_SEED = new TextEncoder().encode("inscfg");
 
+/** HLP config PDA seed prefix; matches Rust `hlp::HLP_SEED`. Full seeds
+ * `[HLP_SEED, market]` (total_shares + redeem delay/fee/min-deposit). */
+export const HLP_SEED = new TextEncoder().encode("hlp");
+
+/** HLP free-buffer vault PDA seed prefix; matches Rust `hlp::HLP_VAULT_SEED`. Full
+ * seeds `[HLP_VAULT_SEED, market]` (the SPL token account holding undeployed LP
+ * capital; redemptions are paid from here). */
+export const HLP_VAULT_SEED = new TextEncoder().encode("hlpvault");
+
+/** Per-LP HLP position PDA seed prefix; matches Rust `hlp::HLP_POSITION_SEED`. Full
+ * seeds `[HLP_POSITION_SEED, market, owner]` (the LP's shares + pending redeem). */
+export const HLP_POSITION_SEED = new TextEncoder().encode("hlppos");
+
 /** DelegateAccount size: discriminator(8) + portfolio(32) + delegate(32). */
 export const DELEGATE_ACCOUNT_SIZE = 72;
 

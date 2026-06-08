@@ -11,6 +11,9 @@ import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import {
   DEPOSIT_CAP_SEED,
   DEXPOOL_SEED,
+  HLP_POSITION_SEED,
+  HLP_SEED,
+  HLP_VAULT_SEED,
   HOUSE_CAP_SEED,
   INSURANCE_CFG_SEED,
   ORACLE_SEED,
@@ -55,6 +58,9 @@ export const Tag = {
   SetInsuranceParams: 30,
   RequestInsuranceWithdraw: 31,
   ExecuteInsuranceWithdraw: 32,
+  CreateHlpVault: 33,
+  SetHlpParams: 34,
+  DepositHlp: 35,
 } as const;
 
 /// Side encoding for `PlaceOrder`.
@@ -1424,5 +1430,152 @@ export function executeInsuranceWithdrawIx(args: {
       { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
     ],
     data: encodeExecuteInsuranceWithdraw(args.bump),
+  });
+}
+
+// ---------- House LP (HLP), Phase 2a deposit path ----------
+
+/** The per-market HLP config PDA; matches Rust `[HLP_SEED, market]`. */
+export function hlpConfigPda(
+  programId: PublicKey,
+  market: PublicKey,
+): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync([HLP_SEED, market.toBuffer()], programId);
+}
+
+/** The per-market HLP free-buffer vault PDA; matches Rust `[HLP_VAULT_SEED, market]`. */
+export function hlpVaultPda(
+  programId: PublicKey,
+  market: PublicKey,
+): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync(
+    [HLP_VAULT_SEED, market.toBuffer()],
+    programId,
+  );
+}
+
+/** The per-LP HLP position PDA; matches Rust `[HLP_POSITION_SEED, market, owner]`. */
+export function hlpPositionPda(
+  programId: PublicKey,
+  market: PublicKey,
+  owner: PublicKey,
+): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync(
+    [HLP_POSITION_SEED, market.toBuffer(), owner.toBuffer()],
+    programId,
+  );
+}
+
+export function encodeCreateHlpVault(): Buffer {
+  return Buffer.from([Tag.CreateHlpVault]);
+}
+
+/// Create the per-market HLP free-buffer vault (an SPL token account at
+/// `[HLP_VAULT_SEED, market]`). Market-authority-signed, one-time. `vault` is
+/// `hlpVaultPda(programId, market)[0]`.
+export function createHlpVaultIx(args: {
+  programId: PublicKey;
+  market: PublicKey;
+  authority: PublicKey;
+  vault: PublicKey;
+  quoteMint: PublicKey;
+}): TransactionInstruction {
+  return new TransactionInstruction({
+    programId: args.programId,
+    keys: [
+      { pubkey: args.market, isSigner: false, isWritable: false },
+      { pubkey: args.authority, isSigner: true, isWritable: true },
+      { pubkey: args.vault, isSigner: false, isWritable: true },
+      { pubkey: args.quoteMint, isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+    ],
+    data: encodeCreateHlpVault(),
+  });
+}
+
+export function encodeSetHlpParams(
+  redeemDelaySlots: bigint,
+  feeBps: bigint,
+  minDeposit: bigint,
+  bump: number,
+): Buffer {
+  const data = new Uint8Array(1 + 8 + 8 + 16 + 1);
+  data[0] = Tag.SetHlpParams;
+  writeU64LE(data, 1, redeemDelaySlots);
+  writeU64LE(data, 9, feeBps);
+  writeU128LE(data, 17, minDeposit);
+  data[33] = bump;
+  return Buffer.from(data);
+}
+
+/// Set the HLP config (redeem timelock, deposit/redeem fee, min deposit).
+/// Market-authority-signed; the config PDA is created on first use. `cfgPda` is
+/// `hlpConfigPda(...)`.
+export function setHlpParamsIx(args: {
+  programId: PublicKey;
+  cfgPda: PublicKey;
+  market: PublicKey;
+  authority: PublicKey;
+  redeemDelaySlots: bigint;
+  feeBps: bigint;
+  minDeposit: bigint;
+  bump: number;
+}): TransactionInstruction {
+  return new TransactionInstruction({
+    programId: args.programId,
+    keys: [
+      { pubkey: args.cfgPda, isSigner: false, isWritable: true },
+      { pubkey: args.market, isSigner: false, isWritable: false },
+      { pubkey: args.authority, isSigner: true, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    data: encodeSetHlpParams(
+      args.redeemDelaySlots,
+      args.feeBps,
+      args.minDeposit,
+      args.bump,
+    ),
+  });
+}
+
+export function encodeDepositHlp(amount: bigint, positionBump: number): Buffer {
+  const data = new Uint8Array(1 + 16 + 1);
+  data[0] = Tag.DepositHlp;
+  writeU128LE(data, 1, amount);
+  data[17] = positionBump;
+  return Buffer.from(data);
+}
+
+/// Deposit quote tokens into the HLP buffer and mint LP shares priced at the
+/// pre-deposit NAV (buffer balance + the House's marked equity). Permissionless.
+/// `position` is `hlpPositionPda(programId, market, depositor)`, `vault` is
+/// `hlpVaultPda(...)`, `housePortfolio` is the `[HOUSE_SEED, market]` PDA.
+export function depositHlpIx(args: {
+  programId: PublicKey;
+  cfgPda: PublicKey;
+  market: PublicKey;
+  depositor: PublicKey;
+  depositorToken: PublicKey;
+  vault: PublicKey;
+  position: PublicKey;
+  housePortfolio: PublicKey;
+  amount: bigint;
+  positionBump: number;
+}): TransactionInstruction {
+  return new TransactionInstruction({
+    programId: args.programId,
+    keys: [
+      { pubkey: args.cfgPda, isSigner: false, isWritable: true },
+      { pubkey: args.market, isSigner: false, isWritable: false },
+      { pubkey: args.depositor, isSigner: true, isWritable: true },
+      { pubkey: args.depositorToken, isSigner: false, isWritable: true },
+      { pubkey: args.vault, isSigner: false, isWritable: true },
+      { pubkey: args.position, isSigner: false, isWritable: true },
+      { pubkey: args.housePortfolio, isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+    ],
+    data: encodeDepositHlp(args.amount, args.positionBump),
   });
 }

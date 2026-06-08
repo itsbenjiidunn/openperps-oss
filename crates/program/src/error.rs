@@ -61,6 +61,15 @@ pub enum OpenPerpsError {
     /// market's pricing trust can only ever strengthen, never silently revert to a
     /// single relayer key.
     VerifiableCannotDowngrade = 19,
+    /// An HLP deposit was below the configured `min_deposit`, or minted zero shares.
+    HlpBelowMinDeposit = 20,
+    /// An HLP redemption requested more shares than the LP holds.
+    HlpInsufficientShares = 21,
+    /// An HLP redemption exceeds the free buffer; it must wait for the buffer to
+    /// refill (via deposits or a harvest) before it can be executed.
+    HlpBufferInsufficient = 22,
+    /// An HLP redemption was executed before its timelock, or with nothing pending.
+    HlpRedeemLocked = 23,
 }
 
 impl From<OpenPerpsError> for ProgramError {

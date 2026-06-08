@@ -42,6 +42,9 @@ pub mod tag {
     pub const SET_INSURANCE_PARAMS: u8 = 30;
     pub const REQUEST_INSURANCE_WITHDRAW: u8 = 31;
     pub const EXECUTE_INSURANCE_WITHDRAW: u8 = 32;
+    pub const CREATE_HLP_VAULT: u8 = 33;
+    pub const SET_HLP_PARAMS: u8 = 34;
+    pub const DEPOSIT_HLP: u8 = 35;
 }
 
 /// Maximum legs in a single `PlaceBatchOrder`. The engine also rejects a batch
@@ -548,6 +551,52 @@ pub enum OpenPerpsInstruction {
     ExecuteInsuranceWithdraw {
         bump: u8,
     },
+    /// Create the per-market HLP free-buffer vault: an SPL token account at
+    /// `[HLP_VAULT_SEED, market]` for the market's quote mint. Authority-only,
+    /// one-time. Holds undeployed LP capital; redemptions are paid from here.
+    ///
+    /// Accounts:
+    ///   0. `[]`                 market account (read for authority + quote_mint)
+    ///   1. `[signer, writable]` authority, pays rent for the vault account
+    ///   2. `[writable]`         HLP buffer vault PDA `[HLP_VAULT_SEED, market]`
+    ///   3. `[]`                 quote_mint
+    ///   4. `[]`                 system program
+    ///   5. `[]`                 token program
+    CreateHlpVault,
+    /// Set the HLP config (the `[HLP_SEED, market]` PDA is created on first use).
+    /// `redeem_delay_slots` is the redemption timelock, `fee_bps` the deposit/redeem
+    /// fee (anti round-trip), `min_deposit` the floor per deposit. Authority-only.
+    ///
+    /// Accounts:
+    ///   0. `[writable]`         HLP config PDA `[HLP_SEED, market]`
+    ///   1. `[]`                 market account (read for authority)
+    ///   2. `[signer, writable]` authority (pays PDA rent on first set)
+    ///   3. `[]`                 system program
+    SetHlpParams {
+        redeem_delay_slots: u64,
+        fee_bps: u64,
+        min_deposit: u128,
+        bump: u8,
+    },
+    /// Deposit `amount` quote tokens into the HLP buffer and mint LP shares priced
+    /// at the pre-deposit NAV (= buffer balance + the House portfolio's marked
+    /// equity). Permissionless (anyone can be an LP). `position_bump` is for the
+    /// per-LP `[HLP_POSITION_SEED, market, depositor]` PDA, created on first deposit.
+    ///
+    /// Accounts:
+    ///   0. `[writable]`         HLP config PDA `[HLP_SEED, market]`
+    ///   1. `[]`                 market account (read for the House PDA + vault PDAs)
+    ///   2. `[signer, writable]` depositor (LP; pays the position PDA rent)
+    ///   3. `[writable]`         depositor's SPL TokenAccount (source)
+    ///   4. `[writable]`         HLP buffer vault PDA `[HLP_VAULT_SEED, market]` (dest)
+    ///   5. `[writable]`         per-LP position PDA `[HLP_POSITION_SEED, market, depositor]`
+    ///   6. `[]`                 House portfolio PDA `[HOUSE_SEED, market]` (read for equity)
+    ///   7. `[]`                 system program
+    ///   8. `[]`                 SPL Token program
+    DepositHlp {
+        amount: u128,
+        position_bump: u8,
+    },
 }
 
 impl OpenPerpsInstruction {
@@ -748,6 +797,17 @@ impl OpenPerpsInstruction {
             }),
             tag::EXECUTE_INSURANCE_WITHDRAW => Ok(Self::ExecuteInsuranceWithdraw {
                 bump: read_u8(rest, 0)?,
+            }),
+            tag::CREATE_HLP_VAULT => Ok(Self::CreateHlpVault),
+            tag::SET_HLP_PARAMS => Ok(Self::SetHlpParams {
+                redeem_delay_slots: read_u64(rest, 0)?,
+                fee_bps: read_u64(rest, 8)?,
+                min_deposit: read_u128(rest, 16)?,
+                bump: read_u8(rest, 32)?,
+            }),
+            tag::DEPOSIT_HLP => Ok(Self::DepositHlp {
+                amount: read_u128(rest, 0)?,
+                position_bump: read_u8(rest, 16)?,
             }),
             _ => Err(OpenPerpsError::InvalidInstruction),
         }
@@ -1148,6 +1208,40 @@ mod tests {
         assert_eq!(
             OpenPerpsInstruction::unpack(&[tag::EXECUTE_INSURANCE_WITHDRAW, 252]).unwrap(),
             OpenPerpsInstruction::ExecuteInsuranceWithdraw { bump: 252 }
+        );
+    }
+
+    #[test]
+    fn unpack_hlp_setup_and_deposit() {
+        assert_eq!(
+            OpenPerpsInstruction::unpack(&[tag::CREATE_HLP_VAULT]).unwrap(),
+            OpenPerpsInstruction::CreateHlpVault
+        );
+
+        let mut p = vec![tag::SET_HLP_PARAMS];
+        p.extend_from_slice(&216_000u64.to_le_bytes()); // redeem_delay_slots
+        p.extend_from_slice(&10u64.to_le_bytes()); // fee_bps
+        p.extend_from_slice(&1_000u128.to_le_bytes()); // min_deposit
+        p.push(254); // bump
+        assert_eq!(
+            OpenPerpsInstruction::unpack(&p).unwrap(),
+            OpenPerpsInstruction::SetHlpParams {
+                redeem_delay_slots: 216_000,
+                fee_bps: 10,
+                min_deposit: 1_000,
+                bump: 254,
+            }
+        );
+
+        let mut d = vec![tag::DEPOSIT_HLP];
+        d.extend_from_slice(&5_000_000u128.to_le_bytes());
+        d.push(253);
+        assert_eq!(
+            OpenPerpsInstruction::unpack(&d).unwrap(),
+            OpenPerpsInstruction::DepositHlp {
+                amount: 5_000_000,
+                position_bump: 253,
+            }
         );
     }
 }

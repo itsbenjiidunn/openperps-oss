@@ -1,9 +1,11 @@
 # House LP (HLP): permissionless House vault (design)
 
-Status: design for review (P2). The heaviest, most solvency-adjacent change in the
-roadmap. Not implemented. This documents the mechanism, the share/NAV math, the
-central redemption constraint the engine imposes, the options, and the open
-decisions. No code lands until the redemption model below is chosen.
+Status: in progress (P2). Redemption model (A) chosen. Implemented so far: the
+share/NAV math core (host-tested), and the setup + deposit path (`CreateHlpVault`,
+`SetHlpParams`, `DepositHlp`). Still to land: `DeployHlp` (buffer -> engine House)
+and the two-step redemption (`RequestRedeemHlp` / `ExecuteRedeemHlp`). This
+documents the mechanism, the share/NAV math, the central redemption constraint the
+engine imposes, the options, and the open decisions.
 
 ## What it changes, and why it matches the tweet
 
