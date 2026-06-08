@@ -376,8 +376,10 @@ export function mockSwapIx(args: {
   });
 }
 
-/// Permissionless DEX-EWMA crank: read the pinned pool, EWMA-fold its spot
-/// into the mark, accrue. Any signer.
+/// DEVNET-ONLY mock-pool crank: read the pinned mock pool, EWMA-fold its spot
+/// into the mark, accrue. A mainnet (production) build excludes this handler and
+/// rejects the instruction; the production price paths are `accrueAssetIx`,
+/// `crankPythIx`, and `crankDexSpotIx`. Kept only for the devnet price toy.
 export function crankOracleIx(args: {
   programId: PublicKey;
   market: PublicKey;
@@ -632,7 +634,9 @@ export function placeBatchOrderIx(args: {
   });
 }
 
-/// Pin a DEX pool to asset slot `assetIndex` (permissionless, pin-once).
+/// DEVNET-ONLY: pin a mock pool to asset slot `assetIndex` (permissionless,
+/// pin-once) for `crankOracleIx`. A mainnet (production) build excludes this
+/// handler and rejects the instruction.
 export function pinOraclePoolIx(args: {
   programId: PublicKey;
   market: PublicKey;
@@ -1006,6 +1010,11 @@ export function withdrawHouseVaultIx(args: {
   authorityToken: PublicKey;
   amount: bigint;
 }): TransactionInstruction {
+  // The canonical HLP config PDA is always passed (account 6); the program
+  // verifies its address and refuses the withdraw while LP shares are
+  // outstanding, so the House cannot be drained out from under HLP depositors.
+  // It need not exist on-chain (a market without HLP) - the address is enough.
+  const [hlpConfig] = hlpConfigPda(args.programId, args.market);
   return new TransactionInstruction({
     programId: args.programId,
     keys: [
@@ -1015,6 +1024,7 @@ export function withdrawHouseVaultIx(args: {
       { pubkey: args.vaultToken, isSigner: false, isWritable: true },
       { pubkey: args.authorityToken, isSigner: false, isWritable: true },
       { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+      { pubkey: hlpConfig, isSigner: false, isWritable: false },
     ],
     data: encodeWithdrawHouseVault(args.amount),
   });

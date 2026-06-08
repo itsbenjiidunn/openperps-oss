@@ -15,14 +15,19 @@ pinocchio = "0.8"
 bytemuck = { version = "1.23", default-features = false, features = ["derive"] }
 
 [features]
-default = ["devnet"]
+# Production is the DEFAULT: a plain `cargo build-sbf` excludes every devnet-only
+# handler, so a mainnet deploy cannot accidentally ship the price toy. Build the
+# devnet artifact explicitly with `--features devnet`.
+default = []
 no-entrypoint = []
-# Devnet-only price-simulation instructions: CreateMockPool and MockSwap (the
-# manipulable, token-less price toy) plus the raw two-account Trade self-cross.
-# ON by default so the devnet app and the host tests keep working. A mainnet
-# build (`cargo build-sbf --no-default-features`) excludes these handlers, so
-# the deployed program rejects them and the toy oracle source cannot exist on
-# mainnet. The production trade path (PlaceOrder, user vs House) is unaffected.
+# Devnet-only price-simulation / test handlers: CreateMockPool and MockSwap (the
+# manipulable, token-less price toy), the raw two-account Trade self-cross, and
+# the legacy mock-pool oracle path CrankOracle + PinOraclePool (superseded by
+# CrankPyth / CrankDexSpot). Excluded from the default (production) build, so the
+# deployed program rejects them and no manipulable mark source can exist on
+# mainnet. The production paths (PlaceOrder; AccrueAsset / CrankPyth / CrankDexSpot)
+# are unaffected. Enable for the devnet app and the local validator suite with
+# `--features devnet`.
 devnet = []
 
 [lints.rust]

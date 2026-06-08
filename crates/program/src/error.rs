@@ -70,6 +70,10 @@ pub enum OpenPerpsError {
     HlpBufferInsufficient = 22,
     /// An HLP redemption was executed before its timelock, or with nothing pending.
     HlpRedeemLocked = 23,
+    /// `WithdrawHouseVault` was attempted while the market's HLP vault has LP
+    /// shares outstanding. Once LPs are in the House, the authority cannot drain
+    /// it out from under them; harvest into the buffer and let LPs redeem instead.
+    HlpLpClaimsOutstanding = 24,
 }
 
 impl From<OpenPerpsError> for ProgramError {

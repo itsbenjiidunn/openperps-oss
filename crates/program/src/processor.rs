@@ -20,10 +20,10 @@ use crate::{
         accrue_asset_buffer, activate_market_buffer, crank_oracle_buffer, crank_refresh_buffer,
         deposit_buffer, init_market_buffer, init_portfolio_buffer,
         liquidate_buffer, market_engine_split_mut, market_header, market_wrapper_header,
-        delegate_of, deposit_cap_of, dex_pool_of, mock_pool_spot_price, oracle_authority_of,
+        delegate_of, deposit_cap_of, dex_pool_of, oracle_authority_of,
         portfolio_account_size, portfolio_split_mut, resolve_market_buffer, set_delegate_buffer,
-        set_deposit_cap_buffer, set_dex_pool_buffer, set_oracle_authority_buffer, set_slot_oracle_pool,
-        settle_pnl_buffer, slot_oracle_pool, trade_buffer, withdraw_buffer, DelegateAccount,
+        set_deposit_cap_buffer, set_dex_pool_buffer, set_oracle_authority_buffer,
+        settle_pnl_buffer, trade_buffer, withdraw_buffer, DelegateAccount,
         DELEGATE_SEED, DepositCapAccount, DEPOSIT_CAP_SEED, DexPoolConfig, DEXPOOL_SEED,
         OracleAuthorityAccount, ORACLE_SEED, HOUSE_SEED, PORTFOLIO_SEED, VAULT_SEED,
         twap_observe_buffer, TwapState, TWAP_SEED,
@@ -41,10 +41,14 @@ use crate::{
     },
 };
 
-// Buffer initializers used only by the devnet-only mock-pool handlers; gated so
-// a mainnet build (no devnet feature) does not flag them as unused.
+// State helpers used only by the devnet-only mock-pool handlers (CreateMockPool,
+// MockSwap, CrankOracle, PinOraclePool); gated so a mainnet build (no devnet
+// feature) does not flag them as unused.
 #[cfg(feature = "devnet")]
-use crate::state::{init_mock_pool_buffer, mock_pool_swap_buffer};
+use crate::state::{
+    init_mock_pool_buffer, mock_pool_spot_price, mock_pool_swap_buffer, set_slot_oracle_pool,
+    slot_oracle_pool,
+};
 
 /// SPL Token v1 account data length (fixed).
 const SPL_TOKEN_ACCOUNT_LEN: u64 = 165;
@@ -296,10 +300,32 @@ pub fn process_instruction(
             }
         }
         OpenPerpsInstruction::CrankOracle { asset_index } => {
-            process_crank_oracle(program_id, accounts, asset_index)
+            // Devnet-only mock-pool oracle. The production price paths are
+            // AccrueAsset, CrankPyth, and CrankDexSpot; this legacy mock path is
+            // excluded from a mainnet build so no one can pin an arbitrary
+            // program-owned account and walk a market's mark.
+            #[cfg(feature = "devnet")]
+            {
+                process_crank_oracle(program_id, accounts, asset_index)
+            }
+            #[cfg(not(feature = "devnet"))]
+            {
+                let _ = asset_index;
+                Err(OpenPerpsError::InvalidInstruction.into())
+            }
         }
         OpenPerpsInstruction::PinOraclePool { asset_index } => {
-            process_pin_oracle_pool(program_id, accounts, asset_index)
+            // Devnet-only: pins a mock pool to an asset slot for CrankOracle.
+            // Excluded from a mainnet build (see CrankOracle).
+            #[cfg(feature = "devnet")]
+            {
+                process_pin_oracle_pool(program_id, accounts, asset_index)
+            }
+            #[cfg(not(feature = "devnet"))]
+            {
+                let _ = asset_index;
+                Err(OpenPerpsError::InvalidInstruction.into())
+            }
         }
         OpenPerpsInstruction::SetDelegate {
             delegate,
@@ -1355,6 +1381,28 @@ fn process_withdraw_house_vault(
         wrapper.vault_bump
     };
 
+    // HLP guard: once the market's HLP vault has LP shares outstanding, the House
+    // is a shared LP vehicle and the authority may not drain it out from under
+    // LPs (the engine only refuses while the House is positioned, not while it is
+    // flat-but-LP-backed). Require the canonical `[HLP_SEED, market]` PDA at
+    // account 6 so the check cannot be bypassed by omitting or substituting it; a
+    // not-yet-created config (owner != program) means no LP claims, so allow.
+    {
+        let hlp_config = accounts.get(6).ok_or(OpenPerpsError::InvalidInstruction)?;
+        let (canonical, _) = find_program_address(&[HLP_SEED, market_key.as_ref()], program_id);
+        if *hlp_config.key() != canonical {
+            return Err(OpenPerpsError::InvalidAccountData.into());
+        }
+        if unsafe { hlp_config.owner() } == program_id {
+            let d = hlp_config
+                .try_borrow_data()
+                .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+            if hlp_params_of(&d, &market_key)?.total_shares > 0 {
+                return Err(OpenPerpsError::HlpLpClaimsOutstanding.into());
+            }
+        }
+    }
+
     let amount_u64: u64 = amount
         .try_into()
         .map_err(|_| OpenPerpsError::ArithmeticOverflow)?;
@@ -1774,6 +1822,7 @@ fn process_mock_swap(
     Ok(())
 }
 
+#[cfg(feature = "devnet")]
 fn process_crank_oracle(
     program_id: &Pubkey,
     accounts: &[AccountInfo],
@@ -1801,6 +1850,11 @@ fn process_crank_oracle(
         let wrapper = market_wrapper_header(&m_data)?;
         if !wrapper.is_initialized() {
             return Err(OpenPerpsError::UninitializedAccount.into());
+        }
+        // A verifiable market (PYTH / DEX_EWMA, require_verifiable=1) is priced
+        // only by its verifiable crank; the mock path may never move its mark.
+        if crate::state::market_requires_verifiable(&m_data)? {
+            return Err(OpenPerpsError::VerifiableCannotDowngrade.into());
         }
         // Per-slot pinned pool (the slot wrapper) must match the passed pool.
         if slot_oracle_pool(&m_data, asset_index)? != *pool.key() {
@@ -2189,6 +2243,7 @@ fn process_crank_dex_spot(
     Ok(())
 }
 
+#[cfg(feature = "devnet")]
 fn process_pin_oracle_pool(
     program_id: &Pubkey,
     accounts: &[AccountInfo],

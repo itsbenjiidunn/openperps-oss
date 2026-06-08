@@ -19,10 +19,21 @@ in place, and the open items.
 
 ## Hardening already in place
 
-- The token-less test price source and the raw self-cross trade are test-only:
-  `CreateMockPool`, `MockSwap`, and raw `Trade` are excluded from a
-  `--no-default-features` build. The standard trade path is
-  `PlaceOrder` (user vs House).
+- The devnet-only price toy and test handlers are excluded from a production
+  build. `production is the default cargo feature`: a plain `cargo build-sbf`
+  ships none of `CreateMockPool`, `MockSwap`, raw `Trade`, or the legacy mock
+  oracle path `CrankOracle` / `PinOraclePool`; the devnet artifact is built
+  explicitly with `--features devnet`. The production price paths are
+  `AccrueAsset`, `CrankPyth`, and `CrankDexSpot`; the standard trade path is
+  `PlaceOrder` (user vs House). As defense in depth, the mock-pool reader also
+  verifies its `OPMKPOOL` discriminator, so no other program-owned account can be
+  read as a pool even on a devnet build, and the mock crank refuses any market
+  with `require_verifiable = 1`.
+- The House vault cannot be drained out from under HLP depositors:
+  `WithdrawHouseVault` requires the canonical `[HLP_SEED, market]` config account
+  and refuses while LP shares are outstanding, so once LPs are in the House the
+  authority must harvest into the buffer and let LPs redeem rather than
+  withdrawing the LP-backing capital.
 - The market header carries a version; a header from an older or future layout
   reads as uninitialized instead of being mis-decoded against stale padding.
 - `InitMarket` rejects a `quote_mint` not owned by the SPL Token program.

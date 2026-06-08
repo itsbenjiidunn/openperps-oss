@@ -34,8 +34,11 @@ trap cleanup EXIT
 
 # 1. Build the program (.so) unless skipped.
 if [ "${SKIP_BUILD:-0}" != "1" ]; then
-  log "building program (cargo build-sbf)..."
-  cargo build-sbf --manifest-path crates/program/Cargo.toml || { log "BUILD FAILED"; exit 1; }
+  # The local suite runs the devnet-shaped program (mock price toy + raw Trade).
+  # Production is now the default build, so enable devnet explicitly here.
+  log "building program (cargo build-sbf --features devnet)..."
+  cargo build-sbf --manifest-path crates/program/Cargo.toml --features devnet \
+    || { log "BUILD FAILED"; exit 1; }
 fi
 [ -f "$SO" ] || { log "missing $SO (build it first or unset SKIP_BUILD)"; exit 1; }
 

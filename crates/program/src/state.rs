@@ -963,13 +963,20 @@ pub fn mock_pool_account_size() -> usize {
     MockPoolHeader::LEN
 }
 
-/// Read-only view of a mock-pool account.
+/// Read-only view of a mock-pool account. Verifies the `OPMKPOOL` discriminator
+/// so an arbitrary program-owned account cannot be misread as a pool (its bytes
+/// interpreted as reserves). This is the read-side backstop behind the devnet
+/// feature gate on `CrankOracle`/`PinOraclePool`.
 pub fn mock_pool_header(data: &[u8]) -> Result<&MockPoolHeader, OpenPerpsError> {
     if data.len() < MockPoolHeader::LEN {
         return Err(OpenPerpsError::AccountDataTooSmall);
     }
-    bytemuck::try_from_bytes(&data[..MockPoolHeader::LEN])
-        .map_err(|_| OpenPerpsError::InvalidAccountData)
+    let header: &MockPoolHeader = bytemuck::try_from_bytes(&data[..MockPoolHeader::LEN])
+        .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    if !header.is_initialized() {
+        return Err(OpenPerpsError::InvalidAccountData);
+    }
+    Ok(header)
 }
 
 /// Write a fresh mock-pool header with the given seed reserves.
@@ -1893,6 +1900,26 @@ mod tests {
         mock_pool_swap_buffer(&mut buf, 10_000_000, /* quote_to_base */ false).unwrap();
         let spot1 = mock_pool_spot_price(&buf).unwrap();
         assert!(spot1 > spot0, "buying base should push price up: {spot1} !> {spot0}");
+    }
+
+    #[test]
+    fn mock_pool_reader_rejects_a_non_pool_account() {
+        // Defense in depth behind the devnet gate on CrankOracle/PinOraclePool: a
+        // program-owned account that is not an initialized mock pool (no OPMKPOOL
+        // discriminator) must not be readable as one, so its arbitrary bytes can
+        // never be interpreted as pool reserves.
+        let garbage = vec![0xABu8; MockPoolHeader::LEN]; // right size, wrong discriminator
+        assert_eq!(
+            mock_pool_header(&garbage),
+            Err(OpenPerpsError::InvalidAccountData)
+        );
+        assert!(mock_pool_spot_price(&garbage).is_err());
+
+        // A properly initialized pool still reads fine.
+        let mut buf = vec![0u8; MockPoolHeader::LEN];
+        init_mock_pool_buffer(&mut buf, [1u8; 32], [2u8; 32], [3u8; 32], 1_000_000, 100_000_000)
+            .unwrap();
+        assert!(mock_pool_header(&buf).is_ok());
     }
 
     #[test]
