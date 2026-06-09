@@ -82,15 +82,14 @@ handlers for a clean shutdown.
 
 ### Per-market crank cadence
 
-`keeperMarketFromConfig` also sets each market's push cadence from its risk tier:
-a **Volatile** (memecoin) market pushes fast (~2s) and a **Stable** market pushes
-slowly (~60s). The fast cadence is not just freshness: it keeps the on-chain mark
+`keeperMarketFromConfig` also sets each market's push cadence. Both tiers default
+to a fast ~2s cadence: this is not just freshness, it keeps the on-chain mark
 close to the live price so there is little stale-mark gap for latency arbitrage to
 exploit against the House (a mark that lags a fast pump lets an informed trader
 long into a known move). The loop ticks at the fastest market's cadence and
-throttles each market to its own `pushIntervalMs`; override per market via
-`keeper.expectedCrankIntervalMs` in the config, or the `pushIntervalMs` override
-on `keeperMarketFromConfig`.
+throttles each market to its own `pushIntervalMs`; set a slower, cheaper cadence
+for a calm market via `keeper.expectedCrankIntervalMs` in the config, or the
+`pushIntervalMs` override on `keeperMarketFromConfig`.
 
 ## Authority
 

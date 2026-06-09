@@ -47,12 +47,13 @@ test("keeperMarketFromConfig maps experimental -> Volatile bounds + fast cadence
   assert.ok(m.pushIntervalMs! <= 3_000, "Volatile/memecoin pushes within a few seconds");
 });
 
-test("keeperMarketFromConfig maps standard/major -> Stable bounds + slow cadence", () => {
+test("keeperMarketFromConfig maps standard/major -> Stable bounds + fast cadence", () => {
   for (const riskTier of ["standard", "major"] as const) {
     const m = keeperMarketFromConfig(marketConfig({ riskTier }));
     assert.equal(m.maxAccrualDtSlots, KEEPER_TIER_PARAMS.stable.maxAccrualDtSlots);
     assert.equal(m.maxPriceMoveBpsPerSlot, KEEPER_TIER_PARAMS.stable.maxPriceMoveBpsPerSlot);
     assert.equal(m.pushIntervalMs, KEEPER_TIER_PARAMS.stable.pushIntervalMs);
+    assert.ok(m.pushIntervalMs! <= 3_000, "Stable also pushes within a few seconds");
   }
 });
 

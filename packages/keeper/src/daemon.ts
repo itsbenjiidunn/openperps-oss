@@ -23,12 +23,13 @@ import { createKeeperHealth, summarizeHealth, type KeeperHealth } from "./health
 import type { KeeperDeps, KeeperLogLevel, KeeperMarket } from "./types.ts";
 
 /// Per-tier catch-up bounds + crank cadence, matching the program's
-/// `default_market_config`. Volatile widens the per-slot price-move clamp,
-/// shortens the freshness window, and pushes FAST (so its mark tracks the live
-/// price and a memecoin's stale-mark gap stays a couple of seconds, not a minute,
-/// shrinking the latency-arbitrage surface); Stable is the slow, cheap tier.
+/// `default_market_config`. Volatile widens the per-slot price-move clamp and
+/// shortens the freshness window; both tiers push FAST (~2s) so the on-chain mark
+/// tracks the live price and the stale-mark gap a latency arbitrageur can exploit
+/// stays a couple of seconds, not a minute. (Stable keeps the option of a slower,
+/// cheaper cadence via the per-market override.)
 export const KEEPER_TIER_PARAMS = {
-  stable: { maxAccrualDtSlots: 1_000, maxPriceMoveBpsPerSlot: 10, pushIntervalMs: 60_000 },
+  stable: { maxAccrualDtSlots: 1_000, maxPriceMoveBpsPerSlot: 10, pushIntervalMs: 2_000 },
   volatile: { maxAccrualDtSlots: 10, maxPriceMoveBpsPerSlot: 1_000, pushIntervalMs: 2_000 },
 } as const;
 
@@ -41,8 +42,9 @@ export type KeeperMarketOverrides = Partial<
 
 /// Build a `KeeperMarket` from a market config: map the off-chain risk tier
 /// ("experimental" -> Volatile, otherwise Stable) to the on-chain catch-up
-/// bounds and the crank cadence (Volatile ~2s, Stable ~60s), and pass the
-/// oracle-authority PDA when the market pinned one. Any field can be overridden.
+/// bounds and the crank cadence (~2s by default for both tiers, to keep the mark
+/// close to the live price), and pass the oracle-authority PDA when the market
+/// pinned one. Any field can be overridden.
 export function keeperMarketFromConfig(
   config: OpenPerpsMarketConfig,
   overrides: KeeperMarketOverrides = {},
