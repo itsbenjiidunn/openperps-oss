@@ -38,19 +38,30 @@ function marketConfig(over: Partial<OpenPerpsMarketConfig> = {}): OpenPerpsMarke
 
 // --- keeperMarketFromConfig ---
 
-test("keeperMarketFromConfig maps experimental -> Volatile bounds", () => {
+test("keeperMarketFromConfig maps experimental -> Volatile bounds + fast cadence", () => {
   const m = keeperMarketFromConfig(marketConfig({ riskTier: "experimental" }));
   assert.equal(m.maxAccrualDtSlots, KEEPER_TIER_PARAMS.volatile.maxAccrualDtSlots);
   assert.equal(m.maxPriceMoveBpsPerSlot, KEEPER_TIER_PARAMS.volatile.maxPriceMoveBpsPerSlot);
   assert.equal(m.useOracleAuthorityPda, false);
+  assert.equal(m.pushIntervalMs, KEEPER_TIER_PARAMS.volatile.pushIntervalMs);
+  assert.ok(m.pushIntervalMs! <= 3_000, "Volatile/memecoin pushes within a few seconds");
 });
 
-test("keeperMarketFromConfig maps standard/major -> Stable bounds", () => {
+test("keeperMarketFromConfig maps standard/major -> Stable bounds + slow cadence", () => {
   for (const riskTier of ["standard", "major"] as const) {
     const m = keeperMarketFromConfig(marketConfig({ riskTier }));
     assert.equal(m.maxAccrualDtSlots, KEEPER_TIER_PARAMS.stable.maxAccrualDtSlots);
     assert.equal(m.maxPriceMoveBpsPerSlot, KEEPER_TIER_PARAMS.stable.maxPriceMoveBpsPerSlot);
+    assert.equal(m.pushIntervalMs, KEEPER_TIER_PARAMS.stable.pushIntervalMs);
   }
+});
+
+test("keeperMarketFromConfig takes pushIntervalMs from config.keeper, then tier", () => {
+  // An explicit per-market expectedCrankIntervalMs wins over the tier default.
+  const tuned = keeperMarketFromConfig(
+    marketConfig({ riskTier: "experimental", keeper: { expectedCrankIntervalMs: 1_000 } }),
+  );
+  assert.equal(tuned.pushIntervalMs, 1_000);
 });
 
 test("keeperMarketFromConfig sets useOracleAuthorityPda when the market pinned one", () => {
@@ -65,10 +76,12 @@ test("keeperMarketFromConfig honors overrides", () => {
     maxAccrualDtSlots: 42,
     maxPriceMoveBpsPerSlot: 7,
     useOracleAuthorityPda: true,
+    pushIntervalMs: 1_500,
   });
   assert.equal(m.maxAccrualDtSlots, 42);
   assert.equal(m.maxPriceMoveBpsPerSlot, 7);
   assert.equal(m.useOracleAuthorityPda, true);
+  assert.equal(m.pushIntervalMs, 1_500);
 });
 
 // --- parseRelayerEnv ---

@@ -264,7 +264,11 @@ export type RunKeeperOptions = {
   signal?: AbortSignal;
 };
 
-/// Run the sequential multi-market crank loop until aborted.
+/// Run the sequential multi-market crank loop until aborted. `intervalMs` is the
+/// base loop tick. A market with `pushIntervalMs` set is throttled to that
+/// cadence (cranked at most once per `pushIntervalMs`), so a Volatile market can
+/// push fast while a Stable one pushes slowly within the same loop; a market with
+/// no `pushIntervalMs` is cranked every tick (the prior behavior).
 export async function runKeeper(
   deps: KeeperDeps,
   markets: KeeperMarket[],
@@ -272,10 +276,18 @@ export async function runKeeper(
 ): Promise<void> {
   const intervalMs = options.intervalMs ?? 60_000;
   const log = deps.log ?? (() => {});
-  log("info", `keeper starting: ${markets.length} market(s), interval ${intervalMs}ms`);
+  log("info", `keeper starting: ${markets.length} market(s), tick ${intervalMs}ms`);
+  const lastAttemptMs = new Map<string, number>();
   while (!options.signal?.aborted) {
+    const now = Date.now();
     for (const market of markets) {
       if (options.signal?.aborted) break;
+      const cadence = market.pushIntervalMs;
+      if (cadence !== undefined) {
+        const last = lastAttemptMs.get(market.config.id) ?? 0;
+        if (now - last < cadence) continue; // not due yet this tick
+      }
+      lastAttemptMs.set(market.config.id, now);
       await crankMarketOnce(deps, market);
     }
     if (options.signal?.aborted) break;

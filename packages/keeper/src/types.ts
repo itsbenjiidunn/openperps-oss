@@ -16,6 +16,12 @@ export type KeeperMarket = {
   /// authority (via `SetOracleAuthority`) is priced by `deps.authority`. Omit
   /// (or false) for markets that stay on the relayer constant.
   useOracleAuthorityPda?: boolean;
+  /// Desired crank cadence in ms: the relayer pushes this market at most once per
+  /// `pushIntervalMs`. A fast-moving (Volatile / memecoin) market wants a short
+  /// cadence so its mark tracks the live price and leaves little stale-mark gap
+  /// for latency arbitrage; a Stable market can push slowly and cheaply. When
+  /// omitted, the runner cranks the market every loop tick.
+  pushIntervalMs?: number;
 };
 
 export type KeeperLogLevel = "info" | "error";

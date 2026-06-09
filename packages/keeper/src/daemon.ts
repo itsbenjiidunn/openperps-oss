@@ -22,22 +22,27 @@ import { runKeeper } from "./keeper.ts";
 import { createKeeperHealth, summarizeHealth, type KeeperHealth } from "./health.ts";
 import type { KeeperDeps, KeeperLogLevel, KeeperMarket } from "./types.ts";
 
-/// Per-tier catch-up bounds, matching the program's `default_market_config`:
-/// Volatile widens the per-slot price-move clamp and shortens the freshness
-/// window (so it must be cranked often); Stable is the slow, cheap tier.
+/// Per-tier catch-up bounds + crank cadence, matching the program's
+/// `default_market_config`. Volatile widens the per-slot price-move clamp,
+/// shortens the freshness window, and pushes FAST (so its mark tracks the live
+/// price and a memecoin's stale-mark gap stays a couple of seconds, not a minute,
+/// shrinking the latency-arbitrage surface); Stable is the slow, cheap tier.
 export const KEEPER_TIER_PARAMS = {
-  stable: { maxAccrualDtSlots: 1_000, maxPriceMoveBpsPerSlot: 10 },
-  volatile: { maxAccrualDtSlots: 10, maxPriceMoveBpsPerSlot: 1_000 },
+  stable: { maxAccrualDtSlots: 1_000, maxPriceMoveBpsPerSlot: 10, pushIntervalMs: 60_000 },
+  volatile: { maxAccrualDtSlots: 10, maxPriceMoveBpsPerSlot: 1_000, pushIntervalMs: 2_000 },
 } as const;
 
 export type KeeperMarketOverrides = Partial<
-  Pick<KeeperMarket, "maxAccrualDtSlots" | "maxPriceMoveBpsPerSlot" | "useOracleAuthorityPda">
+  Pick<
+    KeeperMarket,
+    "maxAccrualDtSlots" | "maxPriceMoveBpsPerSlot" | "useOracleAuthorityPda" | "pushIntervalMs"
+  >
 >;
 
 /// Build a `KeeperMarket` from a market config: map the off-chain risk tier
 /// ("experimental" -> Volatile, otherwise Stable) to the on-chain catch-up
-/// bounds, and pass the oracle-authority PDA when the market pinned one. Any
-/// field can be overridden.
+/// bounds and the crank cadence (Volatile ~2s, Stable ~60s), and pass the
+/// oracle-authority PDA when the market pinned one. Any field can be overridden.
 export function keeperMarketFromConfig(
   config: OpenPerpsMarketConfig,
   overrides: KeeperMarketOverrides = {},
@@ -50,6 +55,8 @@ export function keeperMarketFromConfig(
     maxPriceMoveBpsPerSlot: overrides.maxPriceMoveBpsPerSlot ?? params.maxPriceMoveBpsPerSlot,
     useOracleAuthorityPda:
       overrides.useOracleAuthorityPda ?? config.keeper?.oracleAuthority !== undefined,
+    pushIntervalMs:
+      overrides.pushIntervalMs ?? config.keeper?.expectedCrankIntervalMs ?? params.pushIntervalMs,
   };
 }
 
@@ -186,9 +193,19 @@ export async function runRelayer(config: RelayerConfig): Promise<void> {
     );
   }
 
+  // The loop ticks at the fastest market's cadence (floored at 1s) so a Volatile
+  // market actually gets cranked on its short interval; each market is then
+  // throttled to its own `pushIntervalMs` inside the loop. An explicit
+  // `config.intervalMs` participates as one more candidate.
+  const cadences = config.markets
+    .map((m) => m.pushIntervalMs)
+    .filter((x): x is number => typeof x === "number");
+  if (config.intervalMs !== undefined) cadences.push(config.intervalMs);
+  const baseTick = cadences.length > 0 ? Math.max(1_000, Math.min(...cadences)) : 60_000;
+
   try {
     await runKeeper(deps, config.markets, {
-      intervalMs: config.intervalMs,
+      intervalMs: baseTick,
       signal: config.signal,
     });
   } finally {
