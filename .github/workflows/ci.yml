@@ -18,7 +18,7 @@ jobs:
     name: Rust program
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test -p openperps-program
@@ -29,7 +29,7 @@ jobs:
     name: Packages (build, test, typecheck, pack)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -47,7 +47,7 @@ jobs:
     name: apps/web (build, lint)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -65,7 +65,7 @@ jobs:
     name: apps/indexer (typecheck, build)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -90,7 +90,7 @@ jobs:
           - node-create-market
           - telegram-bot
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -110,7 +110,7 @@ jobs:
     # (each step is continue-on-error). Dependabot (.github/dependabot.yml) opens
     # the actual update PRs; this job is the visibility signal on every push/PR.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: cargo audit
