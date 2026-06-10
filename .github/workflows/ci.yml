@@ -102,3 +102,25 @@ jobs:
         working-directory: examples/${{ matrix.example }}
       - run: npm run typecheck --if-present
         working-directory: examples/${{ matrix.example }}
+
+  audit:
+    name: Dependency audit (advisory)
+    runs-on: ubuntu-latest
+    # Advisory only: surface vulnerable dependencies without blocking merges
+    # (each step is continue-on-error). Dependabot (.github/dependabot.yml) opens
+    # the actual update PRs; this job is the visibility signal on every push/PR.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo audit
+        continue-on-error: true
+        run: |
+          cargo install cargo-audit --locked
+          cargo audit
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: npm audit (workspace)
+        continue-on-error: true
+        run: npm audit --audit-level=high

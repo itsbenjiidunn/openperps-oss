@@ -19,6 +19,10 @@ export const ADMIN_PATHS = new Set<string>([
   "/prune",
   "/poll",
   "/backfill",
+  // /register writes the asset_index -> feed/mint mapping that `relayPrices`
+  // reads to sign AccrueAsset pushes, so an open /register would let anyone
+  // re-point an asset's price source. It mutates relayer-trusted state -> admin.
+  "/register",
 ]);
 
 // Length-checked constant-time string compare (avoids an early-exit timing leak).
@@ -47,6 +51,47 @@ export function requireAdmin(
   const token = header.startsWith("Bearer ") ? header.slice(7) : "";
   if (!token || !safeEqual(token, secret)) {
     return new Response("unauthorized", { status: 401, headers: CORS });
+  }
+  return null;
+}
+
+// Open-write guard: a payload-size cap plus a best-effort per-IP rate limit for
+// the unauthenticated registry writes (POST /markets). The limiter is in-memory
+// per Worker isolate, so it is best-effort (Cloudflare may spread requests across
+// isolates), but together with the body cap and the on-chain market check it
+// blunts cheap DB-write / RPC-cost abuse. Returns a Response to short-circuit, or
+// null when the request is within limits.
+const MAX_BODY_BYTES = 16 * 1024;
+const RATE_LIMIT = 30; // requests per IP
+const RATE_WINDOW_MS = 60_000; // per minute
+
+const ipHits = new Map<string, number[]>();
+
+export function guardOpenWrite(req: Request): Response | null {
+  const len = Number(req.headers.get("content-length") ?? "0");
+  if (Number.isFinite(len) && len > MAX_BODY_BYTES) {
+    return new Response(JSON.stringify({ error: "payload too large" }), {
+      status: 413,
+      headers: { ...CORS, "content-type": "application/json" },
+    });
+  }
+  const ip = req.headers.get("cf-connecting-ip") ?? "unknown";
+  const now = Date.now();
+  const recent = (ipHits.get(ip) ?? []).filter((t) => now - t < RATE_WINDOW_MS);
+  if (recent.length >= RATE_LIMIT) {
+    ipHits.set(ip, recent);
+    return new Response(JSON.stringify({ error: "rate limited" }), {
+      status: 429,
+      headers: { ...CORS, "content-type": "application/json", "retry-after": "60" },
+    });
+  }
+  recent.push(now);
+  ipHits.set(ip, recent);
+  // Bound memory: occasionally drop fully-expired buckets.
+  if (ipHits.size > 5_000) {
+    for (const [k, v] of ipHits) {
+      if (v.every((t) => now - t >= RATE_WINDOW_MS)) ipHits.delete(k);
+    }
   }
   return null;
 }

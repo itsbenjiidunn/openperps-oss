@@ -11,7 +11,7 @@ import {
   Transaction,
   TransactionInstruction,
 } from "@solana/web3.js";
-import { ADMIN_PATHS, requireAdmin } from "./auth";
+import { ADMIN_PATHS, requireAdmin, guardOpenWrite } from "./auth";
 
 export interface Env {
   DB: D1Database;
@@ -1391,6 +1391,9 @@ export default {
       // them so every wallet/device discovers the same markets, not just the
       // launcher's localStorage. Keyed by the market account pubkey.
       if (path === "/markets" && req.method === "POST") {
+        // Unauthenticated registry write: cap the body and rate-limit per IP.
+        const limited = guardOpenWrite(req);
+        if (limited) return limited;
         const b = (await req.json()) as Record<string, any>;
         if (!b.pubkey || !b.symbol || !b.base) {
           return json({ error: "pubkey + symbol + base required" });
