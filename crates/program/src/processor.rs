@@ -29,6 +29,8 @@ use crate::{
         twap_observe_buffer, TwapState, TWAP_SEED,
         house_cap_of, set_house_cap_buffer, portfolio_abs_position_for_asset,
         HouseCapAccount, HOUSE_CAP_SEED,
+        fee_config_of, set_fee_config_buffer, asset_effective_price,
+        FeeConfigAccount, FEE_SEED,
         InsuranceConfig, INSURANCE_CFG_SEED, set_insurance_params_buffer,
         insurance_params_of, set_insurance_pending_buffer, insurance_domain_index,
         engine_total_insurance, deposit_domain_insurance_buffer, withdraw_domain_insurance_buffer,
@@ -445,7 +447,110 @@ pub fn process_instruction(
         OpenPerpsInstruction::HarvestHlp { amount } => {
             process_harvest_hlp(program_id, accounts, amount)
         }
+        OpenPerpsInstruction::SetMarketFee { min_fee_bps, bump } => {
+            process_set_market_fee(program_id, accounts, min_fee_bps, bump)
+        }
     }
+}
+
+/// Resolve the per-market trading-fee floor (the minimum `fee_bps` per leg). The
+/// fee-config PDA is the trailing account at `fee_idx`; its address is verified
+/// against the canonical `[FEE_SEED, market]` (NOT a caller bump), so it cannot be
+/// omitted or substituted to bypass the floor. Returns 0 when the canonical
+/// account is uninitialized (the market has no floor).
+fn resolve_fee_floor(
+    program_id: &Pubkey,
+    accounts: &[AccountInfo],
+    fee_idx: usize,
+    market_key: &Pubkey,
+) -> Result<u64, OpenPerpsError> {
+    let fee_acc = accounts
+        .get(fee_idx)
+        .ok_or(OpenPerpsError::InvalidInstruction)?;
+    let (canonical, _) = find_program_address(&[FEE_SEED, market_key.as_ref()], program_id);
+    if *fee_acc.key() != canonical {
+        return Err(OpenPerpsError::InvalidAccountData);
+    }
+    if unsafe { fee_acc.owner() } != program_id {
+        return Ok(0); // canonical account uninitialized: no floor
+    }
+    let d = fee_acc
+        .try_borrow_data()
+        .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    let (mkt, min_fee_bps) = fee_config_of(&d)?;
+    if mkt != *market_key {
+        return Ok(0);
+    }
+    Ok(min_fee_bps)
+}
+
+/// Set a market's trading-fee floor (the minimum `fee_bps` per trade leg).
+/// Market-authority-signed; the PDA is created on first use. A zero floor removes
+/// the requirement.
+fn process_set_market_fee(
+    program_id: &Pubkey,
+    accounts: &[AccountInfo],
+    min_fee_bps: u64,
+    bump: u8,
+) -> ProgramResult {
+    let [fee_pda, market, authority, _system_program, ..] = accounts else {
+        return Err(OpenPerpsError::InvalidInstruction.into());
+    };
+    if !authority.is_signer() {
+        return Err(OpenPerpsError::MissingRequiredSignature.into());
+    }
+    if !fee_pda.is_writable() {
+        return Err(OpenPerpsError::InvalidAccountData.into());
+    }
+    if unsafe { market.owner() } != program_id {
+        return Err(OpenPerpsError::InvalidAccountOwner.into());
+    }
+
+    let market_key = *market.key();
+    {
+        let data = market
+            .try_borrow_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        let wrapper = market_wrapper_header(&data)?;
+        if !wrapper.is_initialized() {
+            return Err(OpenPerpsError::UninitializedAccount.into());
+        }
+        if wrapper.authority != *authority.key() {
+            return Err(OpenPerpsError::MissingRequiredSignature.into());
+        }
+    }
+
+    let derived = create_program_address(&[FEE_SEED, market_key.as_ref(), &[bump]], program_id)
+        .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    if *fee_pda.key() != derived {
+        return Err(OpenPerpsError::InvalidAccountData.into());
+    }
+
+    if unsafe { fee_pda.owner() } != program_id {
+        let rent = Rent::get()?;
+        let lamports = rent.minimum_balance(FeeConfigAccount::LEN);
+        let bump_arr = [bump];
+        let seeds = [
+            Seed::from(FEE_SEED),
+            Seed::from(market_key.as_ref()),
+            Seed::from(bump_arr.as_ref()),
+        ];
+        let signer = Signer::from(seeds.as_ref());
+        system_create_account(
+            authority,
+            fee_pda,
+            lamports,
+            FeeConfigAccount::LEN as u64,
+            program_id,
+            &[signer],
+        )?;
+    }
+
+    let mut data = fee_pda
+        .try_borrow_mut_data()
+        .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    set_fee_config_buffer(&mut data, market_key, min_fee_bps)?;
+    Ok(())
 }
 
 /// Enforce the per-market House exposure cap (when configured) after a trade. The
@@ -1540,6 +1645,19 @@ fn process_place_order(
     // post-trade check rejects only exposure-INCREASING trades over the cap.
     let house_abs_before = portfolio_abs_position_for_asset(&house_data, asset_index)?;
 
+    // Fee integrity: enforce the market's fee floor (the fee-config PDA trails the
+    // House-cap at cap_idx+1), and price the fee notional off the honest oracle
+    // mark instead of the caller's exec_price (which the engine uses only for the
+    // fee, so exec_price=1 would otherwise zero it). The position itself is always
+    // marked at effective_price, so this changes only the fee, never PnL.
+    if fee_bps < resolve_fee_floor(program_id, accounts, cap_idx + 1, &market_key)? {
+        return Err(OpenPerpsError::TradingFeeBelowFloor.into());
+    }
+    let fee_price = {
+        let eff = asset_effective_price(&*market_data, asset_index)?;
+        if eff != 0 { eff } else { exec_price }
+    };
+
     // side = 0 → user is long, house is short. side = 1 → swap.
     match side {
         0 => {
@@ -1549,7 +1667,7 @@ fn process_place_order(
                 &mut house_data,
                 asset_index,
                 size_q,
-                exec_price,
+                fee_price,
                 fee_bps,
             )
             .map_v16()?;
@@ -1561,7 +1679,7 @@ fn process_place_order(
                 &mut user_data,
                 asset_index,
                 size_q,
-                exec_price,
+                fee_price,
                 fee_bps,
             )
             .map_v16()?;
@@ -1661,6 +1779,10 @@ fn process_place_batch_order(
         }
     };
 
+    // Fee floor for this market (canonical fee-config PDA at cap_idx+1), read once
+    // and applied to every leg below.
+    let min_fee_bps = resolve_fee_floor(program_id, accounts, cap_idx + 1, &market_key)?;
+
     // Decode the legs. The user is the engine's first (long) account, so a leg's
     // signed size is positive for `side == 0` (user long) and negative otherwise.
     let n = count as usize; // validated <= MAX_BATCH_LEGS by unpack
@@ -1684,6 +1806,13 @@ fn process_place_batch_order(
         let size = u128::from_le_bytes(leg[5..21].try_into().unwrap());
         let exec_price = u64::from_le_bytes(leg[21..29].try_into().unwrap());
         let fee_bps = u64::from_le_bytes(leg[29..37].try_into().unwrap());
+        // Same fee integrity as PlaceOrder, per leg: enforce the floor, and price
+        // the fee off the honest oracle mark, not the caller's exec_price.
+        if fee_bps < min_fee_bps {
+            return Err(OpenPerpsError::TradingFeeBelowFloor.into());
+        }
+        let eff = asset_effective_price(&*market_data, asset_index as u32)?;
+        let fee_price = if eff != 0 { eff } else { exec_price };
         let signed = i128::try_from(size).map_err(|_| OpenPerpsError::ArithmeticOverflow)?;
         let size_q = match side {
             0 => signed,
@@ -1695,7 +1824,7 @@ fn process_place_batch_order(
         *req = percolator::v16::TradeRequestV16 {
             asset_index,
             size_q,
-            exec_price,
+            exec_price: fee_price,
             fee_bps,
         };
     }

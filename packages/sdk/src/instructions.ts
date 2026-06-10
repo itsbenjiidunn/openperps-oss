@@ -11,6 +11,7 @@ import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import {
   DEPOSIT_CAP_SEED,
   DEXPOOL_SEED,
+  FEE_SEED,
   HLP_POSITION_SEED,
   HLP_SEED,
   HLP_VAULT_SEED,
@@ -66,6 +67,7 @@ export const Tag = {
   RequestRedeemHlp: 37,
   ExecuteRedeemHlp: 38,
   HarvestHlp: 39,
+  SetMarketFee: 40,
 } as const;
 
 /// Side encoding for `PlaceOrder`.
@@ -624,9 +626,12 @@ export function placeBatchOrderIx(args: {
   if (args.delegate) {
     keys.push({ pubkey: args.delegate, isSigner: false, isWritable: false });
   }
-  // House-cap PDA trails the optional delegate (verified canonical on-chain).
+  // House-cap then fee-config PDA trail the optional delegate (both verified
+  // canonical on-chain, so always passed; uninitialized = no cap / no fee floor).
   const [houseCap] = houseCapPda(args.programId, args.market);
   keys.push({ pubkey: houseCap, isSigner: false, isWritable: false });
+  const [feeConfig] = feeConfigPda(args.programId, args.market);
+  keys.push({ pubkey: feeConfig, isSigner: false, isWritable: false });
   return new TransactionInstruction({
     programId: args.programId,
     keys,
@@ -1055,10 +1060,13 @@ export function placeOrderIx(args: {
   if (args.delegate) {
     keys.push({ pubkey: args.delegate, isSigner: false, isWritable: false });
   }
-  // The House-cap PDA trails the optional delegate; the program verifies it is
-  // the canonical address, so it is always passed (uninitialized = no cap).
+  // The House-cap PDA trails the optional delegate, then the fee-config PDA; the
+  // program verifies both are the canonical addresses, so they are always passed
+  // (uninitialized = no cap / no fee floor).
   const [houseCap] = houseCapPda(args.programId, args.market);
   keys.push({ pubkey: houseCap, isSigner: false, isWritable: false });
+  const [feeConfig] = feeConfigPda(args.programId, args.market);
+  keys.push({ pubkey: feeConfig, isSigner: false, isWritable: false });
   return new TransactionInstruction({
     programId: args.programId,
     keys,
@@ -1257,6 +1265,51 @@ export function setHouseCapIx(args: {
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
     ],
     data: encodeSetHouseCap(args.maxBasePosition, args.bump),
+  });
+}
+
+/** The per-market fee-floor PDA; matches Rust `[FEE_SEED, market]`. */
+export function feeConfigPda(
+  programId: PublicKey,
+  market: PublicKey,
+): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync([FEE_SEED, market.toBuffer()], programId);
+}
+
+export function encodeSetMarketFee(minFeeBps: bigint, bump: number): Buffer {
+  const data = new Uint8Array(1 + 8 + 1);
+  data[0] = Tag.SetMarketFee;
+  writeU64LE(data, 1, minFeeBps);
+  data[9] = bump;
+  return Buffer.from(data);
+}
+
+/// Set a market's trading-fee floor: the minimum `fee_bps` every PlaceOrder /
+/// PlaceBatchOrder leg must carry, so a client cannot craft a 0-fee trade to
+/// wash-trade for free or skip funding insurance. Market-authority-signed; a zero
+/// floor removes it. The PDA is created on first use, and the trade handlers
+/// verify its canonical address, so the floor cannot be bypassed by omitting the
+/// trailing account.
+export function setMarketFeeIx(args: {
+  programId: PublicKey;
+  /** The PDA from `feeConfigPda(programId, market)`. */
+  feeConfigPda: PublicKey;
+  market: PublicKey;
+  /** The market authority (signer; pays PDA rent on first set). */
+  authority: PublicKey;
+  /** Minimum fee in bps every trade leg must carry (0 removes the floor). */
+  minFeeBps: bigint;
+  bump: number;
+}): TransactionInstruction {
+  return new TransactionInstruction({
+    programId: args.programId,
+    keys: [
+      { pubkey: args.feeConfigPda, isSigner: false, isWritable: true },
+      { pubkey: args.market, isSigner: false, isWritable: false },
+      { pubkey: args.authority, isSigner: true, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    data: encodeSetMarketFee(args.minFeeBps, args.bump),
   });
 }
 

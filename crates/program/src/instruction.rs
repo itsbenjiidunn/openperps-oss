@@ -49,6 +49,7 @@ pub mod tag {
     pub const REQUEST_REDEEM_HLP: u8 = 37;
     pub const EXECUTE_REDEEM_HLP: u8 = 38;
     pub const HARVEST_HLP: u8 = 39;
+    pub const SET_MARKET_FEE: u8 = 40;
 }
 
 /// Maximum legs in a single `PlaceBatchOrder`. The engine also rejects a batch
@@ -486,6 +487,20 @@ pub enum OpenPerpsInstruction {
         max_base_position: u128,
         bump: u8,
     },
+    /// Set the market's trading-fee floor: the minimum `fee_bps` every PlaceOrder
+    /// / PlaceBatchOrder leg must carry, so a client cannot craft a 0-fee trade to
+    /// wash-trade for free or skip funding the engine's insurance backstop. The
+    /// PDA is created on first use; a zero `min_fee_bps` removes the floor.
+    ///
+    /// Accounts:
+    ///   0. `[writable]` fee-config PDA (`[FEE_SEED, market]`)
+    ///   1. `[]`         market account (read for authority)
+    ///   2. `[signer, writable]` authority (must match the market authority; pays rent)
+    ///   3. `[]`         system program
+    SetMarketFee {
+        min_fee_bps: u64,
+        bump: u8,
+    },
     /// Set the market's `require_verifiable` flag. When enabled, `AccrueAsset`
     /// can no longer move this market's mark (the authority-set price is forced
     /// to a delta-0 accrual); only `CrankPyth` / `CrankDexSpot` price it.
@@ -898,6 +913,10 @@ impl OpenPerpsInstruction {
             }),
             tag::HARVEST_HLP => Ok(Self::HarvestHlp {
                 amount: read_u128(rest, 0)?,
+            }),
+            tag::SET_MARKET_FEE => Ok(Self::SetMarketFee {
+                min_fee_bps: read_u64(rest, 0)?,
+                bump: read_u8(rest, 8)?,
             }),
             _ => Err(OpenPerpsError::InvalidInstruction),
         }

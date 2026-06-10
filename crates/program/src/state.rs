@@ -170,6 +170,13 @@ pub const TWAP_SEED: &[u8] = b"twap";
 /// liquidation, and the per-portfolio deposit cap.
 pub const HOUSE_CAP_SEED: &[u8] = b"housecap";
 
+/// PDA seed prefix for a market's trading-fee floor. Full seeds:
+/// `[FEE_SEED, market.key()]`. Optional, per-market: when set, every PlaceOrder /
+/// PlaceBatchOrder leg must carry `fee_bps >= min_fee_bps`, so a client cannot
+/// craft a 0-fee transaction to wash-trade for free or skip funding the engine's
+/// insurance backstop. Markets without one keep the floor at 0 (unchanged).
+pub const FEE_SEED: &[u8] = b"feecfg";
+
 /// PDA seed prefix for a market's insurance fund config. Full seeds:
 /// `[INSURANCE_CFG_SEED, market.key()]`. The insurance capital itself lives in the
 /// engine's own per-(asset, side) domain insurance ledger inside the market vault
@@ -206,6 +213,9 @@ pub const TWAP_DISCRIMINATOR: [u8; 8] = *b"OPTWAP00";
 
 /// Magic bytes at the start of a [`HouseCapAccount`].
 pub const HOUSE_CAP_DISCRIMINATOR: [u8; 8] = *b"OPHOUSEC";
+
+/// Magic bytes at the start of a [`FeeConfigAccount`].
+pub const FEE_CONFIG_DISCRIMINATOR: [u8; 8] = *b"OPFEECFG";
 
 /// Magic bytes at the start of an [`InsuranceConfig`].
 pub const INSURANCE_CFG_DISCRIMINATOR: [u8; 8] = *b"OPINSCFG";
@@ -427,6 +437,64 @@ pub fn house_cap_of(buf: &[u8]) -> Result<([u8; 32], u128), OpenPerpsError> {
         return Ok(([0u8; 32], 0));
     }
     Ok((acc.market, u128::from_le_bytes(acc.max_base_position)))
+}
+
+/// Per-market trading-fee floor: the minimum `fee_bps` every trade leg must carry.
+/// `market` binds it so the floor can be trusted by discriminator + market match.
+/// LE u64 stored as bytes to keep the struct alignment-1 and padding-free.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Pod, Zeroable)]
+pub struct FeeConfigAccount {
+    pub discriminator: [u8; 8],
+    pub market: [u8; 32],
+    pub min_fee_bps: [u8; 8],
+}
+
+impl FeeConfigAccount {
+    pub const LEN: usize = core::mem::size_of::<Self>();
+    pub fn is_initialized(&self) -> bool {
+        self.discriminator == FEE_CONFIG_DISCRIMINATOR
+    }
+}
+
+/// Write/overwrite a market's trading-fee floor (market-authority-authorized).
+pub fn set_fee_config_buffer(
+    buf: &mut [u8],
+    market: [u8; 32],
+    min_fee_bps: u64,
+) -> Result<(), OpenPerpsError> {
+    if buf.len() < FeeConfigAccount::LEN {
+        return Err(OpenPerpsError::AccountDataTooSmall);
+    }
+    let acc: &mut FeeConfigAccount = pod_from_bytes_mut(&mut buf[..FeeConfigAccount::LEN])?;
+    acc.discriminator = FEE_CONFIG_DISCRIMINATOR;
+    acc.market = market;
+    acc.min_fee_bps = min_fee_bps.to_le_bytes();
+    Ok(())
+}
+
+/// Read `(market, min_fee_bps)` from a fee-config PDA; both zero if uninitialized.
+pub fn fee_config_of(buf: &[u8]) -> Result<([u8; 32], u64), OpenPerpsError> {
+    if buf.len() < FeeConfigAccount::LEN {
+        return Err(OpenPerpsError::AccountDataTooSmall);
+    }
+    let acc: &FeeConfigAccount = bytemuck::try_from_bytes(&buf[..FeeConfigAccount::LEN])
+        .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    if !acc.is_initialized() {
+        return Ok(([0u8; 32], 0));
+    }
+    Ok((acc.market, u64::from_le_bytes(acc.min_fee_bps)))
+}
+
+/// The asset slot's current EWMA mark (`effective_price`), or 0 if unavailable.
+/// Used to price the fee notional from the honest oracle mark rather than trusting
+/// the caller's `exec_price` (which the engine uses only for the fee).
+pub fn asset_effective_price(buf: &[u8], asset_index: u32) -> Result<u64, OpenPerpsError> {
+    let (_, markets) = market_engine_split(buf)?;
+    let slot = markets
+        .get(asset_index as usize)
+        .ok_or(OpenPerpsError::InvalidAccountData)?;
+    Ok(slot.engine.asset.effective_price.get())
 }
 
 /// Per-market insurance fund config. The insurance capital itself lives in the
@@ -1238,6 +1306,42 @@ pub fn market_engine_split_mut(
     data: &mut [u8],
 ) -> Result<(&mut MarketGroupV16HeaderAccount, &mut [MarketSlot]), OpenPerpsError> {
     let (_, engine, markets) = market_split_mut(data)?;
+    Ok((engine, markets))
+}
+
+/// Read-only counterpart of [`market_split_mut`].
+pub fn market_split(
+    data: &[u8],
+) -> Result<
+    (
+        &OpenPerpsMarketHeader,
+        &MarketGroupV16HeaderAccount,
+        &[MarketSlot],
+    ),
+    OpenPerpsError,
+> {
+    let wrapper_len = OpenPerpsMarketHeader::LEN;
+    let engine_header_len = core::mem::size_of::<MarketGroupV16HeaderAccount>();
+    if data.len() < wrapper_len + engine_header_len {
+        return Err(OpenPerpsError::AccountDataTooSmall);
+    }
+    let (wrap_bytes, rest) = data.split_at(wrapper_len);
+    let (engine_bytes, slot_bytes) = rest.split_at(engine_header_len);
+    let wrapper: &OpenPerpsMarketHeader = bytemuck::try_from_bytes(wrap_bytes)
+        .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    let engine: &MarketGroupV16HeaderAccount = bytemuck::try_from_bytes(engine_bytes)
+        .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    let markets: &[MarketSlot] =
+        bytemuck::try_cast_slice(slot_bytes).map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    Ok((wrapper, engine, markets))
+}
+
+/// Read-only engine-only split (skips the wrapper prefix). Shim over
+/// [`market_split`].
+pub fn market_engine_split(
+    data: &[u8],
+) -> Result<(&MarketGroupV16HeaderAccount, &[MarketSlot]), OpenPerpsError> {
+    let (_, engine, markets) = market_split(data)?;
     Ok((engine, markets))
 }
 
@@ -2080,6 +2184,18 @@ mod tests {
         let mut buf = vec![0u8; portfolio_account_size(2).unwrap()];
         init_portfolio_buffer(&mut buf, [1u8; 32], [2u8; 32], [3u8; 32]).unwrap();
         assert_eq!(portfolio_abs_position_for_asset(&buf, 0).unwrap(), 0);
+    }
+
+    #[test]
+    fn fee_config_buffer_roundtrip() {
+        let mut buf = vec![0u8; FeeConfigAccount::LEN];
+        // Uninitialized reads as no floor.
+        assert_eq!(fee_config_of(&buf).unwrap(), ([0u8; 32], 0));
+        set_fee_config_buffer(&mut buf, [7u8; 32], 10).unwrap();
+        assert_eq!(fee_config_of(&buf).unwrap(), ([7u8; 32], 10));
+        // A zero floor (removed) still reads back its market binding.
+        set_fee_config_buffer(&mut buf, [7u8; 32], 0).unwrap();
+        assert_eq!(fee_config_of(&buf).unwrap(), ([7u8; 32], 0));
     }
 
     #[test]

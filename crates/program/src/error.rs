@@ -74,6 +74,9 @@ pub enum OpenPerpsError {
     /// shares outstanding. Once LPs are in the House, the authority cannot drain
     /// it out from under them; harvest into the buffer and let LPs redeem instead.
     HlpLpClaimsOutstanding = 24,
+    /// A trade leg carried `fee_bps` below the market's configured fee floor
+    /// (`[FEE_SEED, market]`). Raise the fee to at least the floor.
+    TradingFeeBelowFloor = 25,
 }
 
 impl From<OpenPerpsError> for ProgramError {

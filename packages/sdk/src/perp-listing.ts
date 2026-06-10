@@ -33,10 +33,12 @@ import {
 } from "./market-create-build.ts";
 import {
   depositCapPda,
+  feeConfigPda,
   houseCapPda,
   oracleAuthorityPda,
   setDepositCapIx,
   setHouseCapIx,
+  setMarketFeeIx,
   setOracleAuthorityIx,
 } from "./instructions.ts";
 import type { OpenPerpsMarketCreationIntent } from "./intents.ts";
@@ -216,6 +218,9 @@ export type BuildPerpMarketListingInput = ResolvePerpListingInput & {
   /// Append SetDepositCap with this per-portfolio cap (quote atoms). DEX-priced
   /// markets only; raises above the program floor.
   depositCapAtoms?: bigint;
+  /// Append SetMarketFee with this trading-fee floor (min `fee_bps` per trade
+  /// leg), so no one can craft a 0-fee trade on this market. Omit / 0 for no floor.
+  minFeeBps?: bigint;
   /// Carried into the returned config for the registry.
   poolAddress?: string;
   dex?: string;
@@ -304,6 +309,19 @@ export function buildPerpMarketListing(input: BuildPerpMarketListingInput): Perp
         market: input.market,
         authority: input.authority,
         maxCapital: input.depositCapAtoms,
+        bump,
+      }),
+    );
+  }
+  if (input.minFeeBps !== undefined && input.minFeeBps > 0n) {
+    const [pda, bump] = feeConfigPda(input.programId, input.market);
+    instructions.push(
+      setMarketFeeIx({
+        programId: input.programId,
+        feeConfigPda: pda,
+        market: input.market,
+        authority: input.authority,
+        minFeeBps: input.minFeeBps,
         bump,
       }),
     );

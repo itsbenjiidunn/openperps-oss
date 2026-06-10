@@ -44,6 +44,8 @@ import {
   placeOrderIx,
   setHouseCapIx,
   houseCapPda,
+  setMarketFeeIx,
+  feeConfigPda,
   portfolioPda,
   marketAccountSize,
   decodePortfolioPositions,
@@ -339,6 +341,49 @@ async function main(): Promise<void> {
         { commitment: "confirmed" },
       ),
     "PlaceOrder past the House cap reverts",
+  );
+
+  // SetMarketFee floor 10 bps; a PlaceOrder with feeBps below it reverts, so a
+  // client cannot craft a 0-fee (free wash / no-insurance) trade.
+  section("fee floor");
+  const [feePda, feeBump] = feeConfigPda(PROGRAM_ID, market.publicKey);
+  await send(
+    conn,
+    new Transaction().add(
+      setMarketFeeIx({
+        programId: PROGRAM_ID,
+        feeConfigPda: feePda,
+        market: market.publicKey,
+        authority: payer.publicKey,
+        minFeeBps: 10n,
+        bump: feeBump,
+      }),
+    ),
+    [payer],
+    "SetMarketFee(10 bps floor)",
+  );
+  await expectFail(
+    () =>
+      sendAndConfirmTransaction(
+        conn,
+        new Transaction().add(
+          placeOrderIx({
+            programId: PROGRAM_ID,
+            market: market.publicKey,
+            userPortfolio: userPf,
+            housePortfolio: housePda,
+            user: payer.publicKey,
+            side: Side.Long,
+            assetIndex: 0,
+            sizeQ: 50_000n,
+            execPrice: PRICE,
+            feeBps: 0n, // below the 10 bps floor
+          }),
+        ),
+        [payer],
+        { commitment: "confirmed" },
+      ),
+    "PlaceOrder below the fee floor reverts",
   );
 
   console.log(`\nALL CORE CHECKS PASSED (${passes})`);

@@ -34,6 +34,13 @@ in place, and the open items.
   and refuses while LP shares are outstanding, so once LPs are in the House the
   authority must harvest into the buffer and let LPs redeem rather than
   withdrawing the LP-backing capital.
+- Trading fees are enforced, not advisory. A market authority can set a fee floor
+  (`SetMarketFee`, the canonical `[FEE_SEED, market]` PDA verified on every trade,
+  so it cannot be bypassed by omitting the account), and the fee notional is
+  priced off the on-chain `effective_price` rather than the caller's `exec_price`
+  (which the engine uses only for the fee), so no one can craft a 0-fee / 1-price
+  trade to wash-trade for free or skip funding the insurance backstop. The
+  position is always marked at `effective_price`, so this changes only the fee.
 - The market header carries a version; a header from an older or future layout
   reads as uninitialized instead of being mis-decoded against stale padding.
 - `InitMarket` rejects a `quote_mint` not owned by the SPL Token program.

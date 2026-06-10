@@ -196,6 +196,11 @@ export const TWAP_SEED = new TextEncoder().encode("twap");
  * full seeds are `[HOUSE_CAP_SEED, market]`. */
 export const HOUSE_CAP_SEED = new TextEncoder().encode("housecap");
 
+/** Trading-fee floor PDA seed prefix; matches Rust `state::FEE_SEED`. The full
+ * seeds are `[FEE_SEED, market]`. When set, every trade leg must carry
+ * `fee_bps >= min_fee_bps`. */
+export const FEE_SEED = new TextEncoder().encode("feecfg");
+
 /** Insurance fund config PDA seed prefix; matches Rust `state::INSURANCE_CFG_SEED`.
  * The full seeds are `[INSURANCE_CFG_SEED, market]`. The insurance capital lives in
  * the engine's own domain insurance ledger inside the market vault; this PDA holds
