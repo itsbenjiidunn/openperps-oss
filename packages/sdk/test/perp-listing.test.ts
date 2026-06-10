@@ -17,10 +17,11 @@ import {
   ORACLE_KIND_DEX_EWMA,
   ORACLE_KIND_PYTH,
   usdToPriceInt,
+  DEVNET_PROGRAM_ID,
   type FetchLike,
 } from "../src/index.ts";
 
-const programId = new PublicKey("2TGY1iY2r4MKytwg5vir9CJnJrqgdZrzjF8LjNaiVnZ4");
+const programId = new PublicKey(DEVNET_PROGRAM_ID);
 const authority = Keypair.generate().publicKey;
 const market = Keypair.generate().publicKey;
 const baseMint = Keypair.generate().publicKey.toBase58();

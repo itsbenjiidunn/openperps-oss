@@ -54,11 +54,11 @@ import {
   VAULT_SEED,
   HOUSE_SEED,
   ORACLE_KIND_MANUAL,
+  DEVNET_PROGRAM_ID,
 } from "../src/index.ts";
 
 const PROGRAM_ID = new PublicKey(
-  process.env.OPENPERPS_PROGRAM_ID ??
-    "2TGY1iY2r4MKytwg5vir9CJnJrqgdZrzjF8LjNaiVnZ4",
+  process.env.OPENPERPS_PROGRAM_ID ?? DEVNET_PROGRAM_ID,
 );
 const RPC = process.env.OPENPERPS_RPC ?? "https://api.devnet.solana.com";
 const PAYER_PATH =

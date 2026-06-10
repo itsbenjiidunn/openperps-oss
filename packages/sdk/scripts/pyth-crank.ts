@@ -31,9 +31,10 @@ import {
   marketAccountSize,
   VAULT_SEED,
   ORACLE_KIND_PYTH,
+  DEVNET_PROGRAM_ID,
 } from "../src/index.ts";
 
-const PROGRAM_ID = new PublicKey("2TGY1iY2r4MKytwg5vir9CJnJrqgdZrzjF8LjNaiVnZ4");
+const PROGRAM_ID = new PublicKey(DEVNET_PROGRAM_ID);
 const RPC = process.env.OPENPERPS_RPC ?? "https://api.devnet.solana.com";
 const PAYER_PATH = process.env.OPENPERPS_PAYER ?? resolve(homedir(), ".config/solana/id.json");
 const CAP = 2;
