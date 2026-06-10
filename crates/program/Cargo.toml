@@ -11,7 +11,7 @@ name = "openperps_program"
 
 [dependencies]
 percolator = { path = "../engine" }
-pinocchio = "0.8"
+pinocchio = "0.11"
 bytemuck = { version = "1.23", default-features = false, features = ["derive"] }
 
 [features]
