@@ -11,10 +11,10 @@
     "db:schema": "wrangler d1 execute openperps-indexer --remote --file=./schema.sql"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20240909.0",
-    "@types/node": "^22.0.0",
-    "typescript": "^5.6.0",
-    "wrangler": "^3.78.0"
+    "@cloudflare/workers-types": "^4.20260610.1",
+    "@types/node": "^25.9.2",
+    "typescript": "^6.0.3",
+    "wrangler": "^4.99.0"
   },
   "dependencies": {
     "@solana/web3.js": "^1.98.4"
