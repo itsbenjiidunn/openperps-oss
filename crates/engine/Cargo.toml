@@ -15,7 +15,7 @@ path = "src/lib.rs"
 bytemuck = { version = "1.23", default-features = false, features = ["derive"] }
 
 [dev-dependencies]
-proptest = "1.4"
+proptest = "1.11"
 
 [features]
 default = []
