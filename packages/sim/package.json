@@ -1,0 +1,18 @@
+{
+  "name": "@openperps/sim",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Economic model + simulation of the House / HLP P&L on memecoin flow. A research tool to size fee / cap / leverage and test viability; not published.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test --import tsx \"test/**/*.test.ts\"",
+    "report": "tsx scripts/report.ts"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "tsx": "^4.19.0",
+    "@types/node": "^22.0.0"
+  }
+}
