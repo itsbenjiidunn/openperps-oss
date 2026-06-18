@@ -61,13 +61,15 @@ Same SDK, same widgets, everywhere: a wallet can list a market and a launchpad c
 
 | Capability | What you build with it |
 | --- | --- |
+| **One-call listing** | `createPerpMarket(mint)`: read the token's signals, pick its risk tier, and emit the whole market lifecycle in one call |
 | **Create perp market** | A perp market for a token / mint / pool already in your app |
 | **Seed LP & House vault** | Liquidity so users have a counterparty for every trade |
+| **Live price feed** | `createLivePriceProvider`: price any token off DexScreener then Jupiter, for markets with no Pyth feed |
 | **Long / short** | Open a position from a page, a bot, or a wallet |
 | **Close position** | Close and settle PnL |
 | **Mark price & decoders** | Read spot, mark, entry, liquidation, and uPnL from on-chain state |
 | **Chart & trade feed** | Plug your own candle and fill data into the chart and feed widgets |
-| **Keeper** | Push oracle/funding updates, clear stale slots, scan liquidations |
+| **Keeper & relayer** | Push oracle/funding updates, run the `openperps-relayer` daemon, clear stale slots, scan liquidations |
 | **Account decoders** | Read market, portfolio, position, and vault state |
 
 ---
@@ -147,9 +149,9 @@ const tx = transactionFromInstructions(built.instructions, { feePayer: wallet.pu
 What the SDK gives you:
 
 - **Trade build and resolution.** `resolveTrade` checks an intent against the market and on-chain mark (size, side, reduce-only, slippage); `buildTradeFromIntent` composes the on-chain instructions against the user's portfolio and the House counterparty.
-- **Market creation.** `planMarketCreation` and `buildMarketCreationInstructions` compose the full lifecycle (market account, vault, House, oracle binding) for a custom market on any token.
+- **Market creation.** `createPerpMarket(mint)` is the one-call listing (classify, pick the tier, emit the lifecycle); `planMarketCreation` and `buildMarketCreationInstructions` compose the same lifecycle (market account, vault, House, oracle binding) by hand for full control.
 - **Account decoders.** `decodePortfolioSummary`, `decodePortfolioPositions`, and the layout offsets read market, portfolio, and position state.
-- **Price providers.** Bring your own `PriceProvider` (Pyth, a pool read, your own oracle) or use `createStaticPriceProvider` for tests.
+- **Price providers.** `createLivePriceProvider` prices any token off DexScreener then Jupiter for relayer markets with no Pyth feed; or bring your own `PriceProvider` (Pyth, a pool read, your own oracle), with `createStaticPriceProvider` for tests.
 - **Instruction encoders.** Low-level `accrueAssetIx`, `liquidateIx`, and the rest, mirroring the Rust program, for when you need to compose by hand.
 
 ### React
@@ -209,7 +211,7 @@ await runKeeper(
 
 A keeper is part of the risk system, not just a price cron: it pushes oracle/funding updates on-chain and submits liquidations across many markets. Key points:
 
-- **Authority.** For `AccrueAsset`, the keeper `authority` keypair must match the market's oracle authority, or the program rejects the update. By default that is the program's global relayer constant; a market can rotate it per market with `setOracleAuthorityIx` (an `[ORACLE_SEED, market]` PDA), in which case set `useOracleAuthorityPda: true` on that `KeeperMarket`.
+- **Authority.** For `AccrueAsset`, the keeper `authority` keypair must match the market's oracle authority, or the program rejects the update. On a production build there is no shared relayer key: each market names its own via `setOracleAuthorityIx` (an `[ORACLE_SEED, market]` PDA, which `createPerpMarket` sets for a MANUAL market), so set `useOracleAuthorityPda: true` on that `KeeperMarket` and run the keeper with that key. (A devnet build keeps a shared relayer constant as the fallback.)
 - **Freshness.** The keeper respects the engine's per-slot price-move bound and `max_accrual_dt_slots` window. A large jump is split into steps that each stay within the per-slot move budget (`oldPrice * maxPriceMoveBpsPerSlot * dt / 10000`), so no single `AccrueAsset` is rejected for moving too far too fast. When a market falls behind, it bursts catch-up accruals before risk-increasing trades. See [`docs/keeper-freshness.md`](./docs/keeper-freshness.md).
 - **Liquidation.** `discoverLiquidatable` scans the program's portfolios and returns the candidates for a market (open position in the asset, minus the House); `liquidatePortfolio` simulates first so a healthy account costs no fee, and `scanLiquidations` lands only the genuinely liquidatable ones. The keeper finds and clears underwater accounts on its own; front discovery with an indexer for a very large deployment.
 - **Monitoring.** Create a `KeeperHealth`, pass it on `deps.health`, and the runner records per-market last crank, slots behind, staleness, last error, and failure streak. `summarizeHealth` returns `{ healthy, staleMarkets, failingMarkets }` for a one-glance `/health` endpoint.
@@ -268,9 +270,9 @@ Work through [`docs/deployment-checklist.md`](./docs/deployment-checklist.md) fo
 
 | Package | Version | License | Role |
 | --- | --- | --- | --- |
-| **[`@openperps/sdk`](./packages/sdk)** | 1.1.0 | Apache-2.0 | The core client. High-level typed functions that hide PDAs, instruction tags, account layouts, and atom/price math |
-| **[`@openperps/react`](./packages/react)** | 1.1.0 | MIT | Drop-in widgets (`<OpenPerpsTrade/>`, `<OpenPerpsChart/>`, `<OpenPerpsPosition/>`, `<OpenPerpsMarketLauncher/>`) and headless hooks |
-| **[`@openperps/keeper`](./packages/keeper)** | 1.1.0 | Apache-2.0 | Core-only self-host keeper: oracle/funding cranks and liquidation across many markets |
+| **[`@openperps/sdk`](./packages/sdk)** | 1.4.1 | Apache-2.0 | The core client. High-level typed functions that hide PDAs, instruction tags, account layouts, and atom/price math |
+| **[`@openperps/react`](./packages/react)** | 1.4.1 | MIT | Drop-in widgets (`<OpenPerpsTrade/>`, `<OpenPerpsChart/>`, `<OpenPerpsPosition/>`, `<OpenPerpsMarketLauncher/>`) and headless hooks |
+| **[`@openperps/keeper`](./packages/keeper)** | 1.4.1 | Apache-2.0 | Core-only self-host keeper: oracle/funding cranks, the relayer daemon, and liquidation across many markets |
 
 The SDK is the primary integration surface. The React components are the fast path for teams that want ready-made UI; the keeper is the risk-side cron you run yourself.
 
