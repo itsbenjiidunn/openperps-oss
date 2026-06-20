@@ -42,7 +42,7 @@ It is built on **[Percolator](https://github.com/aeyakovenko/percolator) v16**, 
 
 ## Who it is for
 
-OpenPerps OSS is one kit: create a market for any token, seed its House, long/short, close, settle, and decode state, all from `@opp-oss/sdk` and `@opp-oss/react`. Any surface that shows a Solana token can embed the whole thing. The rows below are how that same full kit tends to show up per surface, not a menu of what each one is limited to:
+OpenPerps OSS is one kit: create a market for any token, seed its liquidity vault, long/short, close, settle, and decode state, all from `@opp-oss/sdk` and `@opp-oss/react`. Any surface that shows a Solana token can embed the whole thing. The rows below are how that same full kit tends to show up per surface, not a menu of what each one is limited to:
 
 | Surface | A natural embed (you can wire the full kit) |
 | --- | --- |
@@ -63,7 +63,7 @@ Same SDK, same widgets, everywhere: a wallet can list a market and a launchpad c
 | --- | --- |
 | **One-call listing** | `createPerpMarket(mint)`: read the token's signals, pick its risk tier, and emit the whole market lifecycle in one call |
 | **Create perp market** | A perp market for a token / mint / pool already in your app |
-| **Seed LP & House vault** | Liquidity so users have a counterparty for every trade |
+| **Seed LP & vault** | Liquidity so users have a counterparty for every trade |
 | **Live price feed** | `createLivePriceProvider`: price any token off DexScreener then Jupiter, for markets with no Pyth feed |
 | **Long / short** | Open a position from a page, a bot, or a wallet |
 | **Close position** | Close and settle PnL |
@@ -131,7 +131,7 @@ const registry = createJsonMarketRegistry(markets);
 const market = await registry.getMarket("SOL-PERP");
 if (!market) throw new Error("unknown market");
 
-// 2. `counterparty` is this market's House portfolio and `executionPrice` is the
+// 2. `counterparty` is this market's liquidity-vault portfolio and `executionPrice` is the
 //    current on-chain mark your keeper publishes. The examples below wire both
 //    end to end; here they are the only two inputs you provide.
 const built = buildTradeFromIntent({
@@ -148,8 +148,8 @@ const tx = transactionFromInstructions(built.instructions, { feePayer: wallet.pu
 
 What the SDK gives you:
 
-- **Trade build and resolution.** `resolveTrade` checks an intent against the market and on-chain mark (size, side, reduce-only, slippage); `buildTradeFromIntent` composes the on-chain instructions against the user's portfolio and the House counterparty.
-- **Market creation.** `createPerpMarket(mint)` is the one-call listing (classify, pick the tier, emit the lifecycle); `planMarketCreation` and `buildMarketCreationInstructions` compose the same lifecycle (market account, vault, House, oracle binding) by hand for full control.
+- **Trade build and resolution.** `resolveTrade` checks an intent against the market and on-chain mark (size, side, reduce-only, slippage); `buildTradeFromIntent` composes the on-chain instructions against the user's portfolio and the liquidity-vault counterparty.
+- **Market creation.** `createPerpMarket(mint)` is the one-call listing (classify, pick the tier, emit the lifecycle); `planMarketCreation` and `buildMarketCreationInstructions` compose the same lifecycle (market account, collateral vault, the liquidity vault, oracle binding) by hand for full control.
 - **Account decoders.** `decodePortfolioSummary`, `decodePortfolioPositions`, and the layout offsets read market, portfolio, and position state.
 - **Price providers.** `createLivePriceProvider` prices any token off DexScreener then Jupiter for relayer markets with no Pyth feed; or bring your own `PriceProvider` (Pyth, a pool read, your own oracle), with `createStaticPriceProvider` for tests.
 - **Instruction encoders.** Low-level `accrueAssetIx`, `liquidateIx`, and the rest, mirroring the Rust program, for when you need to compose by hand.
@@ -213,7 +213,7 @@ A keeper is part of the risk system, not just a price cron: it pushes oracle/fun
 
 - **Authority.** For `AccrueAsset`, the keeper `authority` keypair must match the market's oracle authority, or the program rejects the update. On a production build there is no shared relayer key: each market names its own via `setOracleAuthorityIx` (an `[ORACLE_SEED, market]` PDA, which `createPerpMarket` sets for a MANUAL market), so set `useOracleAuthorityPda: true` on that `KeeperMarket` and run the keeper with that key. (A devnet build keeps a shared relayer constant as the fallback.)
 - **Freshness.** The keeper respects the engine's per-slot price-move bound and `max_accrual_dt_slots` window. A large jump is split into steps that each stay within the per-slot move budget (`oldPrice * maxPriceMoveBpsPerSlot * dt / 10000`), so no single `AccrueAsset` is rejected for moving too far too fast. When a market falls behind, it bursts catch-up accruals before risk-increasing trades. See [`docs/keeper-freshness.md`](./docs/keeper-freshness.md).
-- **Liquidation.** `discoverLiquidatable` scans the program's portfolios and returns the candidates for a market (open position in the asset, minus the House); `liquidatePortfolio` simulates first so a healthy account costs no fee, and `scanLiquidations` lands only the genuinely liquidatable ones. The keeper finds and clears underwater accounts on its own; front discovery with an indexer for a very large deployment.
+- **Liquidation.** `discoverLiquidatable` scans the program's portfolios and returns the candidates for a market (open position in the asset, minus the liquidity vault); `liquidatePortfolio` simulates first so a healthy account costs no fee, and `scanLiquidations` lands only the genuinely liquidatable ones. The keeper finds and clears underwater accounts on its own; front discovery with an indexer for a very large deployment.
 - **Monitoring.** Create a `KeeperHealth`, pass it on `deps.health`, and the runner records per-market last crank, slots behind, staleness, last error, and failure streak. `summarizeHealth` returns `{ healthy, staleMarkets, failingMarkets }` for a one-glance `/health` endpoint.
 
 > v1 keeper scope is intentionally small: no analytics, candles, billing, hosted tenant registry, trade-feed API, or SLA system.
@@ -257,9 +257,9 @@ OpenPerps OSS is self-hosted: you deploy the program to the cluster you choose a
 3. **Create your first market** with the SDK (`planMarketCreation` +
    `buildMarketCreationInstructions`). [`examples/node-create-market`](./examples/node-create-market)
    is a complete script that builds, registers, and prints the derived market,
-   vault, and House addresses.
+   vault, and liquidity-vault addresses.
 
-4. **Fund the House vault**, point [`@opp-oss/keeper`](./packages/keeper) at the
+4. **Fund the vault**, point [`@opp-oss/keeper`](./packages/keeper) at the
    market, and you are live.
 
 Work through [`docs/deployment-checklist.md`](./docs/deployment-checklist.md) for the operational decisions (oracle source, keeper, liquidity, risk parameters, custody) before a deployment goes in front of users.
@@ -358,7 +358,7 @@ The program dispatches its instructions in `processor.rs`. The ones that drive r
 
 The remaining instructions are wrapper-side and do no engine math: SPL vault custody (`CreateVault`, `CreateHouseVault`, `FundHouseVault`, `WithdrawHouseVault`), oracle binding (`SetDexPool`), config (`SetOracleAuthority`, `SetDepositCap`), and delegation (`SetDelegate`).
 
-> Collateral custody is an SPL token vault plus CPI, with a separate **House vault** acting as the counterparty for every `PlaceOrder`.
+> Collateral custody is an SPL token vault plus CPI, with a separate **liquidity vault** (the `HouseVault` account on-chain) acting as the counterparty for every `PlaceOrder`.
 
 See [`docs/architecture.md`](./docs/architecture.md) for verified line references into the vendored engine.
 

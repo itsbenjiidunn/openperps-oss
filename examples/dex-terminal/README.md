@@ -30,7 +30,7 @@ npm run dev      # or: npm run build
 | Piece | Role |
 |---|---|
 | `@opp-oss/react` | Provides `<OpenPerpsMarketLauncher/>` (list a perp), and the `<OpenPerpsChart/>` and `<OpenPerpsTrade/>` widgets (trade it). |
-| `@opp-oss/sdk` | Provides market config and creation-intent types, House Vault counterparty resolution, and helpers for reading the on-chain mark used as the execution price. |
+| `@opp-oss/sdk` | Provides market config and creation-intent types, liquidity-vault counterparty resolution, and helpers for reading the on-chain mark used as the execution price. |
 
 You can swap in your own chart, add markets to the registry, or wire a different market-data source. The OpenPerps widgets can stay the same.
 

@@ -8,7 +8,7 @@ This example shows the SDK-only path: a Node script composes the market creation
 
 - Build a market from an `OpenPerpsMarketCreationIntent`.
 - Register the resulting config in a local JSON registry.
-- Print the creation plan and the derived market, vault, and House addresses.
+- Print the creation plan and the derived market, vault, and liquidity-vault addresses.
 
 ## Run
 
@@ -29,7 +29,7 @@ To create the market on-chain, fund the authority, supply a real quote (USDC) mi
 
 ## How It Works
 
-`src/index.ts` builds the market with `@opp-oss/sdk`, derives the market, vault, and House addresses, and writes them to `registry.json`. Point a keeper at that registry to run the market.
+`src/index.ts` builds the market with `@opp-oss/sdk`, derives the market, vault, and liquidity-vault addresses, and writes them to `registry.json`. Point a keeper at that registry to run the market.
 
 ## Boundaries
 

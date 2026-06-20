@@ -85,7 +85,7 @@ handlers for a clean shutdown.
 `keeperMarketFromConfig` also sets each market's push cadence. Both tiers default
 to a fast ~2s cadence: this is not just freshness, it keeps the on-chain mark
 close to the live price so there is little stale-mark gap for latency arbitrage to
-exploit against the House (a mark that lags a fast pump lets an informed trader
+exploit against the liquidity vault (a mark that lags a fast pump lets an informed trader
 long into a known move). The loop ticks at the fastest market's cadence and
 throttles each market to its own `pushIntervalMs`; set a slower, cheaper cadence
 for a calm market via `keeper.expectedCrankIntervalMs` in the config, or the
@@ -118,7 +118,7 @@ rejected for moving the price too far too fast. See
 
 `discoverLiquidatable` scans the program's portfolio accounts and returns the
 candidates for a market: every account with an open position in the asset, minus
-the House. `liquidatePortfolio` submits a permissionless `Liquidate`, simulating
+the liquidity vault. `liquidatePortfolio` submits a permissionless `Liquidate`, simulating
 first so a healthy account (which the engine rejects) costs no transaction fee.
 `scanLiquidations` runs the whole candidate set the same way and returns the
 signatures that landed, so the keeper finds and clears underwater accounts on its

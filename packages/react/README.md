@@ -27,7 +27,7 @@ import {
 <OpenPerpsMarketLauncher intent={creationIntent} onLaunch={createMarket} />
 ```
 
-The host app provides the market config, the resolved House/LP counterparty, the
+The host app provides the market config, the resolved vault/LP counterparty, the
 execution price (from the keeper/on-chain mark, never a client chart price), and
 chart candles. The components ship no CSS; style them through `className` or the
 default `openperps-*` class names.

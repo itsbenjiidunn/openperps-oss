@@ -28,7 +28,7 @@ export function App(): ReactElement {
       <h1>Launch a perp for {intent.symbol}</h1>
       <WalletMultiButton />
       <p style={{ color: "#8b97a8" }}>
-        Create an isolated perp market for your token, seed the House, and offer
+        Create an isolated perp market for your token, seed the liquidity vault, and offer
         long/short on your launch page.
       </p>
       <OpenPerpsMarketLauncher

@@ -36,7 +36,7 @@ your app's single instance of each.
 | --- | --- |
 | **One-call listing** | `createPerpMarket(mint)`: read the token's signals, pick its risk tier, and emit the whole market lifecycle in one call |
 | **Create perp market** | A perp market for a token / mint / pool already in your app |
-| **Seed LP and House vault** | Liquidity so users have a counterparty for every trade |
+| **Seed LP and vault** | Liquidity so users have a counterparty for every trade |
 | **Live price feed** | `createLivePriceProvider`: price any token off DexScreener then Jupiter, for markets with no Pyth feed |
 | **Long / short** | Open a position from a page, a bot, or a wallet |
 | **Close position** | Close and settle PnL |
@@ -67,7 +67,7 @@ const listing = await createPerpMarket({
   authority: payer.publicKey,
   market: marketKp.publicKey,
   marketRentLamports: rent,
-  houseCapBase: 500_000n, // bound the House exposure
+  houseCapBase: 500_000n, // bound the vault's exposure
   minFeeBps: 10n, // enforce a trading-fee floor
 });
 
@@ -108,11 +108,11 @@ const tx = transactionFromInstructions(built.instructions, { feePayer: wallet.pu
 
 - **Trade build and resolution.** `resolveTrade` checks an intent against the
   market and on-chain mark (size, side, reduce-only, slippage); `buildTradeFromIntent`
-  composes the on-chain instructions against the user's portfolio and the House
-  counterparty.
+  composes the on-chain instructions against the user's portfolio and the
+  liquidity-vault counterparty.
 - **Market creation.** `createPerpMarket(mint)` is the one-call listing;
   `planMarketCreation` and `buildMarketCreationInstructions` compose the same
-  lifecycle (market account, vault, House, oracle binding) by hand for full
+  lifecycle (market account, collateral vault, the liquidity vault, oracle binding) by hand for full
   control. The off-chain `classifyMarketTier` suggests the risk tier and oracle
   posture from a token's signals.
 - **Price providers.** `createLivePriceProvider` prices any token off DexScreener
