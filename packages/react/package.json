@@ -1,6 +1,6 @@
 {
   "name": "@opp-oss/react",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Drop-in React components and hooks for embedding OpenPerps trading, charts, and positions.",
   "license": "MIT",
   "author": "itsbenjiidunn",
