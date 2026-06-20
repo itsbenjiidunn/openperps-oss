@@ -21,7 +21,7 @@ import {
   readU128LE,
   OFFSET_CAPITAL,
   type DecodedPosition,
-} from "@openperps/sdk";
+} from "@opp-oss/sdk";
 
 import { useMarketMark } from "@/lib/livePrice";
 import {

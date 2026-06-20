@@ -7,7 +7,7 @@
 
 import { Connection, Keypair, PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
 import type { WalletContextState } from "@solana/wallet-adapter-react";
-import { DELEGATE_SEED, setDelegateIx } from "@openperps/sdk";
+import { DELEGATE_SEED, setDelegateIx } from "@opp-oss/sdk";
 
 import { PROGRAM_ID } from "./program";
 

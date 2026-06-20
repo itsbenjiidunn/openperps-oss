@@ -1,11 +1,11 @@
 /// A wallet / portfolio surface: show the connected wallet's OpenPerps positions
-/// across a curated set of markets, using @openperps/react.
+/// across a curated set of markets, using @opp-oss/react.
 
 import { type ReactElement } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
-import { OpenPerpsPosition } from "@openperps/react";
-import type { OpenPerpsMarketConfig } from "@openperps/sdk";
+import { OpenPerpsPosition } from "@opp-oss/react";
+import type { OpenPerpsMarketConfig } from "@opp-oss/sdk";
 
 const markets: OpenPerpsMarketConfig[] = [
   {

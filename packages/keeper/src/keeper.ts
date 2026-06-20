@@ -13,7 +13,7 @@ import {
   readU64LE,
   slotEffectivePriceOffset,
   slotOffset,
-} from "@openperps/sdk";
+} from "@opp-oss/sdk";
 import { buildAccrualInstructions } from "./accrual.ts";
 import {
   isMarketStale,

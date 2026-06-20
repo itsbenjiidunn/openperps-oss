@@ -15,7 +15,7 @@ import {
   planMarketCreation,
   type OpenPerpsMarketConfig,
   type OpenPerpsMarketCreationIntent,
-} from "@openperps/sdk";
+} from "@opp-oss/sdk";
 
 const RPC = process.env.OPENPERPS_RPC ?? "https://api.devnet.solana.com";
 const PROGRAM_ID = new PublicKey(

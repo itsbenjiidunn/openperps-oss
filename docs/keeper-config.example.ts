@@ -1,4 +1,4 @@
-import type { OpenPerpsMarketConfig, PriceProvider } from "@openperps/sdk";
+import type { OpenPerpsMarketConfig, PriceProvider } from "@opp-oss/sdk";
 
 export const markets: OpenPerpsMarketConfig[] = [
   {

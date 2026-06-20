@@ -1,5 +1,5 @@
 import { PublicKey } from "@solana/web3.js";
-import { portfolioPda } from "@openperps/sdk";
+import { portfolioPda } from "@opp-oss/sdk";
 
 /// OpenPerps program ID, devnet deployment from commit 3daf907.
 /// Override via `VITE_OPENPERPS_PROGRAM_ID` for a different cluster /

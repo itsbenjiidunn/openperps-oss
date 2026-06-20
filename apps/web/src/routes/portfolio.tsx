@@ -22,7 +22,7 @@ import {
   X,
 } from "lucide-react";
 
-import { readU128LE, OFFSET_CAPITAL } from "@openperps/sdk";
+import { readU128LE, OFFSET_CAPITAL } from "@opp-oss/sdk";
 
 import { fmtPubkey } from "@/lib/format";
 import { useMarkets, usePortfolioState } from "@/lib/onchain";

@@ -4,7 +4,7 @@
 /// dependency default.
 
 import { type ReactElement } from "react";
-import type { OpenPerpsMarketConfig } from "@openperps/sdk";
+import type { OpenPerpsMarketConfig } from "@opp-oss/sdk";
 
 export type Candle = {
   time: number;

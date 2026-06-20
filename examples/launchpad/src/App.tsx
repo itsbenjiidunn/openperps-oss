@@ -1,12 +1,12 @@
 /// A launchpad surface: create a perp market for a launching token, then offer
-/// trading on it, using @openperps/react.
+/// trading on it, using @opp-oss/react.
 
 import { useState, type ReactElement } from "react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import {
   OpenPerpsMarketLauncher,
   type OpenPerpsMarketCreationIntent,
-} from "@openperps/react";
+} from "@opp-oss/react";
 
 const intent: OpenPerpsMarketCreationIntent = {
   schemaVersion: 1,

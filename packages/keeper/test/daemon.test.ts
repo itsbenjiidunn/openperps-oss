@@ -4,7 +4,7 @@ import { get } from "node:http";
 import { once } from "node:events";
 import type { AddressInfo } from "node:net";
 
-import type { OpenPerpsMarketConfig } from "@openperps/sdk";
+import type { OpenPerpsMarketConfig } from "@opp-oss/sdk";
 
 import {
   KEEPER_TIER_PARAMS,

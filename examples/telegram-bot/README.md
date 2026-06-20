@@ -1,6 +1,6 @@
 # Telegram Bot Example
 
-A command-driven trading bot (`/market`, `/long`, `/short`, `/position`) that turns chat commands into perp trade intents, with `@openperps/sdk`.
+A command-driven trading bot (`/market`, `/long`, `/short`, `/position`) that turns chat commands into perp trade intents, with `@opp-oss/sdk`.
 
 This example shows how a chat bot turns commands into OpenPerps trade intents without ever holding user funds. The command logic is pure and tested, so you can wire it to any bot framework. The logic lives in `src/commands.ts`.
 
@@ -37,4 +37,4 @@ Fork and customize it freely.
 ## Links
 
 - [OpenPerps OSS](../../)
-- [`@openperps/sdk`](../../packages/sdk/README.md)
+- [`@opp-oss/sdk`](../../packages/sdk/README.md)

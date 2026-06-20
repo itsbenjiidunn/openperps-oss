@@ -11,7 +11,7 @@ import {
   type OpenPerpsMarketConfig,
   type OpenPerpsTradeSide,
   type TradeCounterparty,
-} from "@openperps/sdk";
+} from "@opp-oss/sdk";
 
 export type PlaceTradeInput = {
   side: OpenPerpsTradeSide;

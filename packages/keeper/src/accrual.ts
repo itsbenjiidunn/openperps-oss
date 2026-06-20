@@ -6,7 +6,7 @@
 /// rejects these.
 
 import { PublicKey, type TransactionInstruction } from "@solana/web3.js";
-import { accrueAssetIx } from "@openperps/sdk";
+import { accrueAssetIx } from "@opp-oss/sdk";
 import { planAccrualSteps } from "./freshness.ts";
 
 export function buildAccrualInstructions(args: {

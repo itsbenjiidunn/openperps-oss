@@ -8,8 +8,8 @@
     "build": "vite build"
   },
   "dependencies": {
-    "@openperps/react": "file:../../packages/react",
-    "@openperps/sdk": "file:../../packages/sdk",
+    "@opp-oss/react": "file:../../packages/react",
+    "@opp-oss/sdk": "file:../../packages/sdk",
     "@solana/wallet-adapter-base": "^0.9.23",
     "@solana/wallet-adapter-react": "^0.15.35",
     "@solana/wallet-adapter-react-ui": "^0.9.35",

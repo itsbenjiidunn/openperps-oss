@@ -9,7 +9,7 @@ import {
   portfolioPda,
   type DecodedPortfolioSummary,
   type OpenPerpsMarketConfig,
-} from "@openperps/sdk";
+} from "@opp-oss/sdk";
 
 export type OpenPerpsPositionProps = {
   market: OpenPerpsMarketConfig;

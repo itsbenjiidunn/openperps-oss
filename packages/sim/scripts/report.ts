@@ -1,7 +1,7 @@
 /// Break-even report for the House / HLP. Runs the canonical memecoin scenarios
 /// and prints the P&L decomposition, then the fee-to-House counterfactual.
 ///
-///   npm run report -w @openperps/sim
+///   npm run report -w @opp-oss/sim
 ///
 /// Read the conclusion at the bottom, not just the numbers.
 

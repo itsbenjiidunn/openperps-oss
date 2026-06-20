@@ -16,7 +16,7 @@ import {
   Loader2,
   RefreshCw,
 } from "lucide-react";
-import { poolSpotPrice, PRICE_SCALE } from "@openperps/sdk";
+import { poolSpotPrice, PRICE_SCALE } from "@opp-oss/sdk";
 
 import { fmtPubkey } from "@/lib/format";
 import { crankOracleFlow, mockSwapFlow } from "@/lib/flows/oracleFlows";

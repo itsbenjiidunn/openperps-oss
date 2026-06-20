@@ -16,7 +16,7 @@ import {
   createLivePriceProvider,
   type OpenPerpsMarketConfig,
   type PriceProvider,
-} from "@openperps/sdk";
+} from "@opp-oss/sdk";
 
 import { runKeeper } from "./keeper.ts";
 import { createKeeperHealth, summarizeHealth, type KeeperHealth } from "./health.ts";

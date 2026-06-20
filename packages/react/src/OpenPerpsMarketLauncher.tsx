@@ -6,7 +6,7 @@ import { type ReactElement } from "react";
 import {
   planMarketCreation,
   type OpenPerpsMarketCreationIntent,
-} from "@openperps/sdk";
+} from "@opp-oss/sdk";
 
 export type OpenPerpsMarketLauncherProps = {
   intent: OpenPerpsMarketCreationIntent;

@@ -3,7 +3,7 @@
 /// real bot, install node-telegram-bot-api (or grammY) and call
 /// `handleCommand(parseCommand(msg.text), registry)` from its message handler.
 
-import { createJsonMarketRegistry, type OpenPerpsMarketConfig } from "@openperps/sdk";
+import { createJsonMarketRegistry, type OpenPerpsMarketConfig } from "@opp-oss/sdk";
 import { handleCommand, parseCommand } from "./commands.ts";
 
 const market: OpenPerpsMarketConfig = {

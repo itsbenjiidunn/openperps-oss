@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { PublicKey } from "@solana/web3.js";
-import { OFFSET_PORTFOLIO_LEGS, PORTFOLIO_HEADER_SIZE } from "@openperps/sdk";
+import { OFFSET_PORTFOLIO_LEGS, PORTFOLIO_HEADER_SIZE } from "@opp-oss/sdk";
 import { selectLiquidatable } from "../src/keeper.ts";
 
 // In-leg byte offsets, mirroring packages/sdk/src/layout.ts. Leg 0 starts at

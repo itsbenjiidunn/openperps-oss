@@ -1,6 +1,6 @@
 # Wallet Position Card Example
 
-A wallet or portfolio card that shows a connected wallet's perp positions and PnL, with `@openperps/react` and `@openperps/sdk`.
+A wallet or portfolio card that shows a connected wallet's perp positions and PnL, with `@opp-oss/react` and `@opp-oss/sdk`.
 
 This example shows the read side: a wallet or portfolio app surfaces a user's open positions across a curated set of markets, with no trade panel. The core integration lives in `src/App.tsx`.
 
@@ -27,8 +27,8 @@ npm run dev      # or: npm run build
 
 | Piece | Role |
 |---|---|
-| `@openperps/react` | Provides the `<OpenPerpsPosition/>` widget, one per market. |
-| `@openperps/sdk` | Provides the market config type for the markets to display. |
+| `@opp-oss/react` | Provides the `<OpenPerpsPosition/>` widget, one per market. |
+| `@opp-oss/sdk` | Provides the market config type for the markets to display. |
 
 A wallet only needs the read and manage side (positions, PnL, close, withdraw), so this example leaves out the order-entry surface entirely.
 
@@ -41,5 +41,5 @@ Fork and customize it freely.
 ## Links
 
 - [OpenPerps OSS](../../)
-- [`@openperps/sdk`](../../packages/sdk/README.md)
-- [`@openperps/react`](../../packages/react/README.md)
+- [`@opp-oss/sdk`](../../packages/sdk/README.md)
+- [`@opp-oss/react`](../../packages/react/README.md)

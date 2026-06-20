@@ -1,6 +1,6 @@
 # Token Page Example
 
-A single token page that adds perp trading for one market, with `@openperps/react` and `@openperps/sdk`.
+A single token page that adds perp trading for one market, with `@opp-oss/react` and `@opp-oss/sdk`.
 
 This example shows the simplest surface: a single token page bound to one market config, with the chart, trade, and position widgets embedded. The core integration lives in `src/App.tsx`.
 
@@ -24,14 +24,14 @@ npm install
 npm run dev      # or: npm run build
 ```
 
-Open the printed URL and connect a wallet. A trade needs an initialized, funded portfolio; deposit collateral through `@openperps/sdk` first.
+Open the printed URL and connect a wallet. A trade needs an initialized, funded portfolio; deposit collateral through `@opp-oss/sdk` first.
 
 ## How It Works
 
 | Piece | Role |
 |---|---|
-| `@openperps/react` | Provides `<OpenPerpsChart/>`, `<OpenPerpsTrade/>`, and `<OpenPerpsPosition/>`. |
-| `@openperps/sdk` | Provides the market config type and the on-chain mark used as the execution price. |
+| `@opp-oss/react` | Provides `<OpenPerpsChart/>`, `<OpenPerpsTrade/>`, and `<OpenPerpsPosition/>`. |
+| `@opp-oss/sdk` | Provides the market config type and the on-chain mark used as the execution price. |
 
 ## Boundaries
 
@@ -42,5 +42,5 @@ Fork and customize it freely.
 ## Links
 
 - [OpenPerps OSS](../../)
-- [`@openperps/sdk`](../../packages/sdk/README.md)
-- [`@openperps/react`](../../packages/react/README.md)
+- [`@opp-oss/sdk`](../../packages/sdk/README.md)
+- [`@opp-oss/react`](../../packages/react/README.md)

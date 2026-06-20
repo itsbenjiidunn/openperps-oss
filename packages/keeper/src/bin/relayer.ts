@@ -14,7 +14,7 @@
 import { readFileSync } from "node:fs";
 
 import { Connection, Keypair } from "@solana/web3.js";
-import { validateMarketConfig, type OpenPerpsMarketConfig } from "@openperps/sdk";
+import { validateMarketConfig, type OpenPerpsMarketConfig } from "@opp-oss/sdk";
 
 import { keeperMarketFromConfig, parseRelayerEnv, runRelayer } from "../daemon.ts";
 

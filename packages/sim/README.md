@@ -1,4 +1,4 @@
-# @openperps/sim
+# @opp-oss/sim
 
 A small economic model + simulation of the **House / HLP P&L** on a perp market.
 It is a research tool (private, not published) that answers the one question the
@@ -6,8 +6,8 @@ on-chain mechanics cannot: **does the House -- and so its LPs -- actually surviv
 and earn on real flow, or is it a bounded-loss backstop?**
 
 ```bash
-npm test   -w @openperps/sim   # model invariants
-npm run report -w @openperps/sim   # break-even table + conclusion
+npm test   -w @opp-oss/sim   # model invariants
+npm run report -w @opp-oss/sim   # break-even table + conclusion
 ```
 
 ## What it models (faithful to the verified engine drivers)

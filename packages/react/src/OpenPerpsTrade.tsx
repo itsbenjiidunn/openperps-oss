@@ -5,7 +5,7 @@
 
 import { useState, type ReactElement } from "react";
 import type { Commitment } from "@solana/web3.js";
-import type { OpenPerpsMarketConfig, TradeCounterparty } from "@openperps/sdk";
+import type { OpenPerpsMarketConfig, TradeCounterparty } from "@opp-oss/sdk";
 import { useOpenPerpsTrade } from "./useOpenPerpsTrade.ts";
 
 export type OpenPerpsTradeProps = {

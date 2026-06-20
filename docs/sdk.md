@@ -1,6 +1,6 @@
 # SDK
 
-`@openperps/sdk` is the primary integration surface for OpenPerps.
+`@opp-oss/sdk` is the primary integration surface for OpenPerps.
 
 It exposes two layers:
 
@@ -17,7 +17,7 @@ import {
   createJsonMarketRegistry,
   validateTradeIntent,
   transactionFromInstructions,
-} from "@openperps/sdk";
+} from "@opp-oss/sdk";
 ```
 
 ## Integration paths

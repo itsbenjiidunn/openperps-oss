@@ -1,5 +1,5 @@
 {
-  "name": "@openperps/sim",
+  "name": "@opp-oss/sim",
   "version": "0.0.0",
   "private": true,
   "description": "Economic model + simulation of the House / HLP P&L on memecoin flow. A research tool to size fee / cap / leverage and test viability; not published.",

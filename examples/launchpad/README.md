@@ -1,6 +1,6 @@
 # Launchpad Example
 
-A token launch page that adds perp trading for the launching token, with `@openperps/react` and `@openperps/sdk`.
+A token launch page that adds perp trading for the launching token, with `@opp-oss/react` and `@opp-oss/sdk`.
 
 This example shows how a launchpad turns a new token into a tradable perp from its launch page: create the market, then embed the trade, chart, and position widgets. The core integration lives in `src/App.tsx`.
 
@@ -28,8 +28,8 @@ npm run dev      # or: npm run build
 
 | Piece | Role |
 |---|---|
-| `@openperps/react` | Provides `<OpenPerpsMarketLauncher/>` plus the trade, chart, and position widgets. |
-| `@openperps/sdk` | Provides the market creation intent and config types behind the launcher. |
+| `@opp-oss/react` | Provides `<OpenPerpsMarketLauncher/>` plus the trade, chart, and position widgets. |
+| `@opp-oss/sdk` | Provides the market creation intent and config types behind the launcher. |
 
 The launcher builds a market from an `OpenPerpsMarketCreationIntent`; swap the intent fields, the chart source, or the surrounding page to fit your launch flow. The OpenPerps widgets can stay the same.
 
@@ -42,5 +42,5 @@ Fork and customize it freely.
 ## Links
 
 - [OpenPerps OSS](../../)
-- [`@openperps/sdk`](../../packages/sdk/README.md)
-- [`@openperps/react`](../../packages/react/README.md)
+- [`@opp-oss/sdk`](../../packages/sdk/README.md)
+- [`@opp-oss/react`](../../packages/react/README.md)

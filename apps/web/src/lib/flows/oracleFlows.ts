@@ -5,7 +5,7 @@
 
 import { Connection, PublicKey, Transaction, type Commitment } from "@solana/web3.js";
 import type { WalletContextState } from "@solana/wallet-adapter-react";
-import { crankOracleIx, mockSwapIx } from "@openperps/sdk";
+import { crankOracleIx, mockSwapIx } from "@opp-oss/sdk";
 
 import { PROGRAM_ID } from "../program";
 

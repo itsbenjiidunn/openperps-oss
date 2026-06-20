@@ -19,7 +19,7 @@ import {
   harvestHlpIx,
   hlpVaultPda,
   readU128LE,
-} from "@openperps/sdk";
+} from "@opp-oss/sdk";
 import type { KeeperDeps, KeeperMarket } from "./types.ts";
 
 export type HlpRebalanceConfig = {

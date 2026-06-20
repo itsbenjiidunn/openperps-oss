@@ -1,10 +1,10 @@
-# @openperps/react
+# @opp-oss/react
 
-[![npm](https://img.shields.io/npm/v/@openperps/react?logo=npm&label=npm)](https://www.npmjs.com/package/@openperps/react)
-[![license](https://img.shields.io/npm/l/@openperps/react)](./LICENSE)
+[![npm](https://img.shields.io/npm/v/@opp-oss/react?logo=npm&label=npm)](https://www.npmjs.com/package/@opp-oss/react)
+[![license](https://img.shields.io/npm/l/@opp-oss/react)](./LICENSE)
 
 Drop-in React components and hooks for embedding OpenPerps trading, charts, and
-positions. Built on [`@openperps/sdk`](../sdk) and the Solana wallet adapter.
+positions. Built on [`@opp-oss/sdk`](../sdk) and the Solana wallet adapter.
 
 The SDK is the primary integration surface; these components are the fast path
 for teams that want ready-made UI. `react`, `@solana/web3.js`, and
@@ -19,7 +19,7 @@ import {
   OpenPerpsPosition,
   OpenPerpsChart,
   OpenPerpsMarketLauncher,
-} from "@openperps/react";
+} from "@opp-oss/react";
 
 <OpenPerpsTrade market={market} counterparty={house} executionPrice={mark} />
 <OpenPerpsPosition market={market} owner={wallet.publicKey} />
@@ -37,7 +37,7 @@ default `openperps-*` class names.
 Skip the UI and drive a trade with the hook:
 
 ```tsx
-import { useOpenPerpsTrade } from "@openperps/react";
+import { useOpenPerpsTrade } from "@opp-oss/react";
 
 const { placeTrade, pending, error } = useOpenPerpsTrade({ market, counterparty });
 

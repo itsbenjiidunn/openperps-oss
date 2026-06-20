@@ -24,7 +24,7 @@ import {
   settlePnlIx,
   tradeIx,
   withdrawIx,
-} from "@openperps/sdk";
+} from "@opp-oss/sdk";
 
 import { PROGRAM_ID } from "../program";
 import { addPortfolio } from "../portfolioRegistry";

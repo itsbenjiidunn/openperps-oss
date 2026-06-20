@@ -35,7 +35,7 @@ import {
   pinOraclePoolIx,
   HOUSE_SEED,
   VAULT_SEED,
-} from "@openperps/sdk";
+} from "@opp-oss/sdk";
 
 import { PROGRAM_ID } from "../program";
 import { QUOTE_MINT } from "../collateral";

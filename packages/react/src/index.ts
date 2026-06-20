@@ -27,4 +27,4 @@ export {
   type OpenPerpsTradeSide,
   type OpenPerpsMarketCreationIntent,
   type TradeCounterparty,
-} from "@openperps/sdk";
+} from "@opp-oss/sdk";

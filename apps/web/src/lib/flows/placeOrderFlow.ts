@@ -16,7 +16,7 @@ import {
   slotEffectivePriceOffset,
   slotOffset,
   Side,
-} from "@openperps/sdk";
+} from "@opp-oss/sdk";
 import type { TransactionInstruction } from "@solana/web3.js";
 
 import { PROGRAM_ID } from "../program";

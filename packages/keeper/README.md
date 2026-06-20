@@ -1,7 +1,7 @@
-# @openperps/keeper
+# @opp-oss/keeper
 
-[![npm](https://img.shields.io/npm/v/@openperps/keeper?logo=npm&label=npm)](https://www.npmjs.com/package/@openperps/keeper)
-[![license](https://img.shields.io/npm/l/@openperps/keeper)](./LICENSE)
+[![npm](https://img.shields.io/npm/v/@opp-oss/keeper?logo=npm&label=npm)](https://www.npmjs.com/package/@opp-oss/keeper)
+[![license](https://img.shields.io/npm/l/@opp-oss/keeper)](./LICENSE)
 
 The core-only self-host keeper for OpenPerps. A keeper is part of the risk
 system, not just a price cron: it pushes oracle/funding updates on-chain and
@@ -14,8 +14,8 @@ billing, a hosted tenant registry, a trade feed API, or an SLA system.
 
 ```ts
 import { Connection, Keypair } from "@solana/web3.js";
-import { createStaticPriceProvider } from "@openperps/sdk";
-import { runKeeper, type KeeperMarket } from "@openperps/keeper";
+import { createStaticPriceProvider } from "@opp-oss/sdk";
+import { runKeeper, type KeeperMarket } from "@opp-oss/keeper";
 
 const connection = new Connection(process.env.OPENPERPS_RPC!, "confirmed");
 const authority = Keypair.fromSecretKey(/* your oracle authority key */);
@@ -32,14 +32,14 @@ await runKeeper(
 ```
 
 For a relayer market with no Pyth feed (custom SPL, memecoins), use
-`createLivePriceProvider` from `@openperps/sdk`: it reads the token's USD price
+`createLivePriceProvider` from `@opp-oss/sdk`: it reads the token's USD price
 off DexScreener then Jupiter, scales it to the market's price decimals, and holds
 the last good price when both are momentarily down. Or bring your own
 `PriceProvider` (Birdeye, Pyth, a pool read, Geyser, your own oracle) instead of
 the static demo provider.
 
 ```ts
-import { createLivePriceProvider } from "@openperps/sdk";
+import { createLivePriceProvider } from "@opp-oss/sdk";
 
 const priceProvider = createLivePriceProvider(); // DexScreener -> Jupiter -> last-known
 ```
@@ -54,7 +54,7 @@ without you writing any of that:
 
 ```ts
 import { Connection, Keypair } from "@solana/web3.js";
-import { runRelayer, keeperMarketFromConfig } from "@openperps/keeper";
+import { runRelayer, keeperMarketFromConfig } from "@opp-oss/keeper";
 
 const controller = new AbortController();
 await runRelayer({
@@ -133,7 +133,7 @@ stale (behind its freshness window), the last error, and a failure streak, plus
 running totals. Read it live and serve it from your own endpoint:
 
 ```ts
-import { createKeeperHealth, summarizeHealth, runKeeper } from "@openperps/keeper";
+import { createKeeperHealth, summarizeHealth, runKeeper } from "@opp-oss/keeper";
 
 const health = createKeeperHealth();
 void runKeeper({ connection, authority, priceProvider, health }, markets, { intervalMs: 60_000 });

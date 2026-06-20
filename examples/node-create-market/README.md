@@ -1,6 +1,6 @@
 # Node Create-Market Example
 
-A backend script that builds a perp market from a creation intent and registers it, with `@openperps/sdk`. No UI.
+A backend script that builds a perp market from a creation intent and registers it, with `@opp-oss/sdk`. No UI.
 
 This example shows the SDK-only path: a Node script composes the market creation instructions, registers the resulting config, and prints the derived addresses. The script lives in `src/index.ts`.
 
@@ -29,7 +29,7 @@ To create the market on-chain, fund the authority, supply a real quote (USDC) mi
 
 ## How It Works
 
-`src/index.ts` builds the market with `@openperps/sdk`, derives the market, vault, and House addresses, and writes them to `registry.json`. Point a keeper at that registry to run the market.
+`src/index.ts` builds the market with `@opp-oss/sdk`, derives the market, vault, and House addresses, and writes them to `registry.json`. Point a keeper at that registry to run the market.
 
 ## Boundaries
 
@@ -40,4 +40,4 @@ Fork and customize it freely.
 ## Links
 
 - [OpenPerps OSS](../../)
-- [`@openperps/sdk`](../../packages/sdk/README.md)
+- [`@opp-oss/sdk`](../../packages/sdk/README.md)

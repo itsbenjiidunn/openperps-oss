@@ -14,13 +14,13 @@ import {
   OpenPerpsTrade,
   type Candle,
   type OpenPerpsMarketCreationIntent,
-} from "@openperps/react";
+} from "@opp-oss/react";
 import {
   HOUSE_SEED,
   readU64LE,
   slotEffectivePriceOffset,
   type OpenPerpsMarketConfig,
-} from "@openperps/sdk";
+} from "@opp-oss/sdk";
 
 const base = {
   schemaVersion: 1 as const,

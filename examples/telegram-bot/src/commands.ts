@@ -9,7 +9,7 @@ import {
   validateTradeIntent,
   type MarketRegistryProvider,
   type OpenPerpsTradeIntent,
-} from "@openperps/sdk";
+} from "@opp-oss/sdk";
 
 export type Command =
   | { kind: "help" }

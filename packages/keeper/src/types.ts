@@ -1,5 +1,5 @@
 import type { Connection, Keypair } from "@solana/web3.js";
-import type { OpenPerpsMarketConfig, PriceProvider } from "@openperps/sdk";
+import type { OpenPerpsMarketConfig, PriceProvider } from "@opp-oss/sdk";
 import type { KeeperHealth } from "./health.ts";
 
 export type KeeperMarket = {

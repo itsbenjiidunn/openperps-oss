@@ -8,7 +8,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@openperps/sdk": "file:../../packages/sdk",
+    "@opp-oss/sdk": "file:../../packages/sdk",
     "@solana/web3.js": "^1.95.0"
   },
   "devDependencies": {

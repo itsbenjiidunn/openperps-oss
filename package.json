@@ -7,10 +7,10 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build -w @openperps/sdk && npm run build -w @openperps/react && npm run build -w @openperps/keeper",
+    "build": "npm run build -w @opp-oss/sdk && npm run build -w @opp-oss/react && npm run build -w @opp-oss/keeper",
     "clean": "npm run clean --workspaces --if-present",
-    "typecheck": "npm run build -w @openperps/sdk && npm run typecheck --workspaces --if-present",
-    "test": "npm run build -w @openperps/sdk && npm run test --workspaces --if-present",
+    "typecheck": "npm run build -w @opp-oss/sdk && npm run typecheck --workspaces --if-present",
+    "test": "npm run build -w @opp-oss/sdk && npm run test --workspaces --if-present",
     "onchain-suite": "bash scripts/run-onchain-suite.sh",
     "prepare": "npm run build"
   }

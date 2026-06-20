@@ -1,6 +1,6 @@
 {
-  "name": "@openperps/keeper",
-  "version": "1.4.1",
+  "name": "@opp-oss/keeper",
+  "version": "1.0.0",
   "description": "Core-only self-host keeper for OpenPerps: oracle/funding cranks and liquidation, across many markets.",
   "license": "Apache-2.0",
   "author": "itsbenjiidunn",
@@ -55,7 +55,7 @@
     "prepublishOnly": "npm run clean && npm run build"
   },
   "dependencies": {
-    "@openperps/sdk": "^1.4.1",
+    "@opp-oss/sdk": "^1.0.0",
     "@solana/web3.js": "^1.95.0"
   },
   "devDependencies": {

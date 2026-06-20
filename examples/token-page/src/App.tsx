@@ -1,5 +1,5 @@
 /// A token page: one market config mapped to one token, with the OpenPerps chart,
-/// trade, and position widgets embedded from @openperps/react.
+/// trade, and position widgets embedded from @opp-oss/react.
 
 import { useEffect, useMemo, useState, type ReactElement } from "react";
 import { Connection, PublicKey } from "@solana/web3.js";
@@ -10,13 +10,13 @@ import {
   OpenPerpsPosition,
   OpenPerpsTrade,
   type Candle,
-} from "@openperps/react";
+} from "@opp-oss/react";
 import {
   HOUSE_SEED,
   readU64LE,
   slotEffectivePriceOffset,
   type OpenPerpsMarketConfig,
-} from "@openperps/sdk";
+} from "@opp-oss/sdk";
 
 const RPC = "https://api.devnet.solana.com";
 

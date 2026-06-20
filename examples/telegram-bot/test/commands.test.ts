@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createJsonMarketRegistry, type OpenPerpsMarketConfig } from "@openperps/sdk";
+import { createJsonMarketRegistry, type OpenPerpsMarketConfig } from "@opp-oss/sdk";
 import { handleCommand, parseCommand } from "../src/commands.ts";
 
 const market: OpenPerpsMarketConfig = {

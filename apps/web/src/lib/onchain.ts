@@ -21,7 +21,7 @@ import {
   slotOffset,
   decodePortfolioPositions,
   type DecodedPosition,
-} from "@openperps/sdk";
+} from "@opp-oss/sdk";
 
 import { listMarkets, type RegistryEntry } from "./registry";
 import { ASSET_PRESETS } from "./assets";

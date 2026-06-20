@@ -7,7 +7,7 @@
 **Add long/short markets to any token, from any trading surface.**
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
-[![npm](https://img.shields.io/npm/v/@openperps/sdk?logo=npm&label=npm)](https://www.npmjs.com/package/@openperps/sdk)
+[![npm](https://img.shields.io/npm/v/@opp-oss/sdk?logo=npm&label=npm)](https://www.npmjs.com/package/@opp-oss/sdk)
 [![Rust](https://img.shields.io/badge/Rust-54.2%25-orange?logo=rust&logoColor=white)](https://github.com/itsbenjiidunn/openperps-oss/search?l=rust)
 [![TypeScript](https://img.shields.io/badge/TypeScript-43.5%25-blue?logo=typescript&logoColor=white)](https://github.com/itsbenjiidunn/openperps-oss/search?l=typescript)
 
@@ -42,7 +42,7 @@ It is built on **[Percolator](https://github.com/aeyakovenko/percolator) v16**, 
 
 ## Who it is for
 
-OpenPerps OSS is one kit: create a market for any token, seed its House, long/short, close, settle, and decode state, all from `@openperps/sdk` and `@openperps/react`. Any surface that shows a Solana token can embed the whole thing. The rows below are how that same full kit tends to show up per surface, not a menu of what each one is limited to:
+OpenPerps OSS is one kit: create a market for any token, seed its House, long/short, close, settle, and decode state, all from `@opp-oss/sdk` and `@opp-oss/react`. Any surface that shows a Solana token can embed the whole thing. The rows below are how that same full kit tends to show up per surface, not a menu of what each one is limited to:
 
 | Surface | A natural embed (you can wire the full kit) |
 | --- | --- |
@@ -85,11 +85,11 @@ Four layers. The **SDK is the core**; React and the bot helpers are adapters ove
        |                                         |
        v                                         |
   Adapters                                       |
-  (@openperps/react widgets + hooks,             |
+  (@opp-oss/react widgets + hooks,             |
    backend / bot helpers)                        |
        |                                         |
        v                                         |
-  @openperps/sdk  (the core client)              |
+  @opp-oss/sdk  (the core client)              |
        |                                         |
        v                                         v
   Solana program  (crates/program, zero-copy)
@@ -114,7 +114,7 @@ Four layers. The **SDK is the core**; React and the bot helpers are adapters ove
 ### SDK
 
 ```bash
-npm install @openperps/sdk @solana/web3.js @solana/spl-token
+npm install @opp-oss/sdk @solana/web3.js @solana/spl-token
 ```
 
 `@solana/web3.js` and `@solana/spl-token` are peer dependencies, so the SDK shares your app's single instance of each.
@@ -124,7 +124,7 @@ import {
   createJsonMarketRegistry,
   buildTradeFromIntent,
   transactionFromInstructions,
-} from "@openperps/sdk";
+} from "@opp-oss/sdk";
 
 // 1. Load a market from your registry (a list of OpenPerpsMarketConfig you ship).
 const registry = createJsonMarketRegistry(markets);
@@ -157,7 +157,7 @@ What the SDK gives you:
 ### React
 
 ```bash
-npm install @openperps/react @openperps/sdk react @solana/web3.js @solana/wallet-adapter-react
+npm install @opp-oss/react @opp-oss/sdk react @solana/web3.js @solana/wallet-adapter-react
 ```
 
 `react`, `@solana/web3.js`, and `@solana/wallet-adapter-react` are peer dependencies, so the components use your app's existing wallet and connection providers.
@@ -168,7 +168,7 @@ import {
   OpenPerpsPosition,
   OpenPerpsChart,
   OpenPerpsMarketLauncher,
-} from "@openperps/react";
+} from "@opp-oss/react";
 
 <OpenPerpsTrade market={market} counterparty={house} executionPrice={mark} />
 <OpenPerpsPosition market={market} owner={wallet.publicKey} />
@@ -179,7 +179,7 @@ import {
 The components ship no CSS so you need style them through `className` or the default `openperps-*` class names. Prefer to drive the flow yourself? Use the headless hook:
 
 ```tsx
-import { useOpenPerpsTrade } from "@openperps/react";
+import { useOpenPerpsTrade } from "@opp-oss/react";
 
 const { placeTrade, pending, error } = useOpenPerpsTrade({ market, counterparty });
 
@@ -192,8 +192,8 @@ await placeTrade({ side: "long", size: "1000000", executionPrice: mark });
 
 ```ts
 import { Connection, Keypair } from "@solana/web3.js";
-import { createStaticPriceProvider } from "@openperps/sdk";
-import { runKeeper, type KeeperMarket } from "@openperps/keeper";
+import { createStaticPriceProvider } from "@opp-oss/sdk";
+import { runKeeper, type KeeperMarket } from "@opp-oss/keeper";
 
 const connection = new Connection(process.env.OPENPERPS_RPC!, "confirmed");
 const authority = Keypair.fromSecretKey(/* your oracle authority key */);
@@ -259,7 +259,7 @@ OpenPerps OSS is self-hosted: you deploy the program to the cluster you choose a
    is a complete script that builds, registers, and prints the derived market,
    vault, and House addresses.
 
-4. **Fund the House vault**, point [`@openperps/keeper`](./packages/keeper) at the
+4. **Fund the House vault**, point [`@opp-oss/keeper`](./packages/keeper) at the
    market, and you are live.
 
 Work through [`docs/deployment-checklist.md`](./docs/deployment-checklist.md) for the operational decisions (oracle source, keeper, liquidity, risk parameters, custody) before a deployment goes in front of users.
@@ -270,9 +270,9 @@ Work through [`docs/deployment-checklist.md`](./docs/deployment-checklist.md) fo
 
 | Package | Version | License | Role |
 | --- | --- | --- | --- |
-| **[`@openperps/sdk`](./packages/sdk)** | 1.4.1 | Apache-2.0 | The core client. High-level typed functions that hide PDAs, instruction tags, account layouts, and atom/price math |
-| **[`@openperps/react`](./packages/react)** | 1.4.1 | MIT | Drop-in widgets (`<OpenPerpsTrade/>`, `<OpenPerpsChart/>`, `<OpenPerpsPosition/>`, `<OpenPerpsMarketLauncher/>`) and headless hooks |
-| **[`@openperps/keeper`](./packages/keeper)** | 1.4.1 | Apache-2.0 | Core-only self-host keeper: oracle/funding cranks, the relayer daemon, and liquidation across many markets |
+| **[`@opp-oss/sdk`](./packages/sdk)** | 1.0.0 | Apache-2.0 | The core client. High-level typed functions that hide PDAs, instruction tags, account layouts, and atom/price math |
+| **[`@opp-oss/react`](./packages/react)** | 1.0.0 | MIT | Drop-in widgets (`<OpenPerpsTrade/>`, `<OpenPerpsChart/>`, `<OpenPerpsPosition/>`, `<OpenPerpsMarketLauncher/>`) and headless hooks |
+| **[`@opp-oss/keeper`](./packages/keeper)** | 1.0.0 | Apache-2.0 | Core-only self-host keeper: oracle/funding cranks, the relayer daemon, and liquidation across many markets |
 
 The SDK is the primary integration surface. The React components are the fast path for teams that want ready-made UI; the keeper is the risk-side cron you run yourself.
 
@@ -291,17 +291,17 @@ cargo test -p openperps-program
 
 ### TypeScript packages: one workspace install
 
-`packages/*` is an npm workspace. Each package compiles to `dist/` (`.js` + `.d.ts`) via `tsc`, and `prepublishOnly` rebuilds it, so `npm install @openperps/sdk` gives a consumer runnable JS plus types, not raw TypeScript.
+`packages/*` is an npm workspace. Each package compiles to `dist/` (`.js` + `.d.ts`) via `tsc`, and `prepublishOnly` rebuilds it, so `npm install @opp-oss/sdk` gives a consumer runnable JS plus types, not raw TypeScript.
 
 ```bash
-npm install        # root: links @openperps/sdk, @openperps/react, @openperps/keeper
+npm install        # root: links @opp-oss/sdk, @opp-oss/react, @opp-oss/keeper
 npm run build      # builds sdk, then react, then keeper
 npm test           # builds the sdk, then runs each package's tests
 npm run typecheck  # builds the sdk, then type-checks every package
 ```
 
 > [!NOTE]
-> The build order matters: `react` and `keeper` depend on the compiled `@openperps/sdk`, so the root `build` / `test` / `typecheck` scripts always build the SDK first. The apps and examples consume the same packages locally, so **run `npm run build` once at the root** before installing or building them.
+> The build order matters: `react` and `keeper` depend on the compiled `@opp-oss/sdk`, so the root `build` / `test` / `typecheck` scripts always build the SDK first. The apps and examples consume the same packages locally, so **run `npm run build` once at the root** before installing or building them.
 
 ### On-chain integration suite
 
@@ -374,11 +374,11 @@ openperps-oss/
 │   ├── engine/        # Percolator risk engine (vendored, upstream 051e268)
 │   └── program/       # Solana on-chain program (zero-copy)
 ├── packages/
-│   ├── sdk/           # @openperps/sdk      core TypeScript client
-│   ├── react/         # @openperps/react    web widgets + hooks
-│   └── keeper/        # @openperps/keeper   self-host keeper template
+│   ├── sdk/           # @opp-oss/sdk      core TypeScript client
+│   ├── react/         # @opp-oss/react    web widgets + hooks
+│   └── keeper/        # @opp-oss/keeper   self-host keeper template
 ├── apps/
-│   ├── web/           # @openperps/frontend  reference app (consumes the packages)
+│   ├── web/           # @opp-oss/frontend  reference app (consumes the packages)
 │   └── indexer/       # fills / PnL / liquidation indexer
 ├── examples/          # integration examples
 ├── scripts/           # build helpers (e.g. rewrite-dts-extensions.mjs)
@@ -393,6 +393,6 @@ The SDK source mirrors the program, one module per concern: `layout`, `instructi
 
 ## License
 
-**Apache-2.0**, with per-package exceptions noted in each package (`@openperps/react` is MIT). The vendored engine retains its upstream Apache-2.0 license and the Percolator disclaimer.
+**Apache-2.0**, with per-package exceptions noted in each package (`@opp-oss/react` is MIT). The vendored engine retains its upstream Apache-2.0 license and the Percolator disclaimer.
 
 See [`LICENSE`](./LICENSE) and [`NOTICE`](./NOTICE).

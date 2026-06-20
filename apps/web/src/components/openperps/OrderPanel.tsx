@@ -17,7 +17,7 @@ import {
   Wallet2,
   Zap,
 } from "lucide-react";
-import { Side } from "@openperps/sdk";
+import { Side } from "@opp-oss/sdk";
 
 import { fmtPubkey } from "@/lib/format";
 import { placeOrderFlow } from "@/lib/flows/placeOrderFlow";

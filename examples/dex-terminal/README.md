@@ -1,6 +1,6 @@
 # DEX Terminal Example
 
-A trading terminal that both lists new perp markets and trades existing ones, with `@openperps/react` and `@openperps/sdk`.
+A trading terminal that both lists new perp markets and trades existing ones, with `@opp-oss/react` and `@opp-oss/sdk`.
 
 This example shows one app doing both halves of the kit: a `List a perp` flow that creates a market for any token, and a chart plus long/short panel to trade markets that exist. The split across the examples is only for illustration; the SDK and widgets are the same everywhere, so any surface can integrate the full capability. The core integration lives in `src/App.tsx`.
 
@@ -29,8 +29,8 @@ npm run dev      # or: npm run build
 
 | Piece | Role |
 |---|---|
-| `@openperps/react` | Provides `<OpenPerpsMarketLauncher/>` (list a perp), and the `<OpenPerpsChart/>` and `<OpenPerpsTrade/>` widgets (trade it). |
-| `@openperps/sdk` | Provides market config and creation-intent types, House Vault counterparty resolution, and helpers for reading the on-chain mark used as the execution price. |
+| `@opp-oss/react` | Provides `<OpenPerpsMarketLauncher/>` (list a perp), and the `<OpenPerpsChart/>` and `<OpenPerpsTrade/>` widgets (trade it). |
+| `@opp-oss/sdk` | Provides market config and creation-intent types, House Vault counterparty resolution, and helpers for reading the on-chain mark used as the execution price. |
 
 You can swap in your own chart, add markets to the registry, or wire a different market-data source. The OpenPerps widgets can stay the same.
 
@@ -43,5 +43,5 @@ Fork and customize it freely.
 ## Links
 
 - [OpenPerps OSS](../../)
-- [`@openperps/sdk`](../../packages/sdk/README.md)
-- [`@openperps/react`](../../packages/react/README.md)
+- [`@opp-oss/sdk`](../../packages/sdk/README.md)
+- [`@opp-oss/react`](../../packages/react/README.md)

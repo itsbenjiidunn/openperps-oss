@@ -1,6 +1,6 @@
 # Keeper
 
-`@openperps/keeper` is the self-hosted process responsible for core market
+`@opp-oss/keeper` is the self-hosted process responsible for core market
 safety operations.
 
 V1 responsibilities:
