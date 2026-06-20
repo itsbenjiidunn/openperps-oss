@@ -19,7 +19,7 @@
 
 **One SDK, one keeper, one risk engine**, reused across all of them. The SDK is the primary integration surface; React components and the keeper are built on top of it, so a web app, a backend script, and a bot all share the same power.
 
-It is built on **[Percolator](https://github.com/aeyakovenko/percolator) v16**, the formally-verified risk engine by Anatoly Yakovenko ([@toly](https://github.com/aeyakovenko)). You get a formally-verified risk core without building or auditing one yourself: Percolator is the pure risk brain and ships no program, decoder, or deployment, and OpenPerps OSS is the body around it: the Solana program, the client SDK, the UI kit, and the keeper.
+It is built on **[Percolator](https://github.com/aeyakovenko/percolator) v16**, the formally-verified risk engine by Anatoly Yakovenko ([@toly](https://github.com/aeyakovenko)). You get a formally-verified risk core without building or auditing one yourself: Percolator is the pure risk brain and OpenPerps OSS is the body around it: the Solana program, the client SDK, the UI kit, and the keeper.
 
 ## Table of Contents
 
