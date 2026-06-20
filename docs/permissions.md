@@ -8,7 +8,7 @@ Who may call each instruction, verified against the program handlers.
 | `InitPortfolio` | Owner signer | Creates the owner's portfolio PDA `[PORTFOLIO_SEED, owner, market]`. |
 | `Deposit` | Portfolio owner signer | Moves SPL collateral into the vault; engine credits capital. |
 | `Withdraw` | Portfolio owner signer | Engine debits first; the vault PDA signs the token transfer out. |
-| `PlaceOrder` | Portfolio owner or registered delegate | Production trade path: user vs the market's House PDA. |
+| `PlaceOrder` | Portfolio owner or registered delegate | Production trade path: user vs the market's vault PDA. |
 | `Trade` | Single authority owning both portfolios | Raw two-account self-cross. Test-only, excluded from a `--no-default-features` build. |
 | `Liquidate` | Permissionless | Engine rejects a healthy account (`NonProgress`). |
 | `CrankRefresh` | Permissionless | Re-certifies a portfolio against fresh oracle/funding inputs. |
@@ -20,15 +20,15 @@ Who may call each instruction, verified against the program handlers.
 | `PinOraclePool` | Permissionless, pin-once | Binds a pool to an asset slot; fails if the slot already has one. |
 | `ResolveMarket` | Market authority | Checks the header authority; one-way. |
 | `CreateVault` | Market authority | Allocates the vault token account at the vault PDA. |
-| `CreateHouseVault` | Market authority | One-time; creates the House portfolio PDA. |
-| `FundHouseVault` | Market authority | Funds the House/LP counterparty. |
-| `WithdrawHouseVault` | Market authority | Engine refuses while the House holds open positions. |
+| `CreateHouseVault` | Market authority | One-time; creates the vault portfolio PDA. |
+| `FundHouseVault` | Market authority | Funds the liquidity vault (LP-funded) counterparty. |
+| `WithdrawHouseVault` | Market authority | Engine refuses while the vault holds open positions. |
 | `SetDelegate` | Portfolio owner signer | Authorizes a session key that can trade but never withdraw. |
 | `SettlePnl` | Permissionless | Converts the user's own released PnL into capital; touches no other account. |
 | `SetOracleAuthority` | Market authority | Sets or rotates the market's oracle authority PDA (a zero key revokes to the constant). |
 | `SetDepositCap` | Market authority | Raises the per-portfolio deposit cap on a DEX-priced market above the program floor. |
 | `SetDexPool` | Market authority | Binds a DEX-priced market's pool: the two reserve vaults, base decimals, and minimum quote depth (`[DEXPOOL_SEED, market]` PDA). |
-| `SetHouseCap` | Market authority | Sets the House exposure cap: the max net House position per asset, base units (`[HOUSE_CAP_SEED, market]` PDA; zero disables it). Enforced in `PlaceOrder` / `PlaceBatchOrder`. |
+| `SetHouseCap` | Market authority | Sets the vault exposure cap: the max net vault position per asset, base units (`[HOUSE_CAP_SEED, market]` PDA; zero disables it). Enforced in `PlaceOrder` / `PlaceBatchOrder`. |
 | `SetRequireVerifiable` | Market authority | Ratchets the market's require-verifiable flag 0 -> 1 (turning it OFF is rejected). When enabled, `AccrueAsset` is forced to a delta-0 accrual so the relayer cannot move the mark; only `CrankPyth` / `CrankDexSpot` price it. `InitMarket` defaults it ON for `PYTH` / `DEX_EWMA` and OFF for `MANUAL`. |
 | `FundInsurance` | Permissionless | Transfers quote tokens into the market vault and funds the engine's per-(asset, side) domain insurance via `deposit_domain_insurance_not_atomic`; only ever raises the engine's total insurance `I`. |
 | `SetInsuranceParams` | Market authority | Sets the insurance withdrawal floor (on the engine's total insurance `I`) and timelock (`[INSURANCE_CFG_SEED, market]` PDA, created on first use). Both are raise-only (a ratchet). |

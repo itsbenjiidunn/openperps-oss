@@ -32,7 +32,7 @@ CreateMockPool        (optional, test-only price source)
 oracle binding
 ```
 
-- `lpVault.initialDeposit` funds the House/LP counterparty used for matched-cross
+- `lpVault.initialDeposit` funds the liquidity vault (LP-funded) counterparty used for matched-cross
   trading.
 - `priceProvider.id` is a keeper/integration identifier. It is not a trusted
   price by itself, and the keeper signer must still satisfy the program's oracle
@@ -41,5 +41,5 @@ oracle binding
 ## Lifecycle test requirement
 
 Before claiming custom market creation complete, add an integration test that
-creates a market from intent, creates and funds House/LP, activates it, runs one
-keeper/oracle update, opens a trade against House/LP, and asserts state is usable.
+creates a market from intent, creates and funds the liquidity vault (LP-funded), activates it, runs one
+keeper/oracle update, opens a trade against the vault, and asserts state is usable.

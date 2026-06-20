@@ -110,5 +110,5 @@ oracle plumbing (`PinOraclePool`, `SetDexPool`), config (`SetOracleAuthority`,
 - Header initialization runs in place via
   `MarketGroupV16HeaderAccount::dynamic_market_group_account_len::<MarketWrapper>`,
   never the Vec constructor.
-- Collateral custody is an SPL token vault plus CPI, with a separate House vault as
+- Collateral custody is an SPL token vault plus CPI, with a separate liquidity vault as
   the counterparty for `PlaceOrder`.

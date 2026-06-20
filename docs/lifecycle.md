@@ -2,7 +2,7 @@
 
 The high-level user path is:
 
-1. open position against House/LP
+1. open position against the liquidity vault (LP-funded)
 2. oracle/keeper moves mark price
 3. close position
 4. settle realized PnL into withdrawable capital
@@ -18,8 +18,8 @@ explicitly rather than presenting close and withdraw as unrelated buttons.
 
 `resolveTradeIntent` enforces the SDK-side guards before a trade is built:
 
-- a House/LP counterparty must be configured (official markets use the shared
-  House, custom markets use the creator's House)
+- a liquidity vault (LP-funded) counterparty must be configured (official markets use the shared
+  vault, custom markets use the creator's vault)
 - the execution price comes from keeper-certified/on-chain mark state, never a
   client or chart price
 - `limitPrice` rejects an execution price outside the user's guard
@@ -29,6 +29,6 @@ explicitly rather than presenting close and withdraw as unrelated buttons.
 ## Lifecycle test requirement
 
 Before claiming the high-level close/withdraw flow complete, add an integration
-test that opens versus House, moves price into profit through the oracle/keeper
+test that opens versus the vault, moves price into profit through the oracle/keeper
 path, closes, settles PnL, withdraws, and asserts portfolio/vault balances
 changed as expected.

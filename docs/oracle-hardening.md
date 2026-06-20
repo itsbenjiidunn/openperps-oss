@@ -81,7 +81,7 @@ is limited; it is a later layer, not a long-tail fix.
 ## What is not a code fix
 
 For a long-tail token with no verifiable feed, safety reduces to **pool depth
-plus the caps** (deposit cap, House cap, per-slot clamp, TWAP). That is
+plus the caps** (deposit cap, vault cap, per-slot clamp, TWAP). That is
 per-market risk-modeling: the operator sizes the caps to the pool's real depth
 and the asset's volatility. The hardenings above make the safe configuration
 **enforceable**; choosing the parameters is risk-engineering, not a switch.

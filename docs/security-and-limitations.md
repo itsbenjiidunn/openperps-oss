@@ -15,7 +15,7 @@ in place, and the open items.
 - trade, PnL, funding, and settlement logic; liquidation correctness
 - oracle authority, stale price, and manipulation assumptions
 - keeper reliability assumptions
-- House/LP and insurance vault risk; custom SPL market risk
+- the liquidity vault (LP-funded) and insurance vault risk; custom SPL market risk
 
 ## Hardening already in place
 
@@ -25,13 +25,13 @@ in place, and the open items.
   oracle path `CrankOracle` / `PinOraclePool`; the devnet artifact is built
   explicitly with `--features devnet`. The production price paths are
   `AccrueAsset`, `CrankPyth`, and `CrankDexSpot`; the standard trade path is
-  `PlaceOrder` (user vs House). As defense in depth, the mock-pool reader also
+  `PlaceOrder` (user vs the vault). As defense in depth, the mock-pool reader also
   verifies its `OPMKPOOL` discriminator, so no other program-owned account can be
   read as a pool even on a devnet build, and the mock crank refuses any market
   with `require_verifiable = 1`.
-- The House vault cannot be drained out from under HLP depositors:
+- The liquidity vault cannot be drained out from under HLP depositors:
   `WithdrawHouseVault` requires the canonical `[HLP_SEED, market]` config account
-  and refuses while LP shares are outstanding, so once LPs are in the House the
+  and refuses while LP shares are outstanding, so once LPs are in the vault the
   authority must harvest into the buffer and let LPs redeem rather than
   withdrawing the LP-backing capital.
 - Trading fees are enforced, not advisory. A market authority can set a fee floor
@@ -55,12 +55,12 @@ in place, and the open items.
   rejects a pool below a per-market depth floor (`PoolTooThin`), and moves the
   mark off a capped, time-weighted average (a `[TWAP_SEED, market, asset]` PDA) so
   a single-block reserve flash contributes ~0.
-- A market authority can set a House exposure cap per market (`SetHouseCap`): the
-  max net House position per asset (base units). `PlaceOrder` / `PlaceBatchOrder`
-  reject a trade that would push the House past it (de-risking is always allowed),
-  so no single asset's move can blow the House regardless of how many users stack
+- A market authority can set a vault exposure cap per market (`SetHouseCap`): the
+  max net vault position per asset (base units). `PlaceOrder` / `PlaceBatchOrder`
+  reject a trade that would push the vault past it (de-risking is always allowed),
+  so no single asset's move can blow the vault regardless of how many users stack
   one side. The trade handlers verify the cap PDA's canonical address, so it
-  cannot be bypassed by omitting the account. The keeper also alerts on a House
+  cannot be bypassed by omitting the account. The keeper also alerts on a vault
   that has run low on equity.
 
 ## Open items
@@ -78,6 +78,6 @@ in place, and the open items.
   sampled-spot assumption is the next layer.
 - Custom SPL markets put more on the integrator: price-source quality, LP and
   insurance liquidity, and keeper reliability for liquidation safety. Set a
-  per-market House exposure cap (`SetHouseCap`) and fund the House adequately.
+  per-market vault exposure cap (`SetHouseCap`) and fund the vault adequately.
 - Independent third-party review of the wrapper, SDK, and keeper is part of the
   production-hardening roadmap; see [`../SECURITY.md`](../SECURITY.md).

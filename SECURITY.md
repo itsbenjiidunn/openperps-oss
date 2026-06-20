@@ -23,7 +23,7 @@ Verified: the Percolator risk engine (market isolation, margin, and settlement
 math) is formally verified upstream and vendored unmodified.
 
 In review scope: everything OpenPerps OSS adds around the engine. The program
-wrapper (SPL custody, vault PDAs, the House vault, `PlaceOrder` / `Withdraw` /
+wrapper (SPL custody, vault PDAs, the liquidity vault, `PlaceOrder` / `Withdraw` /
 `Liquidate`, oracle cranks, market metadata), the SDK, and the keeper are the
 target of independent review; their review status and the hardening in place are
 tracked in [`docs/security-and-limitations.md`](docs/security-and-limitations.md).

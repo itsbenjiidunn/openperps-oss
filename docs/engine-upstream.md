@@ -21,12 +21,12 @@ Only `crates/program` (the OpenPerps Solana wrapper) is adapted to the engine's
 current API. Adaptations:
 
 - **SettlePnl.** Upstream removed `settle_realized_pnl_not_atomic` (the old
-  House-debit settle) and replaced it with the single-account
+  vault-debit settle) and replaced it with the single-account
   `convert_released_pnl_to_capital_not_atomic`. The wrapper's `settle_pnl_buffer`
   now calls the convert primitive, and the `SettlePnl` instruction dropped its
-  House account (also dropped from `settlePnlIx` in `packages/sdk`). The realizable
+  vault account (also dropped from `settlePnlIx` in `packages/sdk`). The realizable
   amount is backed by the source-credit the engine reserved from the
-  counterparty at open time, so no House account is touched at settle.
+  counterparty at open time, so no vault account is touched at settle.
 
 ## Update procedure
 

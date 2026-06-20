@@ -35,7 +35,7 @@ export const priceProvider: PriceProvider = {
 // - createMarket(intent) composes a lifecycle: InitMarket -> CreateVault ->
 //   CreateHouseVault -> FundHouseVault -> ActivateMarket -> optional test-only
 //   CreateMockPool -> oracle binding.
-// - lpVault.initialDeposit must flow into the House/LP vault used as counterparty.
+// - lpVault.initialDeposit must flow into the liquidity vault (LP-funded) used as counterparty.
 // - priceProvider.id is a keeper/integration identifier, not a trusted price.
 // - The keeper signer must still match the market's pinned oracle authority for
 //   price/funding updates.

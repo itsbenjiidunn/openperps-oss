@@ -72,7 +72,7 @@ not need anyone else's keys to read state, deposit, or trade on devnet.
   OPENPERPS_MARKETS=./markets.json \
   npm run relayer -w @opp-oss/keeper
   ```
-- **Economic model report** (House / HLP break-even simulation):
+- **Economic model report** (vault / HLP break-even simulation):
   ```bash
   npm run report -w @opp-oss/sim
   ```
@@ -103,7 +103,7 @@ committed secret is burned and must be rotated. `.gitignore` already excludes
   openperps-program` for program changes) before pushing.
 - `crates/engine` is a vendored, formally-verified copy of Percolator and is not
   modified here; adapt only the wrapper in `crates/program`.
-- House style: no em-dash in prose, comments, or copy. Use periods, commas, colons,
+- Project style: no em-dash in prose, comments, or copy. Use periods, commas, colons,
   or parentheses.
 
 ## The npm packages

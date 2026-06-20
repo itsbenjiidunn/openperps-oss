@@ -25,7 +25,7 @@ real users.
 
 ## Liquidity and risk
 
-- [ ] Fund the House/LP vault enough to counterparty the expected open interest.
+- [ ] Fund the liquidity vault (LP-funded) enough to counterparty the expected open interest.
 - [ ] Set margin, fee, and liquidation parameters in the market config.
 - [ ] Set the per-portfolio collateral cap for DEX-priced markets.
 
@@ -33,5 +33,5 @@ real users.
 
 - [ ] Confirm the collateral SPL mint and vault PDAs.
 - [ ] Review the program wrapper, the SDK build path, and the keeper for your config.
-- [ ] Test the full lifecycle on a test cluster: create market, fund House, trade,
+- [ ] Test the full lifecycle on a test cluster: create market, fund the vault, trade,
       close/settle, withdraw.
