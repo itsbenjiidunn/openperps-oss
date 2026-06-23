@@ -196,6 +196,12 @@ export const TWAP_SEED = new TextEncoder().encode("twap");
  * full seeds are `[HOUSE_CAP_SEED, market]`. */
 export const HOUSE_CAP_SEED = new TextEncoder().encode("housecap");
 
+/** Dynamic OI-cap PDA seed prefix; matches Rust `state::HOUSE_OI_SEED`. The full
+ * seeds are `[HOUSE_OI_SEED, market]`. When set with a non-zero multiplier, House
+ * open interest per asset is additionally bounded by `equity * multiplier`, scaling
+ * with the LP capital backing the House. */
+export const HOUSE_OI_SEED = new TextEncoder().encode("houseoi");
+
 /** Trading-fee floor PDA seed prefix; matches Rust `state::FEE_SEED`. The full
  * seeds are `[FEE_SEED, market]`. When set, every trade leg must carry
  * `fee_bps >= min_fee_bps`. */

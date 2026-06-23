@@ -7,6 +7,7 @@
 //! `(&mut Header, &mut [Slot])` without any alignment dance.
 
 use bytemuck::{Pod, Zeroable};
+use percolator::wide_math::mul_div_floor_u128;
 use percolator::v16::{
     BatchTradeOutcomeV16, LiquidationOutcomeV16, LiquidationRequestV16, Market,
     MarketGroupV16HeaderAccount,
@@ -170,6 +171,15 @@ pub const TWAP_SEED: &[u8] = b"twap";
 /// liquidation, and the per-portfolio deposit cap.
 pub const HOUSE_CAP_SEED: &[u8] = b"housecap";
 
+/// PDA seed prefix for a market's dynamic OI gate. Full seeds:
+/// `[HOUSE_OI_SEED, market.key()]`. Optional, per-market: when set with a non-zero
+/// multiplier, the House net position per asset is additionally capped at
+/// `house_equity * oi_multiplier_bps / 10_000` (converted to base units at the live
+/// mark), so open interest is bounded by the LP capital actually backing the House
+/// and scales automatically as that capital grows or shrinks. Layered on top of the
+/// static [`HOUSE_CAP_SEED`] ceiling: the tighter of the two wins.
+pub const HOUSE_OI_SEED: &[u8] = b"houseoi";
+
 /// PDA seed prefix for a market's trading-fee floor. Full seeds:
 /// `[FEE_SEED, market.key()]`. Optional, per-market: when set, every PlaceOrder /
 /// PlaceBatchOrder leg must carry `fee_bps >= min_fee_bps`, so a client cannot
@@ -213,6 +223,9 @@ pub const TWAP_DISCRIMINATOR: [u8; 8] = *b"OPTWAP00";
 
 /// Magic bytes at the start of a [`HouseCapAccount`].
 pub const HOUSE_CAP_DISCRIMINATOR: [u8; 8] = *b"OPHOUSEC";
+
+/// Magic bytes at the start of a [`HouseOiCapAccount`].
+pub const HOUSE_OI_DISCRIMINATOR: [u8; 8] = *b"OPHOICAP";
 
 /// Magic bytes at the start of a [`FeeConfigAccount`].
 pub const FEE_CONFIG_DISCRIMINATOR: [u8; 8] = *b"OPFEECFG";
@@ -437,6 +450,166 @@ pub fn house_cap_of(buf: &[u8]) -> Result<([u8; 32], u128), OpenPerpsError> {
         return Ok(([0u8; 32], 0));
     }
     Ok((acc.market, u128::from_le_bytes(acc.max_base_position)))
+}
+
+/// Per-market dynamic OI gate: the House net open position per asset is also bounded
+/// by `house_marked_equity * oi_multiplier_bps / 10_000`, converted to base units at
+/// the live mark. This ties open interest to the LP capital ACTUALLY backing the
+/// House (it scales up as LPs deposit and the House earns, down as it loses), on top
+/// of the static [`HouseCapAccount`] absolute ceiling. `oi_multiplier_bps == 0`
+/// disables the dynamic gate (static-only). Byte arrays keep it alignment-1 / Pod.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Pod, Zeroable)]
+pub struct HouseOiCapAccount {
+    pub discriminator: [u8; 8],
+    pub market: [u8; 32],
+    /// OI cap as a multiple of House equity, in basis points (LE u64). 100_000 = 10x.
+    pub oi_multiplier_bps: [u8; 8],
+}
+
+impl HouseOiCapAccount {
+    pub const LEN: usize = core::mem::size_of::<Self>();
+    pub fn is_initialized(&self) -> bool {
+        self.discriminator == HOUSE_OI_DISCRIMINATOR
+    }
+}
+
+/// Write/overwrite a market's dynamic OI multiplier (market-authority-authorized).
+pub fn set_house_oi_cap_buffer(
+    buf: &mut [u8],
+    market: [u8; 32],
+    oi_multiplier_bps: u64,
+) -> Result<(), OpenPerpsError> {
+    if buf.len() < HouseOiCapAccount::LEN {
+        return Err(OpenPerpsError::AccountDataTooSmall);
+    }
+    let acc: &mut HouseOiCapAccount = pod_from_bytes_mut(&mut buf[..HouseOiCapAccount::LEN])?;
+    acc.discriminator = HOUSE_OI_DISCRIMINATOR;
+    acc.market = market;
+    acc.oi_multiplier_bps = oi_multiplier_bps.to_le_bytes();
+    Ok(())
+}
+
+/// Read `(market, oi_multiplier_bps)` from an OI-cap PDA; both zero if uninitialized.
+pub fn house_oi_cap_of(buf: &[u8]) -> Result<([u8; 32], u64), OpenPerpsError> {
+    if buf.len() < HouseOiCapAccount::LEN {
+        return Err(OpenPerpsError::AccountDataTooSmall);
+    }
+    let acc: &HouseOiCapAccount = bytemuck::try_from_bytes(&buf[..HouseOiCapAccount::LEN])
+        .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    if !acc.is_initialized() {
+        return Ok(([0u8; 32], 0));
+    }
+    Ok((acc.market, u64::from_le_bytes(acc.oi_multiplier_bps)))
+}
+
+/// The effective House net-position cap (base units) for one asset, combining the
+/// static absolute cap and the dynamic capital-relative cap. Returns `None` when
+/// neither is configured (so there is no cap at all).
+///
+/// - `static_cap_base`: the [`HouseCapAccount`] value (base units); 0 = unset.
+/// - `oi_multiplier_bps`: the [`HouseOiCapAccount`] value; 0 = dynamic disabled.
+/// - `house_equity_quote`: the House portfolio's marked equity (quote atoms).
+/// - `mark_price_e6`: the asset's effective mark, [`PRICE_SCALE`]-scaled; 0 = no mark
+///   available (dynamic disabled, since the base-unit conversion needs a price).
+///
+/// The dynamic notional limit is `equity * multiplier_bps / 10_000` (quote atoms);
+/// dividing by the mark expresses it in base units:
+/// `equity * multiplier_bps * PRICE_SCALE / (10_000 * price)`. When both caps apply,
+/// the tighter (min) wins. Always floors (never over-credits exposure room).
+pub fn effective_house_cap_base(
+    static_cap_base: u128,
+    oi_multiplier_bps: u64,
+    house_equity_quote: u128,
+    mark_price_e6: u64,
+) -> Option<u128> {
+    let dynamic = if oi_multiplier_bps > 0 && mark_price_e6 > 0 {
+        Some(mul_div_floor_u128(
+            house_equity_quote,
+            (oi_multiplier_bps as u128).saturating_mul(PRICE_SCALE),
+            (10_000u128).saturating_mul(mark_price_e6 as u128),
+        ))
+    } else {
+        None
+    };
+    match (static_cap_base, dynamic) {
+        (0, None) => None,
+        (0, Some(d)) => Some(d),
+        (s, None) => Some(s),
+        (s, Some(d)) => Some(s.min(d)),
+    }
+}
+
+#[cfg(test)]
+mod oi_cap_tests {
+    use super::*;
+
+    #[test]
+    fn dynamic_cap_scales_with_equity_and_price() {
+        // 10x multiplier (100_000 bps), equity 1_000_000 quote atoms, mark 2.0
+        // (2 * PRICE_SCALE). Notional limit = equity * 10 = 10_000_000 quote; in base
+        // = 10_000_000 / 2.0 = 5_000_000 base.
+        assert_eq!(
+            effective_house_cap_base(0, 100_000, 1_000_000, 2 * PRICE_SCALE as u64),
+            Some(5_000_000)
+        );
+        // Half the equity -> half the cap.
+        assert_eq!(
+            effective_house_cap_base(0, 100_000, 500_000, 2 * PRICE_SCALE as u64),
+            Some(2_500_000)
+        );
+        // Double the mark -> half the base cap (same notional backing).
+        assert_eq!(
+            effective_house_cap_base(0, 100_000, 1_000_000, 4 * PRICE_SCALE as u64),
+            Some(2_500_000)
+        );
+    }
+
+    #[test]
+    fn multiplier_zero_disables_dynamic() {
+        // No multiplier and no static cap -> no cap at all.
+        assert_eq!(
+            effective_house_cap_base(0, 0, 1_000_000, PRICE_SCALE as u64),
+            None
+        );
+        // No multiplier but a static cap -> static cap.
+        assert_eq!(
+            effective_house_cap_base(777, 0, 1_000_000, PRICE_SCALE as u64),
+            Some(777)
+        );
+    }
+
+    #[test]
+    fn zero_mark_disables_dynamic() {
+        // No mark -> dynamic cannot convert to base, falls back to static only.
+        assert_eq!(effective_house_cap_base(0, 100_000, 1_000_000, 0), None);
+        assert_eq!(effective_house_cap_base(900, 100_000, 1_000_000, 0), Some(900));
+    }
+
+    #[test]
+    fn tighter_of_static_and_dynamic_wins() {
+        // Dynamic = equity(1_000_000) * 10 / 1.0 = 10_000_000 base; static 3_000_000
+        // is tighter.
+        assert_eq!(
+            effective_house_cap_base(3_000_000, 100_000, 1_000_000, PRICE_SCALE as u64),
+            Some(3_000_000)
+        );
+        // Raise the static ceiling above the dynamic -> the dynamic is tighter.
+        assert_eq!(
+            effective_house_cap_base(50_000_000, 100_000, 1_000_000, PRICE_SCALE as u64),
+            Some(10_000_000)
+        );
+    }
+
+    #[test]
+    fn oi_cap_buffer_roundtrip() {
+        let market = [0x5A; 32];
+        let mut buf = vec![0u8; HouseOiCapAccount::LEN];
+        // Uninitialized reads as (zero, 0).
+        assert_eq!(house_oi_cap_of(&buf).unwrap(), ([0u8; 32], 0));
+        set_house_oi_cap_buffer(&mut buf, market, 100_000).unwrap();
+        assert_eq!(house_oi_cap_of(&buf).unwrap(), (market, 100_000));
+    }
 }
 
 /// Per-market trading-fee floor: the minimum `fee_bps` every trade leg must carry.

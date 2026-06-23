@@ -50,6 +50,7 @@ pub mod tag {
     pub const EXECUTE_REDEEM_HLP: u8 = 38;
     pub const HARVEST_HLP: u8 = 39;
     pub const SET_MARKET_FEE: u8 = 40;
+    pub const SET_HOUSE_OI_CAP: u8 = 41;
 }
 
 /// Maximum legs in a single `PlaceBatchOrder`. The engine also rejects a batch
@@ -501,6 +502,24 @@ pub enum OpenPerpsInstruction {
         min_fee_bps: u64,
         bump: u8,
     },
+    /// Set (or update) the market's dynamic OI multiplier: the House net position
+    /// per asset is additionally capped at `house_equity * oi_multiplier_bps /
+    /// 10_000` (converted to base units at the live mark), so open interest is bound
+    /// by the LP capital actually backing the House and scales with it. Layered on
+    /// the static SetHouseCap ceiling (the tighter wins). Market-authority-signed; a
+    /// zero multiplier disables the dynamic gate. The PDA is created on first use,
+    /// and the trade handlers verify its canonical address, so it cannot be bypassed
+    /// by omitting the trailing account.
+    ///
+    /// Accounts:
+    ///   0. `[writable]` OI-cap PDA (`[HOUSE_OI_SEED, market]`)
+    ///   1. `[]`         market account (read for authority)
+    ///   2. `[signer, writable]` authority (must match the market authority; pays rent)
+    ///   3. `[]`         system program
+    SetHouseOiCap {
+        oi_multiplier_bps: u64,
+        bump: u8,
+    },
     /// Set the market's `require_verifiable` flag. When enabled, `AccrueAsset`
     /// can no longer move this market's mark (the authority-set price is forced
     /// to a delta-0 accrual); only `CrankPyth` / `CrankDexSpot` price it.
@@ -916,6 +935,10 @@ impl OpenPerpsInstruction {
             }),
             tag::SET_MARKET_FEE => Ok(Self::SetMarketFee {
                 min_fee_bps: read_u64(rest, 0)?,
+                bump: read_u8(rest, 8)?,
+            }),
+            tag::SET_HOUSE_OI_CAP => Ok(Self::SetHouseOiCap {
+                oi_multiplier_bps: read_u64(rest, 0)?,
                 bump: read_u8(rest, 8)?,
             }),
             _ => Err(OpenPerpsError::InvalidInstruction),

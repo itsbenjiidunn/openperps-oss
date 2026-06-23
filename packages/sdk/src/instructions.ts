@@ -16,6 +16,7 @@ import {
   HLP_SEED,
   HLP_VAULT_SEED,
   HOUSE_CAP_SEED,
+  HOUSE_OI_SEED,
   HOUSE_SEED,
   INSURANCE_CFG_SEED,
   ORACLE_SEED,
@@ -68,6 +69,7 @@ export const Tag = {
   ExecuteRedeemHlp: 38,
   HarvestHlp: 39,
   SetMarketFee: 40,
+  SetHouseOiCap: 41,
 } as const;
 
 /// Side encoding for `PlaceOrder`.
@@ -626,12 +628,15 @@ export function placeBatchOrderIx(args: {
   if (args.delegate) {
     keys.push({ pubkey: args.delegate, isSigner: false, isWritable: false });
   }
-  // House-cap then fee-config PDA trail the optional delegate (both verified
-  // canonical on-chain, so always passed; uninitialized = no cap / no fee floor).
+  // House-cap, fee-config, then OI-cap PDA trail the optional delegate (all verified
+  // canonical on-chain, so always passed; uninitialized = no cap / no fee floor / no
+  // dynamic OI gate).
   const [houseCap] = houseCapPda(args.programId, args.market);
   keys.push({ pubkey: houseCap, isSigner: false, isWritable: false });
   const [feeConfig] = feeConfigPda(args.programId, args.market);
   keys.push({ pubkey: feeConfig, isSigner: false, isWritable: false });
+  const [houseOiCap] = houseOiCapPda(args.programId, args.market);
+  keys.push({ pubkey: houseOiCap, isSigner: false, isWritable: false });
   return new TransactionInstruction({
     programId: args.programId,
     keys,
@@ -1060,13 +1065,16 @@ export function placeOrderIx(args: {
   if (args.delegate) {
     keys.push({ pubkey: args.delegate, isSigner: false, isWritable: false });
   }
-  // The House-cap PDA trails the optional delegate, then the fee-config PDA; the
-  // program verifies both are the canonical addresses, so they are always passed
-  // (uninitialized = no cap / no fee floor).
+  // The House-cap PDA trails the optional delegate, then the fee-config PDA, then
+  // the OI-cap PDA; the program verifies all three are the canonical addresses, so
+  // they are always passed (uninitialized = no cap / no fee floor / no dynamic OI
+  // gate).
   const [houseCap] = houseCapPda(args.programId, args.market);
   keys.push({ pubkey: houseCap, isSigner: false, isWritable: false });
   const [feeConfig] = feeConfigPda(args.programId, args.market);
   keys.push({ pubkey: feeConfig, isSigner: false, isWritable: false });
+  const [houseOiCap] = houseOiCapPda(args.programId, args.market);
+  keys.push({ pubkey: houseOiCap, isSigner: false, isWritable: false });
   return new TransactionInstruction({
     programId: args.programId,
     keys,
@@ -1265,6 +1273,55 @@ export function setHouseCapIx(args: {
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
     ],
     data: encodeSetHouseCap(args.maxBasePosition, args.bump),
+  });
+}
+
+/** The per-market dynamic OI-cap PDA; matches Rust `[HOUSE_OI_SEED, market]`. */
+export function houseOiCapPda(
+  programId: PublicKey,
+  market: PublicKey,
+): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync(
+    [HOUSE_OI_SEED, market.toBuffer()],
+    programId,
+  );
+}
+
+export function encodeSetHouseOiCap(oiMultiplierBps: bigint, bump: number): Buffer {
+  const data = new Uint8Array(1 + 8 + 1);
+  data[0] = Tag.SetHouseOiCap;
+  writeU64LE(data, 1, oiMultiplierBps);
+  data[9] = bump;
+  return Buffer.from(data);
+}
+
+/// Set a market's dynamic OI multiplier: House open interest per asset is additionally
+/// capped at `house_equity * oiMultiplierBps / 10_000`, converted to base units at the
+/// live mark, so it scales with the LP capital backing the House. Layered on the static
+/// SetHouseCap ceiling (the tighter wins). Market-authority-signed; a zero multiplier
+/// disables the dynamic gate (100_000 = 10x). The PDA is created on first use, and the
+/// trade handlers verify its canonical address, so it cannot be bypassed by omitting
+/// the trailing account.
+export function setHouseOiCapIx(args: {
+  programId: PublicKey;
+  /** The PDA from `houseOiCapPda(programId, market)`. */
+  houseOiCapPda: PublicKey;
+  market: PublicKey;
+  /** The market authority (signer; pays PDA rent on first set). */
+  authority: PublicKey;
+  /** OI cap as a multiple of House equity, in bps (0 disables; 100_000 = 10x). */
+  oiMultiplierBps: bigint;
+  bump: number;
+}): TransactionInstruction {
+  return new TransactionInstruction({
+    programId: args.programId,
+    keys: [
+      { pubkey: args.houseOiCapPda, isSigner: false, isWritable: true },
+      { pubkey: args.market, isSigner: false, isWritable: false },
+      { pubkey: args.authority, isSigner: true, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    data: encodeSetHouseOiCap(args.oiMultiplierBps, args.bump),
   });
 }
 

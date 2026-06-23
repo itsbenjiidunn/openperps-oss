@@ -29,6 +29,8 @@ use crate::{
         twap_observe_buffer, TwapState, TWAP_SEED,
         house_cap_of, set_house_cap_buffer, portfolio_abs_position_for_asset,
         HouseCapAccount, HOUSE_CAP_SEED,
+        house_oi_cap_of, set_house_oi_cap_buffer, effective_house_cap_base,
+        HouseOiCapAccount, HOUSE_OI_SEED,
         fee_config_of, set_fee_config_buffer, asset_effective_price,
         FeeConfigAccount, FEE_SEED,
         InsuranceConfig, INSURANCE_CFG_SEED, set_insurance_params_buffer,
@@ -450,6 +452,10 @@ pub fn process_instruction(
         OpenPerpsInstruction::SetMarketFee { min_fee_bps, bump } => {
             process_set_market_fee(program_id, accounts, min_fee_bps, bump)
         }
+        OpenPerpsInstruction::SetHouseOiCap {
+            oi_multiplier_bps,
+            bump,
+        } => process_set_house_oi_cap(program_id, accounts, oi_multiplier_bps, bump),
     }
 }
 
@@ -560,44 +566,83 @@ fn process_set_market_fee(
 /// bypass the cap. If the canonical account is uninitialized the market has no cap.
 /// Only trades that INCREASE the House's |position| past the cap are rejected, so
 /// de-risking (reducing/closing) is always allowed even if already over the cap.
+#[allow(clippy::too_many_arguments)]
 fn enforce_house_cap(
     program_id: &Pubkey,
     accounts: &[AccountInfo],
     cap_idx: usize,
+    oi_idx: usize,
     market_key: &Pubkey,
     asset_index: u32,
     house_abs_before: u128,
     house_data: &[u8],
+    mark_price_e6: u64,
 ) -> Result<(), OpenPerpsError> {
+    // Static absolute cap (base units) from the canonical [HOUSE_CAP_SEED, market]
+    // PDA at cap_idx. The account is mandatory and verified canonical (via
+    // find_program_address, NOT a caller bump), so it cannot be omitted or
+    // substituted to bypass the cap; uninitialized or bound to another market means
+    // no static cap (0).
     let cap_acc = accounts
         .get(cap_idx)
         .ok_or(OpenPerpsError::InvalidInstruction)?;
-    // The trailing account MUST be the canonical House-cap PDA (present even when
-    // no cap is set, as an uninitialized account at that address).
-    let (canonical, _) = find_program_address(&[HOUSE_CAP_SEED, market_key.as_ref()], program_id);
-    if *cap_acc.key() != canonical {
+    let (canonical_cap, _) =
+        find_program_address(&[HOUSE_CAP_SEED, market_key.as_ref()], program_id);
+    if *cap_acc.key() != canonical_cap {
         return Err(OpenPerpsError::InvalidAccountData);
     }
-    // Uninitialized (system-owned, zero data) canonical account: market has no cap.
-    if unsafe { cap_acc.owner() } != program_id {
-        return Ok(());
-    }
-    let cap = {
+    let static_cap = if unsafe { cap_acc.owner() } != program_id {
+        0
+    } else {
         let d = cap_acc
             .try_borrow_data()
             .map_err(|_| OpenPerpsError::InvalidAccountData)?;
         let (mkt, cap) = house_cap_of(&d)?;
         if mkt != *market_key {
-            return Ok(());
+            0
+        } else {
+            cap
         }
-        cap
     };
-    if cap == 0 {
-        return Ok(());
+
+    // Dynamic OI multiplier (bps) from the canonical [HOUSE_OI_SEED, market] PDA at
+    // oi_idx. Same mandatory-canonical contract as the static cap; uninitialized or
+    // wrong market means the dynamic gate is disabled (0).
+    let oi_acc = accounts
+        .get(oi_idx)
+        .ok_or(OpenPerpsError::InvalidInstruction)?;
+    let (canonical_oi, _) =
+        find_program_address(&[HOUSE_OI_SEED, market_key.as_ref()], program_id);
+    if *oi_acc.key() != canonical_oi {
+        return Err(OpenPerpsError::InvalidAccountData);
     }
-    let house_abs_after = portfolio_abs_position_for_asset(house_data, asset_index)?;
-    if house_abs_after > cap && house_abs_after > house_abs_before {
-        return Err(OpenPerpsError::HouseExposureCapExceeded);
+    let oi_multiplier_bps = if unsafe { oi_acc.owner() } != program_id {
+        0
+    } else {
+        let d = oi_acc
+            .try_borrow_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        let (mkt, mult) = house_oi_cap_of(&d)?;
+        if mkt != *market_key {
+            0
+        } else {
+            mult
+        }
+    };
+
+    // Combine the static ceiling with the capital-relative dynamic cap (House marked
+    // equity * multiplier, converted to base units at the live mark). With neither
+    // configured there is no cap. Only exposure-INCREASING trades over the cap are
+    // rejected, so de-risking (reducing / closing) is always allowed even when
+    // already over the cap.
+    let equity = house_marked_equity_haircut(house_data, 0)?;
+    let effective =
+        effective_house_cap_base(static_cap, oi_multiplier_bps, equity, mark_price_e6);
+    if let Some(cap) = effective {
+        let house_abs_after = portfolio_abs_position_for_asset(house_data, asset_index)?;
+        if house_abs_after > cap && house_abs_after > house_abs_before {
+            return Err(OpenPerpsError::HouseExposureCapExceeded);
+        }
     }
     Ok(())
 }
@@ -1687,14 +1732,21 @@ fn process_place_order(
         _ => return Err(OpenPerpsError::InvalidInstructionData.into()),
     }
 
+    // The OI-cap PDA trails the fee-config (cap_idx -> house-cap, +1 -> fee-config,
+    // +2 -> OI-cap). The dynamic cap converts the House equity bound to base units at
+    // the honest oracle mark; a 0 mark disables only the dynamic half (static stays).
+    let oi_idx = cap_idx + 2;
+    let mark_price_e6 = asset_effective_price(&*market_data, asset_index)?;
     enforce_house_cap(
         program_id,
         accounts,
         cap_idx,
+        oi_idx,
         &market_key,
         asset_index,
         house_abs_before,
         &house_data,
+        mark_price_e6,
     )?;
     Ok(())
 }
@@ -1846,15 +1898,22 @@ fn process_place_batch_order(
     )
     .map_v16()?;
 
+    let oi_idx = cap_idx + 2;
     for (i, req) in requests.iter().enumerate().take(n) {
+        // Per-leg honest mark for the dynamic cap's base-unit conversion (0 = no
+        // mark, so the dynamic half is disabled for that asset; the static cap and
+        // every other leg still apply).
+        let mark_price_e6 = asset_effective_price(&*market_data, req.asset_index as u32)?;
         enforce_house_cap(
             program_id,
             accounts,
             cap_idx,
+            oi_idx,
             &market_key,
             req.asset_index as u32,
             house_abs_before[i],
             &house_data,
+            mark_price_e6,
         )?;
     }
     Ok(())
@@ -2727,6 +2786,82 @@ fn process_set_house_cap(
         .try_borrow_mut_data()
         .map_err(|_| OpenPerpsError::InvalidAccountData)?;
     set_house_cap_buffer(&mut data, market_key, max_base_position)?;
+    Ok(())
+}
+
+/// Set the market's dynamic OI multiplier (a multiple of House marked equity, in
+/// bps; 100_000 = 10x). Only the market authority may call. The `[HOUSE_OI_SEED,
+/// market]` PDA is created on first use; a zero multiplier disables the dynamic
+/// gate. The trade handlers verify this PDA's canonical address, so the gate cannot
+/// be bypassed by omitting or substituting the account.
+fn process_set_house_oi_cap(
+    program_id: &Pubkey,
+    accounts: &[AccountInfo],
+    oi_multiplier_bps: u64,
+    bump: u8,
+) -> ProgramResult {
+    let [oi_pda, market, authority, _system_program, ..] = accounts else {
+        return Err(OpenPerpsError::InvalidInstruction.into());
+    };
+    if !authority.is_signer() {
+        return Err(OpenPerpsError::MissingRequiredSignature.into());
+    }
+    if !oi_pda.is_writable() {
+        return Err(OpenPerpsError::InvalidAccountData.into());
+    }
+    if unsafe { market.owner() } != program_id {
+        return Err(OpenPerpsError::InvalidAccountOwner.into());
+    }
+
+    // Only the market authority may set the OI multiplier.
+    let market_key = *market.key();
+    {
+        let data = market
+            .try_borrow_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        let wrapper = market_wrapper_header(&data)?;
+        if !wrapper.is_initialized() {
+            return Err(OpenPerpsError::UninitializedAccount.into());
+        }
+        if wrapper.authority != *authority.key() {
+            return Err(OpenPerpsError::MissingRequiredSignature.into());
+        }
+    }
+
+    // Verify the PDA address, then create it on first use.
+    let derived = create_program_address(
+        &[HOUSE_OI_SEED, market_key.as_ref(), &[bump]],
+        program_id,
+    )
+    .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    if *oi_pda.key() != derived {
+        return Err(OpenPerpsError::InvalidAccountData.into());
+    }
+
+    if unsafe { oi_pda.owner() } != program_id {
+        let rent = Rent::get()?;
+        let lamports = rent.minimum_balance(HouseOiCapAccount::LEN);
+        let bump_arr = [bump];
+        let seeds = [
+            Seed::from(HOUSE_OI_SEED),
+            Seed::from(market_key.as_ref()),
+            Seed::from(bump_arr.as_ref()),
+        ];
+        let signer = Signer::from(seeds.as_ref());
+        system_create_account(
+            authority,
+            oi_pda,
+            lamports,
+            HouseOiCapAccount::LEN as u64,
+            program_id,
+            &[signer],
+        )?;
+    }
+
+    let mut data = oi_pda
+        .try_borrow_mut_data()
+        .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    set_house_oi_cap_buffer(&mut data, market_key, oi_multiplier_bps)?;
     Ok(())
 }
 
