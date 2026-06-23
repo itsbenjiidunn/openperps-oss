@@ -8,7 +8,7 @@
 //! redeem handlers live in `processor.rs`.
 
 use bytemuck::{Pod, Zeroable};
-use percolator::v16::{account_equity_from_parts, PortfolioAccountV16Account};
+use percolator::v16::PortfolioAccountV16Account;
 use percolator::wide_math::mul_div_floor_u128;
 
 use crate::error::OpenPerpsError;
@@ -159,8 +159,17 @@ pub fn house_marked_equity_haircut(
         bytemuck::try_from_bytes(&house_data[..header_len])
             .map_err(|_| OpenPerpsError::InvalidAccountData)?;
     let pnl = header.pnl.get();
-    let raw = account_equity_from_parts(header.capital.get(), pnl, header.fee_credits.get())
-        .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    // Engine account equity = capital + pnl - |fee_credits|. Mirrors the engine's
+    // account_equity_from_parts, which v16.9.0 no longer exposes publicly; the inputs
+    // are the raw header fields the engine itself writes.
+    let capital =
+        i128::try_from(header.capital.get()).map_err(|_| OpenPerpsError::ArithmeticOverflow)?;
+    let fee_debt = i128::try_from(header.fee_credits.get().unsigned_abs())
+        .map_err(|_| OpenPerpsError::ArithmeticOverflow)?;
+    let raw = capital
+        .checked_add(pnl)
+        .and_then(|v| v.checked_sub(fee_debt))
+        .ok_or(OpenPerpsError::ArithmeticOverflow)?;
     let haircut = if pnl > 0 {
         pnl.saturating_mul(haircut_bps.min(10_000) as i128) / 10_000
     } else {

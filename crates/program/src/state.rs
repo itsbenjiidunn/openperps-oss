@@ -11,7 +11,7 @@ use percolator::wide_math::mul_div_floor_u128;
 use percolator::v16::{
     BatchTradeOutcomeV16, LiquidationOutcomeV16, LiquidationRequestV16, Market,
     MarketGroupV16HeaderAccount,
-    MarketGroupV16ViewMut, PermissionlessCrankActionV16, PermissionlessCrankRequestV16,
+    AutoCrankObservationV16, AutoCrankWorkV16, MarketGroupV16ViewMut,
     PortfolioAccountV16Account, PortfolioLegV16, PortfolioLegV16Account,
     PortfolioV16ViewMut, ProvenanceHeaderV16,
     ProvenanceHeaderV16Account, SideV16, TradeOutcomeV16, TradeRequestV16, V16ConfigAccount, V16Error,
@@ -1834,8 +1834,13 @@ pub fn activate_market_buffer(
 ) -> Result<(), V16Error> {
     let (header, markets) =
         market_engine_split_mut(buf).map_err(|_| V16Error::InvalidConfig)?;
-    let mut mg = MarketGroupV16ViewMut::new(header, markets);
-    mg.activate_empty_market_not_atomic(asset_index, authenticated_price, now_slot)
+    // v16.9.0 made the view-level activate test-only; the production path passes the
+    // target market slot to the header method (Market<T> implements the slot view),
+    // matching the engine's own activate_empty_market_not_atomic body.
+    let slot = markets
+        .get_mut(asset_index as usize)
+        .ok_or(V16Error::InvalidLeg)?;
+    header.activate_empty_market_slot_not_atomic(asset_index, slot, authenticated_price, now_slot)
 }
 
 /// Refresh the oracle price and accrue funding for an already-active asset
@@ -1992,14 +1997,23 @@ pub fn crank_refresh_buffer(
     let p_h = portfolio_split_mut(portfolio_buf).map_err(|_| V16Error::InvalidConfig)?;
     let mut mg = MarketGroupV16ViewMut::new(m_h, m_s);
     let mut pv = PortfolioV16ViewMut::new(p_h);
-    mg.permissionless_crank_not_atomic(
+    // v16.9.0 internalized the direct crank; the public path is the self-classifying
+    // auto-crank. Submit one observation for this asset with no liquidation /
+    // resolved-close budget, so the engine progresses the account (refresh / settle-B
+    // / recovery) without taking a liquidation or close step through this path, which
+    // have their own handlers.
+    let observations = [AutoCrankObservationV16 {
+        asset_index: asset_index as usize,
+        effective_price,
+        funding_rate_e9,
+    }];
+    mg.permissionless_auto_crank_not_atomic(
         &mut pv,
-        PermissionlessCrankRequestV16 {
+        AutoCrankWorkV16 {
             now_slot,
-            asset_index: asset_index as usize,
-            effective_price,
-            funding_rate_e9,
-            action: PermissionlessCrankActionV16::Refresh,
+            observations: &observations,
+            liquidation_max_close_q: 0,
+            resolved_close_fee_rate_per_slot: 0,
         },
     )?;
     Ok(())
@@ -2048,7 +2062,7 @@ pub fn trade_buffer(
     let mut mg = MarketGroupV16ViewMut::new(m_h, m_s);
     let mut long = PortfolioV16ViewMut::new(l_h);
     let mut short = PortfolioV16ViewMut::new(s_h);
-    mg.execute_trade_with_fee_in_place_not_atomic(
+    mg.execute_trade_with_fee_loss_stale_scoped_not_atomic(
         &mut long,
         &mut short,
         TradeRequestV16 {
@@ -2077,7 +2091,7 @@ pub fn batch_trade_buffer(
     let mut mg = MarketGroupV16ViewMut::new(m_h, m_s);
     let mut long = PortfolioV16ViewMut::new(l_h);
     let mut short = PortfolioV16ViewMut::new(s_h);
-    mg.execute_batch_with_fee_in_place_not_atomic(&mut long, &mut short, requests)
+    mg.execute_batch_with_fee_loss_stale_scoped_not_atomic(&mut long, &mut short, requests)
 }
 
 // ---------- internals ----------

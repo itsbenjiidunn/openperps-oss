@@ -52,15 +52,15 @@ export function marketOracleKind(data: Uint8Array): number {
 export const MOCK_POOL_SIZE = 120;
 export const PRICE_SCALE = 1_000_000n;
 
-// Engine structs (after the wrapper prefix in a market account).
-export const MARKET_HEADER_SIZE = 710;
+// Engine structs (after the wrapper prefix in a market account). v16.9.0.
+export const MARKET_HEADER_SIZE = 726;
 // Market<[u8;32]> = 32-byte per-slot wrapper (the pinned oracle pool) + the
 // 1285-byte engine slot. The wrapper sits at the START of each slot.
 export const MARKET_SLOT_WRAPPER_SIZE = 32;
 export const MARKET_SLOT_SIZE = 1317;
 // The v16 portfolio account embeds its source-domain array inline, so this is
 // the whole account size (fixed, independent of slot capacity).
-export const PORTFOLIO_HEADER_SIZE = 9179;
+export const PORTFOLIO_HEADER_SIZE = 9291;
 export const SOURCE_DOMAIN_SIZE = 160;
 
 // Engine-relative offsets (within MarketGroupV16HeaderAccount).
@@ -108,8 +108,9 @@ export const OFFSET_HLP_TOTAL_SHARES = 40; // u128
 export const OFFSET_HLP_POSITION_SHARES = 72; // u128
 export const OFFSET_HLP_POSITION_PENDING = 88; // u128
 
-// Portfolio legs (open positions). Verified via the byte-sizes test.
-export const OFFSET_PORTFOLIO_LEGS = 228;
+// Portfolio legs (open positions). Verified via the byte-sizes test. v16.9.0
+// shifted these +112 (residual + funding-flow counters added to the header).
+export const OFFSET_PORTFOLIO_LEGS = 340;
 export const PORTFOLIO_LEG_SIZE = 144;
 export const PORTFOLIO_LEG_COUNT = 16;
 // Within a leg: active(u8)@0, asset_index(u32)@1, side(u8)@13, basis_pos_q(i128)@14.
