@@ -77,6 +77,10 @@ pub enum OpenPerpsError {
     /// A trade leg carried `fee_bps` below the market's configured fee floor
     /// (`[FEE_SEED, market]`). Raise the fee to at least the floor.
     TradingFeeBelowFloor = 25,
+    /// A trade would push a single wallet's net position in the asset past the
+    /// market's configured per-wallet cap (`SetRiskConfig`). Reduce the size, or
+    /// the wallet must de-risk first.
+    WalletPositionCapExceeded = 26,
 }
 
 impl From<OpenPerpsError> for ProgramError {

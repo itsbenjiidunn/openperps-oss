@@ -171,14 +171,13 @@ pub const TWAP_SEED: &[u8] = b"twap";
 /// liquidation, and the per-portfolio deposit cap.
 pub const HOUSE_CAP_SEED: &[u8] = b"housecap";
 
-/// PDA seed prefix for a market's dynamic OI gate. Full seeds:
-/// `[HOUSE_OI_SEED, market.key()]`. Optional, per-market: when set with a non-zero
-/// multiplier, the House net position per asset is additionally capped at
-/// `house_equity * oi_multiplier_bps / 10_000` (converted to base units at the live
-/// mark), so open interest is bounded by the LP capital actually backing the House
-/// and scales automatically as that capital grows or shrinks. Layered on top of the
-/// static [`HOUSE_CAP_SEED`] ceiling: the tighter of the two wins.
-pub const HOUSE_OI_SEED: &[u8] = b"houseoi";
+/// PDA seed prefix for a market's risk config (dynamic OI gate + per-wallet cap).
+/// Full seeds: `[RISK_CFG_SEED, market.key()]`. Optional, per-market: bounds the
+/// House net position per asset by `house_equity * oi_multiplier_bps / 10_000` (at
+/// the live mark) AND any single wallet's net position per asset by
+/// `max_base_position_per_wallet`. Layered on the static [`HOUSE_CAP_SEED`] ceiling;
+/// the tighter bound wins. Both knobs default to 0 (disabled) until set.
+pub const RISK_CFG_SEED: &[u8] = b"riskcfg";
 
 /// PDA seed prefix for a market's trading-fee floor. Full seeds:
 /// `[FEE_SEED, market.key()]`. Optional, per-market: when set, every PlaceOrder /
@@ -224,8 +223,8 @@ pub const TWAP_DISCRIMINATOR: [u8; 8] = *b"OPTWAP00";
 /// Magic bytes at the start of a [`HouseCapAccount`].
 pub const HOUSE_CAP_DISCRIMINATOR: [u8; 8] = *b"OPHOUSEC";
 
-/// Magic bytes at the start of a [`HouseOiCapAccount`].
-pub const HOUSE_OI_DISCRIMINATOR: [u8; 8] = *b"OPHOICAP";
+/// Magic bytes at the start of a [`MarketRiskConfig`].
+pub const RISK_CFG_DISCRIMINATOR: [u8; 8] = *b"OPRISKCF";
 
 /// Magic bytes at the start of a [`FeeConfigAccount`].
 pub const FEE_CONFIG_DISCRIMINATOR: [u8; 8] = *b"OPFEECFG";
@@ -452,55 +451,70 @@ pub fn house_cap_of(buf: &[u8]) -> Result<([u8; 32], u128), OpenPerpsError> {
     Ok((acc.market, u128::from_le_bytes(acc.max_base_position)))
 }
 
-/// Per-market dynamic OI gate: the House net open position per asset is also bounded
-/// by `house_marked_equity * oi_multiplier_bps / 10_000`, converted to base units at
-/// the live mark. This ties open interest to the LP capital ACTUALLY backing the
-/// House (it scales up as LPs deposit and the House earns, down as it loses), on top
-/// of the static [`HouseCapAccount`] absolute ceiling. `oi_multiplier_bps == 0`
-/// disables the dynamic gate (static-only). Byte arrays keep it alignment-1 / Pod.
+/// Per-market risk config: a dynamic OI gate plus a per-wallet position cap, both
+/// layered on the static [`HouseCapAccount`] absolute ceiling.
+///
+/// - `oi_multiplier_bps`: the House net open position per asset is also bounded by
+///   `house_marked_equity * oi_multiplier_bps / 10_000` (converted to base units at
+///   the live mark), so open interest scales with the LP capital ACTUALLY backing the
+///   House (up as LPs deposit and the House earns, down as it loses). 0 disables it.
+/// - `max_base_position_per_wallet`: the maximum net position (base units) any single
+///   portfolio may hold in one asset, so one concentrated winner cannot drain the
+///   House even within the OI cap. 0 disables it.
+///
+/// Byte arrays keep it alignment-1 and padding-free (Pod-safe).
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Pod, Zeroable)]
-pub struct HouseOiCapAccount {
+pub struct MarketRiskConfig {
     pub discriminator: [u8; 8],
     pub market: [u8; 32],
     /// OI cap as a multiple of House equity, in basis points (LE u64). 100_000 = 10x.
     pub oi_multiplier_bps: [u8; 8],
+    /// Max net position per wallet per asset, base units (LE u128). 0 = disabled.
+    pub max_base_position_per_wallet: [u8; 16],
 }
 
-impl HouseOiCapAccount {
+impl MarketRiskConfig {
     pub const LEN: usize = core::mem::size_of::<Self>();
     pub fn is_initialized(&self) -> bool {
-        self.discriminator == HOUSE_OI_DISCRIMINATOR
+        self.discriminator == RISK_CFG_DISCRIMINATOR
     }
 }
 
-/// Write/overwrite a market's dynamic OI multiplier (market-authority-authorized).
-pub fn set_house_oi_cap_buffer(
+/// Write/overwrite a market's risk config (market-authority-authorized).
+pub fn set_risk_config_buffer(
     buf: &mut [u8],
     market: [u8; 32],
     oi_multiplier_bps: u64,
+    max_base_position_per_wallet: u128,
 ) -> Result<(), OpenPerpsError> {
-    if buf.len() < HouseOiCapAccount::LEN {
+    if buf.len() < MarketRiskConfig::LEN {
         return Err(OpenPerpsError::AccountDataTooSmall);
     }
-    let acc: &mut HouseOiCapAccount = pod_from_bytes_mut(&mut buf[..HouseOiCapAccount::LEN])?;
-    acc.discriminator = HOUSE_OI_DISCRIMINATOR;
+    let acc: &mut MarketRiskConfig = pod_from_bytes_mut(&mut buf[..MarketRiskConfig::LEN])?;
+    acc.discriminator = RISK_CFG_DISCRIMINATOR;
     acc.market = market;
     acc.oi_multiplier_bps = oi_multiplier_bps.to_le_bytes();
+    acc.max_base_position_per_wallet = max_base_position_per_wallet.to_le_bytes();
     Ok(())
 }
 
-/// Read `(market, oi_multiplier_bps)` from an OI-cap PDA; both zero if uninitialized.
-pub fn house_oi_cap_of(buf: &[u8]) -> Result<([u8; 32], u64), OpenPerpsError> {
-    if buf.len() < HouseOiCapAccount::LEN {
+/// Read `(market, oi_multiplier_bps, max_base_position_per_wallet)` from a risk-config
+/// PDA; all zero if uninitialized.
+pub fn risk_config_of(buf: &[u8]) -> Result<([u8; 32], u64, u128), OpenPerpsError> {
+    if buf.len() < MarketRiskConfig::LEN {
         return Err(OpenPerpsError::AccountDataTooSmall);
     }
-    let acc: &HouseOiCapAccount = bytemuck::try_from_bytes(&buf[..HouseOiCapAccount::LEN])
+    let acc: &MarketRiskConfig = bytemuck::try_from_bytes(&buf[..MarketRiskConfig::LEN])
         .map_err(|_| OpenPerpsError::InvalidAccountData)?;
     if !acc.is_initialized() {
-        return Ok(([0u8; 32], 0));
+        return Ok(([0u8; 32], 0, 0));
     }
-    Ok((acc.market, u64::from_le_bytes(acc.oi_multiplier_bps)))
+    Ok((
+        acc.market,
+        u64::from_le_bytes(acc.oi_multiplier_bps),
+        u128::from_le_bytes(acc.max_base_position_per_wallet),
+    ))
 }
 
 /// The effective House net-position cap (base units) for one asset, combining the
@@ -508,7 +522,7 @@ pub fn house_oi_cap_of(buf: &[u8]) -> Result<([u8; 32], u64), OpenPerpsError> {
 /// neither is configured (so there is no cap at all).
 ///
 /// - `static_cap_base`: the [`HouseCapAccount`] value (base units); 0 = unset.
-/// - `oi_multiplier_bps`: the [`HouseOiCapAccount`] value; 0 = dynamic disabled.
+/// - `oi_multiplier_bps`: the [`MarketRiskConfig`] value; 0 = dynamic disabled.
 /// - `house_equity_quote`: the House portfolio's marked equity (quote atoms).
 /// - `mark_price_e6`: the asset's effective mark, [`PRICE_SCALE`]-scaled; 0 = no mark
 ///   available (dynamic disabled, since the base-unit conversion needs a price).
@@ -541,7 +555,7 @@ pub fn effective_house_cap_base(
 }
 
 #[cfg(test)]
-mod oi_cap_tests {
+mod risk_config_tests {
     use super::*;
 
     #[test]
@@ -602,13 +616,13 @@ mod oi_cap_tests {
     }
 
     #[test]
-    fn oi_cap_buffer_roundtrip() {
+    fn risk_config_buffer_roundtrip() {
         let market = [0x5A; 32];
-        let mut buf = vec![0u8; HouseOiCapAccount::LEN];
-        // Uninitialized reads as (zero, 0).
-        assert_eq!(house_oi_cap_of(&buf).unwrap(), ([0u8; 32], 0));
-        set_house_oi_cap_buffer(&mut buf, market, 100_000).unwrap();
-        assert_eq!(house_oi_cap_of(&buf).unwrap(), (market, 100_000));
+        let mut buf = vec![0u8; MarketRiskConfig::LEN];
+        // Uninitialized reads as (zero, 0, 0).
+        assert_eq!(risk_config_of(&buf).unwrap(), ([0u8; 32], 0, 0));
+        set_risk_config_buffer(&mut buf, market, 100_000, 5_000_000).unwrap();
+        assert_eq!(risk_config_of(&buf).unwrap(), (market, 100_000, 5_000_000));
     }
 }
 

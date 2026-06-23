@@ -29,8 +29,8 @@ use crate::{
         twap_observe_buffer, TwapState, TWAP_SEED,
         house_cap_of, set_house_cap_buffer, portfolio_abs_position_for_asset,
         HouseCapAccount, HOUSE_CAP_SEED,
-        house_oi_cap_of, set_house_oi_cap_buffer, effective_house_cap_base,
-        HouseOiCapAccount, HOUSE_OI_SEED,
+        risk_config_of, set_risk_config_buffer, effective_house_cap_base,
+        MarketRiskConfig, RISK_CFG_SEED,
         fee_config_of, set_fee_config_buffer, asset_effective_price,
         FeeConfigAccount, FEE_SEED,
         InsuranceConfig, INSURANCE_CFG_SEED, set_insurance_params_buffer,
@@ -452,10 +452,17 @@ pub fn process_instruction(
         OpenPerpsInstruction::SetMarketFee { min_fee_bps, bump } => {
             process_set_market_fee(program_id, accounts, min_fee_bps, bump)
         }
-        OpenPerpsInstruction::SetHouseOiCap {
+        OpenPerpsInstruction::SetRiskConfig {
             oi_multiplier_bps,
+            max_base_position_per_wallet,
             bump,
-        } => process_set_house_oi_cap(program_id, accounts, oi_multiplier_bps, bump),
+        } => process_set_risk_config(
+            program_id,
+            accounts,
+            oi_multiplier_bps,
+            max_base_position_per_wallet,
+            bump,
+        ),
     }
 }
 
@@ -567,19 +574,21 @@ fn process_set_market_fee(
 /// Only trades that INCREASE the House's |position| past the cap are rejected, so
 /// de-risking (reducing/closing) is always allowed even if already over the cap.
 #[allow(clippy::too_many_arguments)]
-fn enforce_house_cap(
+fn enforce_position_caps(
     program_id: &Pubkey,
     accounts: &[AccountInfo],
     cap_idx: usize,
-    oi_idx: usize,
+    risk_idx: usize,
     market_key: &Pubkey,
     asset_index: u32,
     house_abs_before: u128,
     house_data: &[u8],
+    user_abs_before: u128,
+    user_data: &[u8],
     mark_price_e6: u64,
 ) -> Result<(), OpenPerpsError> {
-    // Static absolute cap (base units) from the canonical [HOUSE_CAP_SEED, market]
-    // PDA at cap_idx. The account is mandatory and verified canonical (via
+    // Static absolute House cap (base units) from the canonical [HOUSE_CAP_SEED,
+    // market] PDA at cap_idx. The account is mandatory and verified canonical (via
     // find_program_address, NOT a caller bump), so it cannot be omitted or
     // substituted to bypass the cap; uninitialized or bound to another market means
     // no static cap (0).
@@ -605,43 +614,53 @@ fn enforce_house_cap(
         }
     };
 
-    // Dynamic OI multiplier (bps) from the canonical [HOUSE_OI_SEED, market] PDA at
-    // oi_idx. Same mandatory-canonical contract as the static cap; uninitialized or
-    // wrong market means the dynamic gate is disabled (0).
-    let oi_acc = accounts
-        .get(oi_idx)
+    // Risk config (OI multiplier + per-wallet cap) from the canonical [RISK_CFG_SEED,
+    // market] PDA at risk_idx. Same mandatory-canonical contract as the static cap;
+    // uninitialized or wrong market means both knobs are disabled (0).
+    let risk_acc = accounts
+        .get(risk_idx)
         .ok_or(OpenPerpsError::InvalidInstruction)?;
-    let (canonical_oi, _) =
-        find_program_address(&[HOUSE_OI_SEED, market_key.as_ref()], program_id);
-    if *oi_acc.key() != canonical_oi {
+    let (canonical_risk, _) =
+        find_program_address(&[RISK_CFG_SEED, market_key.as_ref()], program_id);
+    if *risk_acc.key() != canonical_risk {
         return Err(OpenPerpsError::InvalidAccountData);
     }
-    let oi_multiplier_bps = if unsafe { oi_acc.owner() } != program_id {
-        0
+    let (oi_multiplier_bps, max_wallet) = if unsafe { risk_acc.owner() } != program_id {
+        (0, 0)
     } else {
-        let d = oi_acc
+        let d = risk_acc
             .try_borrow_data()
             .map_err(|_| OpenPerpsError::InvalidAccountData)?;
-        let (mkt, mult) = house_oi_cap_of(&d)?;
+        let (mkt, oi, wallet) = risk_config_of(&d)?;
         if mkt != *market_key {
-            0
+            (0, 0)
         } else {
-            mult
+            (oi, wallet)
         }
     };
 
-    // Combine the static ceiling with the capital-relative dynamic cap (House marked
-    // equity * multiplier, converted to base units at the live mark). With neither
-    // configured there is no cap. Only exposure-INCREASING trades over the cap are
-    // rejected, so de-risking (reducing / closing) is always allowed even when
+    // House exposure: combine the static ceiling with the capital-relative dynamic
+    // cap (House marked equity * multiplier, converted to base units at the live
+    // mark). With neither configured there is no House cap. Only exposure-INCREASING
+    // trades over the cap are rejected, so de-risking is always allowed even when
     // already over the cap.
     let equity = house_marked_equity_haircut(house_data, 0)?;
-    let effective =
-        effective_house_cap_base(static_cap, oi_multiplier_bps, equity, mark_price_e6);
-    if let Some(cap) = effective {
+    if let Some(cap) =
+        effective_house_cap_base(static_cap, oi_multiplier_bps, equity, mark_price_e6)
+    {
         let house_abs_after = portfolio_abs_position_for_asset(house_data, asset_index)?;
         if house_abs_after > cap && house_abs_after > house_abs_before {
             return Err(OpenPerpsError::HouseExposureCapExceeded);
+        }
+    }
+
+    // Per-wallet cap: bound any single portfolio's net position per asset, so one
+    // concentrated winner cannot drain the House even within the OI cap. Exposure-
+    // increasing only (de-risking always allowed).
+    if max_wallet > 0 {
+        let user_abs_after = portfolio_abs_position_for_asset(user_data, asset_index)?;
+        if user_abs_after > max_wallet && user_abs_after > user_abs_before {
+            return Err(OpenPerpsError::WalletPositionCapExceeded);
         }
     }
     Ok(())
@@ -1686,9 +1705,10 @@ fn process_place_order(
         }
     };
 
-    // House per-asset exposure cap: capture the House's pre-trade position so the
-    // post-trade check rejects only exposure-INCREASING trades over the cap.
+    // Capture the pre-trade House AND user positions for this asset so the post-trade
+    // caps reject only exposure-INCREASING trades (de-risking is always allowed).
     let house_abs_before = portfolio_abs_position_for_asset(&house_data, asset_index)?;
+    let user_abs_before = portfolio_abs_position_for_asset(&user_data, asset_index)?;
 
     // Fee integrity: enforce the market's fee floor (the fee-config PDA trails the
     // House-cap at cap_idx+1), and price the fee notional off the honest oracle
@@ -1732,20 +1752,23 @@ fn process_place_order(
         _ => return Err(OpenPerpsError::InvalidInstructionData.into()),
     }
 
-    // The OI-cap PDA trails the fee-config (cap_idx -> house-cap, +1 -> fee-config,
-    // +2 -> OI-cap). The dynamic cap converts the House equity bound to base units at
-    // the honest oracle mark; a 0 mark disables only the dynamic half (static stays).
-    let oi_idx = cap_idx + 2;
+    // The risk-config PDA trails the fee-config (cap_idx -> house-cap, +1 -> fee-
+    // config, +2 -> risk-config). The dynamic OI cap converts the House equity bound
+    // to base units at the honest oracle mark; a 0 mark disables only the dynamic
+    // half (the static and per-wallet caps still apply).
+    let risk_idx = cap_idx + 2;
     let mark_price_e6 = asset_effective_price(&*market_data, asset_index)?;
-    enforce_house_cap(
+    enforce_position_caps(
         program_id,
         accounts,
         cap_idx,
-        oi_idx,
+        risk_idx,
         &market_key,
         asset_index,
         house_abs_before,
         &house_data,
+        user_abs_before,
+        &user_data,
         mark_price_e6,
     )?;
     Ok(())
@@ -1885,9 +1908,12 @@ fn process_place_batch_order(
     // each leg's asset, run the batch, then reject if any leg pushed the House
     // past the cap (exposure-increasing only; de-risking is allowed).
     let mut house_abs_before = [0u128; crate::instruction::MAX_BATCH_LEGS];
+    let mut user_abs_before = [0u128; crate::instruction::MAX_BATCH_LEGS];
     for (i, req) in requests.iter().enumerate().take(n) {
         house_abs_before[i] =
             portfolio_abs_position_for_asset(&house_data, req.asset_index as u32)?;
+        user_abs_before[i] =
+            portfolio_abs_position_for_asset(&user_data, req.asset_index as u32)?;
     }
 
     crate::state::batch_trade_buffer(
@@ -1898,21 +1924,23 @@ fn process_place_batch_order(
     )
     .map_v16()?;
 
-    let oi_idx = cap_idx + 2;
+    let risk_idx = cap_idx + 2;
     for (i, req) in requests.iter().enumerate().take(n) {
         // Per-leg honest mark for the dynamic cap's base-unit conversion (0 = no
-        // mark, so the dynamic half is disabled for that asset; the static cap and
-        // every other leg still apply).
+        // mark, so the dynamic OI half is disabled for that asset; the static and
+        // per-wallet caps and every other leg still apply).
         let mark_price_e6 = asset_effective_price(&*market_data, req.asset_index as u32)?;
-        enforce_house_cap(
+        enforce_position_caps(
             program_id,
             accounts,
             cap_idx,
-            oi_idx,
+            risk_idx,
             &market_key,
             req.asset_index as u32,
             house_abs_before[i],
             &house_data,
+            user_abs_before[i],
+            &user_data,
             mark_price_e6,
         )?;
     }
@@ -2789,31 +2817,33 @@ fn process_set_house_cap(
     Ok(())
 }
 
-/// Set the market's dynamic OI multiplier (a multiple of House marked equity, in
-/// bps; 100_000 = 10x). Only the market authority may call. The `[HOUSE_OI_SEED,
-/// market]` PDA is created on first use; a zero multiplier disables the dynamic
-/// gate. The trade handlers verify this PDA's canonical address, so the gate cannot
-/// be bypassed by omitting or substituting the account.
-fn process_set_house_oi_cap(
+/// Set the market's risk config: the dynamic OI multiplier (a multiple of House
+/// marked equity, bps; 100_000 = 10x) and the per-wallet position cap (base units).
+/// Only the market authority may call. The `[RISK_CFG_SEED, market]` PDA is created
+/// on first use; a zero value disables that knob. The trade handlers verify this
+/// PDA's canonical address, so it cannot be bypassed by omitting or substituting the
+/// account.
+fn process_set_risk_config(
     program_id: &Pubkey,
     accounts: &[AccountInfo],
     oi_multiplier_bps: u64,
+    max_base_position_per_wallet: u128,
     bump: u8,
 ) -> ProgramResult {
-    let [oi_pda, market, authority, _system_program, ..] = accounts else {
+    let [risk_pda, market, authority, _system_program, ..] = accounts else {
         return Err(OpenPerpsError::InvalidInstruction.into());
     };
     if !authority.is_signer() {
         return Err(OpenPerpsError::MissingRequiredSignature.into());
     }
-    if !oi_pda.is_writable() {
+    if !risk_pda.is_writable() {
         return Err(OpenPerpsError::InvalidAccountData.into());
     }
     if unsafe { market.owner() } != program_id {
         return Err(OpenPerpsError::InvalidAccountOwner.into());
     }
 
-    // Only the market authority may set the OI multiplier.
+    // Only the market authority may set the risk config.
     let market_key = *market.key();
     {
         let data = market
@@ -2830,38 +2860,43 @@ fn process_set_house_oi_cap(
 
     // Verify the PDA address, then create it on first use.
     let derived = create_program_address(
-        &[HOUSE_OI_SEED, market_key.as_ref(), &[bump]],
+        &[RISK_CFG_SEED, market_key.as_ref(), &[bump]],
         program_id,
     )
     .map_err(|_| OpenPerpsError::InvalidAccountData)?;
-    if *oi_pda.key() != derived {
+    if *risk_pda.key() != derived {
         return Err(OpenPerpsError::InvalidAccountData.into());
     }
 
-    if unsafe { oi_pda.owner() } != program_id {
+    if unsafe { risk_pda.owner() } != program_id {
         let rent = Rent::get()?;
-        let lamports = rent.minimum_balance(HouseOiCapAccount::LEN);
+        let lamports = rent.minimum_balance(MarketRiskConfig::LEN);
         let bump_arr = [bump];
         let seeds = [
-            Seed::from(HOUSE_OI_SEED),
+            Seed::from(RISK_CFG_SEED),
             Seed::from(market_key.as_ref()),
             Seed::from(bump_arr.as_ref()),
         ];
         let signer = Signer::from(seeds.as_ref());
         system_create_account(
             authority,
-            oi_pda,
+            risk_pda,
             lamports,
-            HouseOiCapAccount::LEN as u64,
+            MarketRiskConfig::LEN as u64,
             program_id,
             &[signer],
         )?;
     }
 
-    let mut data = oi_pda
+    let mut data = risk_pda
         .try_borrow_mut_data()
         .map_err(|_| OpenPerpsError::InvalidAccountData)?;
-    set_house_oi_cap_buffer(&mut data, market_key, oi_multiplier_bps)?;
+    set_risk_config_buffer(
+        &mut data,
+        market_key,
+        oi_multiplier_bps,
+        max_base_position_per_wallet,
+    )?;
     Ok(())
 }
 
