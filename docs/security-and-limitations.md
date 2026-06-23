@@ -62,6 +62,14 @@ in place, and the open items.
   one side. The trade handlers verify the cap PDA's canonical address, so it
   cannot be bypassed by omitting the account. The keeper also alerts on a vault
   that has run low on equity.
+- `SetRiskConfig` layers three more per-market gates on top, all enforced (and
+  canonical-verified, so omission-proof) in `PlaceOrder` / `PlaceBatchOrder`, each
+  exposure-increasing-only: a **dynamic OI cap** that also bounds the vault's net
+  position at `vault_equity * multiplier`, so open interest scales with the LP
+  capital actually backing the vault rather than a static number; a **per-wallet
+  position cap**, so one concentrated winner cannot drain the vault even within the
+  OI cap; and a **stale-pause** that blocks new risk-increasing trades once the mark
+  is un-refreshed past a per-market slot budget (de-risking always allowed).
 
 ## Open items
 

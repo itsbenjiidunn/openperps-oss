@@ -1,6 +1,6 @@
 # Oracle Hardening (design)
 
-Status: Hardening 1 is implemented; Hardening 2 and 3 are design. Most long-tail
+Status: Hardening 1 and 2 are implemented; Hardening 3 is design. Most long-tail
 oracle safety is per-market risk-modeling, not a switch in code. This spec covers
 the small on-chain hardenings that make a safe configuration enforceable, plus how
 the existing layered defenses compose.
@@ -61,14 +61,17 @@ the relayer, so "long-short any token" including violent movers is unaffected.
   working.
 - It is a config gate, no new math.
 
-## Hardening 2: stale-pause parameter
+## Hardening 2: stale-pause parameter (implemented)
 
-Partly present: the engine's freshness window already raises `LockActive`, which
-blocks **risk-increasing** trades when the mark is stale (de-risking stays
-allowed, which is correct, since trapping users who want out is worse). The
-addition is a per-market `max_staleness_pause_slots` that, once exceeded,
-requires a fresh oracle update before any **new** position. This is a parameter
-on the existing freshness gate, not new logic. Keep de-risking allowed throughout.
+The engine's freshness window already raises `LockActive`, which blocks
+**risk-increasing** trades when the mark is stale (de-risking stays allowed, which
+is correct, since trapping users who want out is worse). Hardening 2 adds a
+per-market `max_staleness_pause_slots` knob (in the `MarketRiskConfig` /
+`SetRiskConfig` PDA) that the trade handlers enforce: once the mark's `slot_last`
+is more than that many slots behind the current slot, a **new** risk-increasing
+trade is rejected (`OracleMarkStale`), while de-risking stays allowed. It is a
+per-market tightening of the engine freshness gate, applies to ALL oracle modes
+(MANUAL / DEX-EWMA / PYTH), and 0 disables it (rely on the engine window).
 
 ## Hardening 3 (optional): cross-source divergence band
 
@@ -91,11 +94,14 @@ and the asset's volatility. The hardenings above make the safe configuration
 Hardening 1 lives in `state.rs` (the `require_verifiable` header flag plus its
 reader/writer), `instruction.rs` (`SetRequireVerifiable`), and `processor.rs`
 (`process_set_require_verifiable` and the one-line gate in `process_accrue_asset`),
-with the SDK `setRequireVerifiableIx`. Hardening 2 (a `max_staleness_pause_slots`
-parameter on the engine config) and Hardening 3 (the divergence band in
-`process_crank_dex_spot`) remain.
+with the SDK `setRequireVerifiableIx`. Hardening 2 lives in `state.rs`
+(`max_staleness_pause_slots` in `MarketRiskConfig`, the `asset_slot_last` reader)
+and `processor.rs` (the gate in `enforce_position_caps`, fed the clock and the
+asset's `slot_last`), set via `SetRiskConfig`. Hardening 3 (the divergence band in
+`process_crank_dex_spot`) remains.
 
 ## Recommendation
 
-Hardening 1 shipped. Hardening 2 is a parameter on the existing freshness gate;
-Hardening 3 only once a market carries both a verifiable feed and a pool.
+Hardening 1 and 2 shipped. Hardening 3 only matters once a market carries both a
+verifiable feed and a pool (majors with a DEX pool), so it is a later layer, not a
+long-tail fix.

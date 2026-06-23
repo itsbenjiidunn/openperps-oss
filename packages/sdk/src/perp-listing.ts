@@ -36,10 +36,12 @@ import {
   feeConfigPda,
   houseCapPda,
   oracleAuthorityPda,
+  riskConfigPda,
   setDepositCapIx,
   setHouseCapIx,
   setMarketFeeIx,
   setOracleAuthorityIx,
+  setRiskConfigIx,
 } from "./instructions.ts";
 import type { OpenPerpsMarketCreationIntent } from "./intents.ts";
 import type { OpenPerpsCluster, OpenPerpsMarketConfig, OpenPerpsRiskTier } from "./config.ts";
@@ -221,6 +223,16 @@ export type BuildPerpMarketListingInput = ResolvePerpListingInput & {
   /// Append SetMarketFee with this trading-fee floor (min `fee_bps` per trade
   /// leg), so no one can craft a 0-fee trade on this market. Omit / 0 for no floor.
   minFeeBps?: bigint;
+  /// Append SetRiskConfig dynamic OI multiplier (bps of House equity; 100_000 =
+  /// 10x). Bounds open interest by the LP capital backing the House. 0 / omit = off.
+  oiMultiplierBps?: bigint;
+  /// SetRiskConfig per-wallet position cap (base units), so one winner cannot drain
+  /// the House even within the OI cap. 0 / omit = off.
+  maxBasePositionPerWallet?: bigint;
+  /// SetRiskConfig stale-pause: block new risk-increasing trades once the mark has
+  /// gone un-refreshed beyond this many slots (de-risking always allowed). 0 / omit
+  /// = off (rely on the engine freshness window).
+  maxStalenessPauseSlots?: bigint;
   /// Carried into the returned config for the registry.
   poolAddress?: string;
   dex?: string;
@@ -322,6 +334,27 @@ export function buildPerpMarketListing(input: BuildPerpMarketListingInput): Perp
         market: input.market,
         authority: input.authority,
         minFeeBps: input.minFeeBps,
+        bump,
+      }),
+    );
+  }
+  // SetRiskConfig (dynamic OI cap + per-wallet cap + stale-pause). Appended when any
+  // knob is requested; each knob is independently disabled by a 0 value.
+  if (
+    input.oiMultiplierBps !== undefined ||
+    input.maxBasePositionPerWallet !== undefined ||
+    input.maxStalenessPauseSlots !== undefined
+  ) {
+    const [pda, bump] = riskConfigPda(input.programId, input.market);
+    instructions.push(
+      setRiskConfigIx({
+        programId: input.programId,
+        riskConfigPda: pda,
+        market: input.market,
+        authority: input.authority,
+        oiMultiplierBps: input.oiMultiplierBps ?? 0n,
+        maxBasePositionPerWallet: input.maxBasePositionPerWallet ?? 0n,
+        maxStalenessPauseSlots: input.maxStalenessPauseSlots ?? 0n,
         bump,
       }),
     );
