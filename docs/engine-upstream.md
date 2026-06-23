@@ -7,9 +7,9 @@ keep the fork boundary auditable.
 ## Current baseline
 
 - upstream: aeyakovenko/percolator
-- engine generation: v16.8.5 (per `crates/engine/spec.md`)
-- pinned source commit: 7188eece639b694875f4272c5a382dc085133085 (branch master)
-- synced: 2026-06-01
+- engine generation: v16.9.0 (per `crates/engine/spec.md`)
+- pinned source commit: 91a46c0fbdee4fbecd178524e7759144ba336f62 (branch master)
+- synced: 2026-06-24
 
 The engine sources are vendored byte-for-byte:
 `crates/engine/src/v16.rs`, `src/lib.rs`, `src/wide_math.rs`, `spec.md`,

@@ -1,10 +1,10 @@
-# Risk Engine Spec (Source of Truth) — v16.8.5 Realizable Full Shared Cross-Margin
+# Risk Engine Spec (Source of Truth) — v16.9.0 Realizable Full Shared Cross-Margin
 
-**Design:** protected principal + full instance-local cross-margin + source-domain realizable PnL credit + source-credit liens + insurance-credit reservations + exact counterparty/insurance lien lifecycle + single-category residual-cure accounting + quote-value flow proof + reservation encumbrance proof + stock reconciliation + explicit rounding-residue sink + bounded recovery fallback envelope + expiry-reconciled backing buckets + non-double-counted insurance capacity + single-sided margin penalties + strict close priority + local market-side bankruptcy domains + mutable asset lifecycle + preemptible bankrupt close + durable close-progress ledger + pending-loss obligations + instance isolation.  
+**Design:** protected principal + full instance-local cross-margin + source-domain realizable PnL credit + source-credit liens + insurance-credit reservations + exact counterparty/insurance lien lifecycle + single-category residual-cure accounting + quote-value flow proof + reservation encumbrance proof + stock reconciliation + explicit rounding-residue sink + reserved recovery-fallback envelope (mechanism reserved; see req 31) + expiry-reconciled backing buckets + non-double-counted insurance capacity + single-sided margin penalties + exclusive per-domain close serialization + local market-side bankruptcy domains + mutable asset lifecycle + domain-serialized bankrupt close + durable close-progress ledger + pending-loss obligations + instance isolation.  
 **Scope:** one Percolator market-group instance for one quote-token vault, with up to `N` configured asset slots per `PortfolioAccount` and unbounded global account count. A UI MAY aggregate multiple instances, but each instance is an independent vault, solvency, credit, insurance, B, PnL, payout, and recovery domain.  
 **Status:** normative source of truth. Terms **MUST**, **MUST NOT**, **SHOULD**, and **MAY** are normative.
 
-This revision supersedes v16.8.4 for the product goal of Hyperliquid-like cross-margin UX in permissionless accounts while containing oracle/market failure by limiting usable PnL to realizable source-domain backing.
+This revision (v16.9.0) supersedes v16.8.11 by reconciling three specified-but-never-implemented mechanisms with the PROVEN implementation (formal-verification campaign, ~265 certified Kani artifacts: conservation lattice, function contracts, inductive closure, exact whole-state frames, no-steal composition in `scripts/no-steal-theorem.md`): (1) requirement 21's priority-preemption (`ClosePriority` tuple) is replaced by the implemented and machine-proven EXCLUSIVE close serialization — one active close per domain via the pending-domain-loss barrier (occupied-domain begin rejects before mutation), one active close per account, strictly monotone `close_id`, liveness via the immutable `max_close_slot` lifetime; hold-and-wait and livelock are impossible by construction rather than by comparison; (2) requirement 23's close-drift reserve is replaced by the implemented bounded-lifetime rule — `drift_consumed` remains a reserved, always-zero partition category (no engine path funds a drift reserve) so the ledger shape is forward-compatible; (3) requirement 31's recovery fallback pricing is marked RESERVED — the config knobs exist and are bound-validated but no code path may synthesize fallback prices until the mechanism lands with its own envelope proofs; recovery operates on the last authenticated effective price with proven accounting-neutral transitions. This revision supersedes v16.8.10 with reviewer-driven wording precision (no engine change): (1) realization is RELEASE pre-existing liens then CREATE-AND-CONSUME fresh backing — it never consumes a Released lien (the prior "release followed by consumption" wording mis-described the lien state machine); (2) flow-proof obligation is keyed on the FUNDED-STOCK DEBIT, not the destination — counterparty cure (no funded debit, pure reclassification to the derived junior pool) is exempt like forfeit, insurance cure (debits I) keeps its CloseInsuranceSpent flow proof, resolving the v16.8.10 exemption-predicate-vs-req-12 inconsistency; (3) reserve crystallizes on a REALIZED-loss settlement with basis rebase, not on mark-to-market refresh (no unrealized-drawdown ratchet, no double-charge); (4) the realization payout is characterized as realizable-limited and conservation-exact (proven across the full backing range) rather than monotone — the unbacked shortfall is refined back to the junior pool, and snapshot order-independence is stated precisely. v16.8.10 superseded v16.8.9 with one typing clarification: forfeit moves (impair/expiry) whose only credit is the derived closing class `junior_residual_pool` are proven by their `ReservationEncumbranceProof` plus the lockstepped `counterparty_backing_principal` aggregate delta and the residual identity — not by a `TokenValueFlowProof` credit entry, which would double-book a derived class; all moves with non-derived destinations keep their balanced flow proofs. v16.8.9 superseded v16.8.8 by closing the `counterparty_backing_principal` lifecycle over ALL transitions that move `Σ fresh_reserved_backing_num` (a v16.8.8 review showed conservation was stated only for reserve/consume): (1) the stock equality gains its defined CLOSING class `junior_residual_pool` (and `backing_provider_earnings`), so impairment and expiry are not orphanings — the forfeited principal lands atom-for-atom in the junior pool with `V` flat (engine-proven: the impair/expiry witnesses are value-neutral on `V/C_tot/I` and raise residual by exactly the forfeit); (2) the phantom "release (claim no longer owed): principal −X; C_tot += X" lifecycle line is REMOVED — reserve crystallizes a realized loss, so no internal backing→capital teardown exists or may be synthesized, and the only "release" is the lien un-pledge encumbrance relabel (no stock movement); (3) the lifecycle table now lists every transition with its lockstepped stock movement (external deposit/withdrawal, reserve, un-pledge, realize, cure, forfeit) and clarifies the reserve flow-proof transit label (`ExplicitBackedLoss`) does not name the destination class; (4) proof item 24's partition→class map is scoped per cure transition (transit classes net to zero at reconciliation points; no persistent sub-decomposition of `support_consumed` is required). The v16.8.8 corrections (below) stand. This revision supersedes v16.8.7 with stock-class typing closures for the terminal-realization mechanism: (1) `counterparty_backing_principal` is named as a FIRST-CLASS persistent stock class in the §5.1.1 equality (not merely a senior-stack inequality term), so the conservation of counterparty-backed realization is explicit — `C_tot += X` is funded by `counterparty_backing_principal -= X`, with the full reserve→realize→release lifecycle and its `TokenValueFlowProof` transit classes (`ExplicitBackedLoss`, `CloseCounterpartyCreditConsumed`) spelled out; (2) requirement 13's flow-proof ban is scoped to the `BackingBucket` encumbrance counters only, explicitly NOT the `counterparty_backing_principal` stock class or the transit value classes; (3) realization EXTENT is defined (consume the backed face, credit `floor(r·F)`, burn the consumed face so it never also enters the receipt pool; only non-source-backed PnL survives into the pool) with `total_paid ≤ face` and idempotence; (4) §14 proof items 22/24 are rewritten to the single-category (`support_consumed`) model with a pinned partition→close-flow-class map so per-class reconciliation (proof 102) is well-defined. The earlier v16.8.7 corrections (below) stand. This revision supersedes v16.8.6 with two corrections. (1) The residual partition no longer lists `consumed_counterparty_credit_lien_backing` as a separate subtrahend: ALL source-credit lien consumption used for residual cure (counterparty- or insurance-backed) is recorded exactly once as `support_consumed`, `insurance_spent` records direct insurance allocation only, and partition categories are pairwise disjoint — the prior text put counterparty-backed liens inside `SupportPool` while also requiring a standalone counterparty subtrahend, so one conforming reading subtracted the same cure twice and finalized closes with uncovered loss. (2) The v16.8.6 senior classification of recoverable counterparty backing principal is completed with a terminal-realization rule: at resolved close, an account's outstanding source-credit claims MUST be realized against their domain backing at the current credit rate before the claim face enters the resolved payout receipt pool; otherwise resolution would strip claims that were realizable in Live (the wind-down releases the backing to the provider while the winner is haircut from a pool that excludes it). v16.8.6 classified recoverable counterparty backing principal as senior-side vault stock (`C_tot + I + backing_provider_earnings + counterparty_backing_principal <= V`, excluded from the junior residual pool and the resolved payout snapshot); v16.8.5 superseded v16.8.4 for the product goal of Hyperliquid-like cross-margin UX in permissionless accounts while containing oracle/market failure by limiting usable PnL to realizable source-domain backing.
 
 ```text
 Inside one trusted instance:
@@ -25,7 +25,7 @@ usable_positive_credit_from_source_domain
 
 If an attacker manipulates asset A, positive PnL on A is usable only up to what the A losing side can conservatively pay or has actually reserved. If A counterparties bankrupt, A-source credit falls, credit liens become impaired, and dependent portfolios must deleverage, liquidate, or ADL. The attacker cannot transform uncollectible A paper profit into global B-asset purchasing power.
 
-Every top-level instruction is atomic. Any failed precondition, checked arithmetic guard, missing authenticated proof, context-capacity overflow, stale close snapshot, invalid credit bound, invalid credit lien, invalid insurance-credit reservation, invalid insurance-capacity accounting, invalid backing-expiry reconciliation, invalid lien lifecycle accounting, dual-classified lien accounting, invalid quote-value flow proof, invalid reservation encumbrance proof, invalid stock reconciliation, unattributed rounding residue, invalid recovery fallback envelope, margin penalty double-counting, invalid hedge envelope, non-total close priority, unresolved pending loss, cross-instance netting attempt, or conservative-failure condition MUST roll back every mutation performed by that instruction. Before commit, every successful instruction MUST leave all global, asset, account, certificate, credit, lien, close-state, insurance, payout, obligation, and attribution invariants true.
+Every top-level instruction is atomic. Any failed precondition, checked arithmetic guard, missing authenticated proof, context-capacity overflow, stale close snapshot, invalid credit bound, invalid credit lien, invalid insurance-credit reservation, invalid insurance-capacity accounting, invalid backing-expiry reconciliation, invalid lien lifecycle accounting, dual-classified lien accounting, invalid quote-value flow proof, invalid reservation encumbrance proof, invalid stock reconciliation, unattributed rounding residue, invalid recovery configuration, margin penalty double-counting, invalid hedge envelope, close-serialization conflict, unresolved pending loss, cross-instance netting attempt, or conservative-failure condition MUST roll back every mutation performed by that instruction. Before commit, every successful instruction MUST leave all global, asset, account, certificate, credit, lien, close-state, insurance, payout, obligation, and attribution invariants true.
 
 -------------------------------------------------------------------------------
 0. Non-negotiable requirements
@@ -42,8 +42,8 @@ Every top-level instruction is atomic. Any failed precondition, checked arithmet
 9. **Credit liens for durable use:** withdrawals, conversions, fee payment from PnL, residual curing, and risk-increasing trades that depend on positive PnL MUST reserve or consume a source-domain credit lien. Maintenance-only credit MAY be soft but must revalidate on every favorable action.
 10. **No double use of credit or insurance:** the same source-domain claim, backing, or insurance atom cannot support two accounts, two domains, two instances, or two risk increases at once. Face claim, backing reservation, and insurance reservation are tracked by a single canonical ledger and released only by deterministic rules.
 11. **Insurance-backed lien lifecycle is explicit:** creating, consuming, releasing, impairing, or recovering an insurance-backed source-credit lien MUST update `valid_liened_insurance_num`, `impaired_liened_insurance_num`, `insurance_credit_reserved_num`, insurance spend/reservation counters, and vault/insurance balances exactly once.
-12. **Insurance-backed credit is insurance in close accounting:** an insurance-backed source-credit lien consumed for residual cure MUST be recorded exactly once as `insurance_spent` or an explicitly equivalent insurance-lien-cure term. It MUST NOT also count as `consumed_counterparty_credit_lien_backing`, `support_consumed`, or generic source-credit support.
-13. **Quote-value conservation is mandatory:** every instruction that moves quote-token value internally or externally MUST produce a balanced `TokenValueFlowProof` over quote atoms only. Encumbrances, source-credit reservations, backing buckets, and liens are not value classes and MUST be proven by a separate `ReservationEncumbranceProof`.
+12. **Source-credit lien cures are counted once:** a source-credit lien consumed for residual cure — counterparty-backed or insurance-backed — MUST reduce the residual partition through exactly one category (`support_consumed`); no second partition category may subtract the same cure. An insurance-backed lien cure MUST additionally debit the insurance stock and the domain insurance budget exactly once through a balanced `TokenValueFlowProof` (`CloseInsuranceSpent`); that funding debit is stock accounting, not a residual-partition subtraction, and MUST NOT also be booked as direct `insurance_spent`.
+13. **Quote-value conservation is mandatory:** every instruction that moves quote-token value internally or externally MUST produce a balanced `TokenValueFlowProof` over quote atoms only. The BANNED labels are the `BackingBucket`/reservation ENCUMBRANCE counters (`fresh_unliened_backing_num`, `valid_liened_backing_num`, `insurance_credit_reserved_num`, …) and the lien lifecycle relabelings — these are encumbrance over already-counted value, are not value classes, and MUST be proven by a separate `ReservationEncumbranceProof`. This ban does NOT extend to the quote-atom stock class `counterparty_backing_principal` or the transit value classes (`CloseSupportConsumed`, `CloseCounterpartyCreditConsumed`, `CloseInsuranceSpent`, `ExplicitBackedLoss`, `BResidualBooked`): those ARE declared value classes that appear in `TokenValueFlowProof` and stock reconciliation (see §5.1.1). The encumbrance proof and the value-flow proof move in lockstep but are separately typed.
 14. **Rounding residue has an explicit sink:** every quote-atom settlement/allocation residue caused by conservative rounding MUST be credited to `SettlementRoundingResidue` or `UnallocatedProtocolSurplus` in the same `TokenValueFlowProof`. Rounding residue MUST NOT create account health, source-credit backing, insurance credit, payout entitlement, or senior capital unless later moved through an explicit balanced transition.
 15. **No open unbacked loss curing:** open positive PnL may support health, but it MUST NOT cure a bankruptcy residual unless a source-domain backing lien is consumed and the supporting face claim is locked/burned.
 16. **Stale backing fails closed:** stale, expired, unrefreshed, or unverifiable counterparty backing contributes zero to source-domain usable credit. Expiry, lien consumption, lien release, and lien impairment MUST update both bucket-local and source-domain aggregates exactly once and MUST NOT increase `available_backing_num` or credit rate unless new independently proven backing is added.
@@ -51,9 +51,9 @@ Every top-level instruction is atomic. Any failed precondition, checked arithmet
 18. **Credit rates are deterministic:** source-domain rates are derived from claim bounds and reserved backing; they are not caller supplied and cannot be made favorable by stale certificates.
 19. **Pending loss obligations survive exit:** a participant reducing/clearing weight while exposed to pending residual must escrow, settle, or pull forward its obligation, including drift share, before weight removal.
 20. **Penalty accounting is single-sided:** for every health, initial, trade, and withdrawal check, each penalty, pending obligation, impaired lien, or reserve MUST appear either as an equity deduction or as a requirement add-on, never both.
-21. **Preemptible close ownership:** bankrupt close ownership is deterministic, preemptible, and a strict total order. Hold-and-wait cycles and equal-priority livelock are forbidden.
-22. **Immutable close lifecycle:** `close_id`, `gross_loss_at_close_start`, `drift_reference_slot`, and `max_close_slot` persist across preemption, restart, and recovery until finalized or safely canceled.
-23. **Bounded close drift:** post-start adverse price/funding/K/F drift is measured from immutable `drift_reference_slot`, covered by a close-drift reserve, and bounded by immutable `max_close_slot`.
+21. **Exclusive close ownership:** bankrupt close ownership is deterministic and exclusive: at most one active close per domain (enforced by the pending-domain-loss barrier; a second close beginning in an occupied domain MUST reject before mutation) and at most one active close per account. Each close holds exactly one domain, so hold-and-wait cycles are impossible by construction; contention rejects rather than compares, so livelock is impossible. Liveness is guaranteed by the immutable `max_close_slot` lifetime bound: an expired close routes to recovery rather than holding its domain. *(v16.9.0: replaces the earlier priority-preemption design, which was never implemented; the exclusive-barrier mechanism is the proven implementation.)*
+22. **Immutable close lifecycle:** `close_id`, `gross_loss_at_close_start`, `drift_reference_slot`, and `max_close_slot` persist across restart and recovery until finalized or safely canceled. `close_id` is strictly monotone per account: a new close never reuses an id.
+23. **Bounded close lifetime:** every close is bounded by the immutable `max_close_slot` (`drift_reference_slot + cfg_max_bankrupt_close_lifetime_slots`); an expired close MUST route to recovery instead of continuing. `drift_consumed` is a reserved residual-partition category and MUST remain zero in v16.9 (no engine path funds a drift reserve); the partition equation carries the column so a future drift-reserve mechanism can be added without re-shaping the ledger.
 24. **Residual durability before exposure clear:** basis, OI, PnL, and side weights for bankrupt close MUST NOT be freed until residuals are booked, backed, explicitly assigned, or recovered.
 25. **No ADL/finalization split:** quantity ADL, closing-account exposure clear, and ledger advancement MUST be atomic or protected by a non-preemptible finalization barrier.
 26. **No fee seniority:** uncollectible protocol/liquidation fees are dropped or forgiven, never paid from insurance or socialized through B.
@@ -61,7 +61,7 @@ Every top-level instruction is atomic. Any failed precondition, checked arithmet
 28. **No arbitrary correlation trust:** hedge credit is allowed only under deterministic buckets and exact conservative portfolio envelopes proving worst-case combined loss is covered after the credit.
 29. **Mutable asset lifecycle is fail-closed:** activation requires full envelope proofs, bounded rate limits, support weight `1.0`, fresh source-domain credit ledgers, and certificate fail-closed handling.
 30. **Dead-leg exit:** public markets MUST expose bounded owner-callable dead-leg forfeit/detach for terminal/recovery assets.
-31. **Recovery fallback envelope is numeric and activation-validated:** fallback recovery prices MUST be produced by a deterministic configured function of the last authenticated recovery reference price, capped by `cfg_max_recovery_fallback_deviation_bps`, and bounded by explicit per-account and per-domain recovery value-transfer formulas. A word-only “bounded” recovery haircut is non-compliant.
+31. **Recovery fallback pricing is reserved (not implemented):** v16.9 implements no synthetic fallback price computation. Recovery operates on the last authenticated effective price and the proven accounting-neutral recovery transitions; states where bounded progress cannot continue route to terminal recovery / resolution. The configuration knobs (`cfg_recovery_fallback_price_enabled`, `cfg_max_recovery_fallback_deviation_bps`, `cfg_recovery_fallback_envelope_enabled`) are bound-validated and RESERVED for a future fallback mechanism; until such a mechanism exists with its own envelope proofs, no code path may consume them to synthesize prices.
 32. **Hints are discovery only:** omitted or stale positions MUST NOT improve account health.
 33. **Full account refresh is bounded by `N`:** every user-favorable operation MUST refresh the full active portfolio first.
 34. **No full-market atomic work:** public instructions MUST NOT scan all accounts or all opposing accounts.
@@ -87,7 +87,7 @@ CREDIT_RATE_SCALE            = 1_000_000_000_000
 MAX_BPS                      = 10_000
 ```
 
-Every live, resolved, raw target, effective engine, recovery, and fallback price MUST satisfy:
+Every live, resolved, raw target, effective engine, and recovery price (and any future fallback price) MUST satisfy:
 
 ```text
 0 < price <= MAX_ORACLE_PRICE
@@ -141,9 +141,9 @@ cfg_asset_set_lifecycle == MutableWithActivationProofs
 cfg_instance_isolation == true
 cfg_public_liveness_profile == CrankForward
 cfg_permissionless_recovery_enabled == true
-cfg_recovery_fallback_price_enabled == true
+cfg_recovery_fallback_price_enabled == true       # RESERVED (v16.9.0): see req 31
 cfg_max_recovery_fallback_deviation_bps <= MAX_RECOVERY_FALLBACK_DEVIATION_BPS
-cfg_recovery_fallback_envelope_enabled == true
+cfg_recovery_fallback_envelope_enabled == true    # RESERVED (v16.9.0): see req 31
 cfg_owner_dead_leg_forfeit_enabled == true
 cfg_full_refresh_required_for_favorable_actions == true
 cfg_stale_certificate_penalty_enabled == true
@@ -160,7 +160,7 @@ cfg_max_bankrupt_close_lifetime_slots > 0
 cfg_credit_lien_revalidation_required == true
 cfg_backing_freshness_buckets == 1
 cfg_pending_obligation_settlement_chunks > 0
-cfg_close_drift_reserve_enabled == true
+cfg_close_drift_reserve_enabled == true   # RESERVED (v16.9.0): no drift-reserve mechanism exists; knob validated, unused
 cfg_close_drift_anchor_mode == ImmutableReferenceSlot
 ```
 
@@ -200,7 +200,7 @@ require price_funding_loss_X + liq_fee_X <= mm_req_X
 
 Close-progress envelope MUST cover every allowed portfolio and close domain set, not merely per asset.
 
-Recovery fallback envelope MUST be validated at initialization and asset activation. For each Active or activating asset:
+RESERVED (v16.9.0): the recovery-fallback price mechanism below is specified for a FUTURE revision and is NOT implemented; no engine path synthesizes fallback prices, and activation does not run this validation. The envelope is retained as the normative design any future implementation MUST satisfy before the reserved config knobs may be consumed. For each Active or activating asset (future mechanism):
 
 ```text
 RecoveryReferencePrice(asset) =
@@ -228,7 +228,7 @@ require recovery_value_transfer_bound(account)
                 * cfg_max_recovery_fallback_deviation_bps / 10_000)
 ```
 
-The bound is a user-facing value-transfer cap, not a solvency claim. If the fallback function, reference price, or proof is unavailable or nonrepresentable, the asset cannot activate and fallback recovery cannot be used. Fallback recovery that would exceed the envelope MUST make no positive junior payout and MUST route to authenticated recovery pricing, dead-leg forfeiture, or terminal recovery preserving senior invariants. A public market with only a word-level “bounded recovery risk” and no numeric envelope is non-compliant.
+The bound is a user-facing value-transfer cap, not a solvency claim. In v16.9.0 (mechanism not implemented), recovery uses only the last authenticated effective price; states where bounded progress cannot continue route to dead-leg forfeiture or terminal recovery/resolution, all proven accounting-neutral. Any future fallback implementation MUST satisfy the envelope above before activation may rely on it; a fallback that would exceed the envelope MUST make no positive junior payout and MUST route to authenticated recovery pricing, dead-leg forfeiture, or terminal recovery preserving senior invariants.
 
 -------------------------------------------------------------------------------
 2. Core source-domain credit model
@@ -331,7 +331,7 @@ For long-profit claims, use long-side best-case price/basis; for short-profit cl
 
 ### 2.2 Counterparty backing and insurance-credit reservations
 
-A full account refresh computes, for every domain where the account currently owes loss, a deterministic `BackingReservationPlan`.
+A full account refresh computes, for every domain where the account currently owes loss, a deterministic `BackingReservationPlan`. Reservation crystallization fires on a REALIZED-loss settlement event (K/F leg settlement, close, bankruptcy booking), not on every mark-to-market refresh: the settlement that reserves the loss also rebases the leg basis (`k_snap`, `f_snap` advanced to the settled point), so the same loss is never re-derived and re-reserved on a later settlement — there is no unrealized-drawdown ratchet and no double-charge. A round-trip that recovers the mark does NOT un-reserve backing (reserve is irreversible per §5.1.1); the recovery instead settles as fresh positive PnL — a new source-attributed claim that realizes against the domain's backing at terminal like any other, so the recovered value returns to the account through realization, not through a (nonexistent) reservation teardown.
 
 A backing reservation may be funded only by:
 - senior capital `C_i`;
@@ -527,11 +527,13 @@ consume_lien_from_insurance(reservation, amount):
         record external_insurance_payout in the TokenValueFlowProof
     else:
         record exactly one internal quote-value credit in the TokenValueFlowProof and close/payout state:
-            - CloseProgressLedger.insurance_spent for residual cure; or
+            - CloseProgressLedger.support_consumed for source-credit-lien residual cure
+              (the insurance funding side is the I/insurance-budget debit recorded
+              by the CloseInsuranceSpent flow class); or
             - staged_domain_insurance_debit for staged close insurance; or
             - ResolvedPayoutLedger.paid_effective for resolved/recovery payout.
-        The same consume MUST NOT increment consumed_counterparty_credit_lien_backing,
-        support_consumed, or any generic source-credit-support term.
+        The same consume MUST NOT increment more than one residual-partition
+        category, and MUST NOT also be booked as direct insurance_spent.
 
     reduce or finalize the locked source-domain claim in the same atomic step
     require all senior and quote-value and reservation-conservation invariants hold after the debit
@@ -645,8 +647,9 @@ Close/support classification for source-credit liens:
 ```text
 if backing_source == CounterpartyBucket and purpose == ResidualCure:
     consumed scaled backing amount is converted to cure_atoms = amount / BOUND_SCALE
-    cure_atoms is recorded as consumed_counterparty_credit_lien_backing
-    and MUST NOT be recorded as insurance_spent.
+    cure_atoms is recorded EXACTLY ONCE as source-credit support (support_consumed)
+    and MUST NOT be recorded as insurance_spent or as any additional
+    counterparty-specific partition subtrahend.
 
 if backing_source == CounterpartyBucket and purpose in {Withdrawal, Conversion, Fee, Payout}:
     consumed scaled backing amount is converted to support_atoms = amount / BOUND_SCALE
@@ -663,9 +666,10 @@ if backing_source == CounterpartyBucket and purpose in {Withdrawal, Conversion, 
     alone never sends quote tokens out of the vault.
 
 if backing_source == InsuranceReservation and purpose == ResidualCure:
-    consumed value is recorded as insurance_spent
-    and MUST NOT be recorded as consumed_counterparty_credit_lien_backing,
-    support_consumed, or generic source-credit support.
+    cure_atoms is recorded EXACTLY ONCE as source-credit support (support_consumed);
+    the insurance funding is debited from I and the domain insurance budget through
+    the CloseInsuranceSpent flow class and MUST NOT also be booked as direct
+    insurance_spent or any second partition category.
 
 if backing_source == InsuranceReservation and purpose in {Withdrawal, Conversion, Fee, Payout}:
     consumed value is recorded as external insurance-backed payout/spend
@@ -1028,10 +1032,9 @@ remaining_residual =
   - b_loss_booked
   - explicit_loss_assigned
   - pending_obligation_credits
-  - consumed_counterparty_credit_lien_backing
 ```
 
-`insurance_spent` includes direct insurance allocation and insurance-backed source-credit lien consumption used for residual cure. `consumed_counterparty_credit_lien_backing` includes only counterparty-backed source-credit lien consumption. These two categories are disjoint. A residual-cure instruction that increments both or neither for the same consumed lien MUST revert.
+Every cured quote atom appears in exactly one partition category. `support_consumed` includes ALL source-credit lien consumption used for residual cure — counterparty-backed and insurance-backed alike — each consumed lien recorded exactly once; there is no separate `consumed_counterparty_credit_lien_backing` subtrahend (a partition listing one would double-subtract every counterparty-lien cure that also flows through the support pool). `insurance_spent` records direct insurance allocation only. The categories are pairwise disjoint: a residual-cure instruction that books one consumed lien into two partition categories, or into none, MUST revert. The insurance-funding side of an insurance-backed lien cure is recorded exactly once by the insurance stock debit, the domain insurance budget ledger, and the `CloseInsuranceSpent` value-flow class — never as a second residual-partition subtraction. Structurally, the total residual reduction across categories MUST equal the value the close's `TokenValueFlowProof`s actually moved or recognized; subtracting more from residual than the flow proofs account for is an invariant failure.
 
 Accrual and mark updates that only change unrealized PnL, K/F indexes, effective prices, claim bounds, or credit rates normally move no quote-token value. They MUST provide the relevant reservation/bound proofs and may have an empty zero-value `TokenValueFlowProof`.
 
@@ -1043,6 +1046,8 @@ At genesis, asset activation, mode transition, recovery entry/exit, resolved-pay
 V =
     C_tot
   + I
+  + counterparty_backing_principal
+  + backing_provider_earnings
   + cancel_deposit_escrow_total
   + pending_obligation_escrow_total
   + close_staged_quote_reserve_total
@@ -1051,9 +1056,60 @@ V =
   + settlement_rounding_residue_total
   + protocol_fee_payable_total
   + unallocated_protocol_surplus
+  + junior_residual_pool
 ```
 
-The exact classes included in stock reconciliation are implementation-configured but immutable after initialization. Every quote atom in `V` MUST appear in exactly one stock class. `settlement_rounding_residue_total` and `unallocated_protocol_surplus` are protocol-owned, non-user-claim value and MUST NOT be used as proof of account health, source-credit backing, insurance credit, hedge collateral, or payout entitlement unless explicitly moved through a balanced `TokenValueFlowProof` and all senior invariants remain true.
+`junior_residual_pool` is the defined CLOSING class of the equality: the vault value that funds junior positive-PnL payouts and haircut support. It has no independent counter — its O(1) ledger IS the residual computation `V − (all other configured classes)`, and per-class reconciliation (proof 102) derives it rather than cross-checking it. Naming it makes the equality total: every transition that removes atoms from another class without moving external tokens credits the junior pool implicitly and exactly, so "no listed class rose" is never an orphaning. `backing_provider_earnings` follows the same lockstep discipline: crediting provider earnings draws `junior_residual_pool -= X ; backing_provider_earnings += X` (vault flat, gated on the pool actually covering it), and earnings withdrawal is external (`backing_provider_earnings -= X ; V -= X`).
+
+The exact classes included in stock reconciliation are implementation-configured but immutable after initialization. Every quote atom in `V` MUST appear in exactly one stock class. A configuration whose close paths credit internal transit value (`CloseSupportConsumed`, `CloseInsuranceSpent`, `CloseCounterpartyCreditConsumed`, `BResidualBooked`) MUST include those transit classes in its configured set (or prove them zero at every reconciliation point).
+
+`counterparty_backing_principal` is a FIRST-CLASS persistent quote-atom stock class — the equation above is authoritative, not just a senior-stack inequality. It holds the quote atoms physically resting behind every Fresh counterparty backing bucket (its quantity equals `Σ fresh_reserved_backing_num / BOUND_SCALE`; impaired and consumed encumbrance counters are NOT in this class — their atoms have already moved to another class per the lifecycle below). This resolves the apparent conservation gap in counterparty-backed realization: when realization credits `C_tot` by `X` with `V` flat, the funding debit is named — `counterparty_backing_principal` drops by exactly `X` — so the equality is preserved by an intra-stock transfer, not by minting senior capital. EVERY transition that changes `Σ fresh_reserved_backing_num` has exactly one lockstepped stock movement; the lifecycle is closed and conservative:
+
+```text
+external deposit (provider):    V += X ; counterparty_backing_principal += X
+reserve (capital-backed loss):  C_tot -= X ; counterparty_backing_principal += X ; V flat
+                                (the persistent stock movement; the flow proof's
+                                 transit label for the capital debit is
+                                 ExplicitBackedLoss — the transit label does NOT
+                                 name the destination class, which is always
+                                 counterparty_backing_principal at reserve)
+lien create / lien un-pledge:   NO stock movement (encumbrance relabel between
+                                fresh_unliened and valid_liened inside the same
+                                class; ReservationEncumbranceProof only — this is
+                                the helper named release_lien, and it must not be
+                                confused with any teardown)
+consume - realize:              counterparty_backing_principal -= X ; C_tot += X ; V flat
+                                (transit class: CloseCounterpartyCreditConsumed)
+consume - counterparty cure:    counterparty_backing_principal -= X ;
+                                junior_residual_pool += X (the cured loss no longer
+                                drains the pool) ; V flat ; partition category:
+                                support_consumed. NO funded-stock debit -> NO
+                                TokenValueFlowProof (pure reclassification, same
+                                proof family as forfeit below)
+consume - insurance cure:       I -= X ; junior_residual_pool += X ; V flat ;
+                                partition category: support_consumed ; funded by
+                                an insurance-stock debit -> balanced
+                                TokenValueFlowProof, transit CloseInsuranceSpent
+forfeit (impair or expiry):     counterparty_backing_principal -= X ;
+                                junior_residual_pool += X ; V flat
+                                (impaired/expired encumbrance counters keep audit
+                                 history but hold no stock)
+external withdrawal (provider): counterparty_backing_principal -= X ; V -= X
+```
+
+There is NO internal teardown that returns reserved backing to the loser's `C_tot`. Reserve crystallizes a realized loss — the loser's negative PnL is offset at reserve time, so the principal thereafter belongs to the claim side until consumed, forfeited, or externally withdrawn. A "release reservation to capital" operation does not exist and MUST NOT be synthesized; the only helper named "release" is the lien un-pledge relabel above, which moves no stock.
+
+Across reserve→realize the loser's senior capital funds the winner's payout: `C_tot` nets zero, `counterparty_backing_principal` nets zero, `V` is flat throughout. Across impair/expiry the forfeited principal lands, atom for atom, in `junior_residual_pool` (proven: `counterparty_lien_impair`/`backing_expiry` are value-neutral on `V/C_tot/I` and raise the residual pool by exactly the forfeit). `counterparty_backing_principal` MUST NOT be counted in the junior residual pool used for haircut support or the resolved payout snapshot — atoms are in exactly one of the two classes at any time, and only forfeit/cure transitions move them from principal to pool.
+
+Flow-proof obligation is keyed on the FUNDED-STOCK DEBIT, not on the destination. A transition that debits NO funded stock class (no `V`, `I`, or `C_tot` movement) — the impair/expiry forfeits AND counterparty residual cure — does not emit a `TokenValueFlowProof`: it only reclassifies `counterparty_backing_principal` into the derived closing class `junior_residual_pool` (which has no independent counter, so a flow credit to it would be double bookkeeping). These moves are proven by their `ReservationEncumbranceProof`, the lockstepped O(1) aggregate delta on `counterparty_backing_principal`, and the residual identity re-checked at the same transition (the impair/expiry witnesses assert all three; the counterparty-cure ledger advance asserts the partition equality). Every transition that DOES debit a funded stock class still requires its balanced `TokenValueFlowProof`: reserve (`C_tot` debit, transit `ExplicitBackedLoss`), realize and external withdrawal (`C_tot`/`V`), insurance cure (`I` debit, transit `CloseInsuranceSpent`), and external deposit. This is why requirement 12's "MUST … through a balanced `TokenValueFlowProof`" applies to the insurance-backed cure (it debits `I`) but not to the counterparty cure (pure reclassification): the two cure branches differ precisely in whether a funded stock class moves.
+
+Note the typing distinction that makes this legal under requirement 13's flow-proof ban: the BANNED labels are the `BackingBucket` ENCUMBRANCE counters (`fresh_unliened_backing_num`, `valid_liened_backing_num`, …), which are an encumbrance VIEW proven only by `ReservationEncumbranceProof` and never appear in a `TokenValueFlowProof`. The `counterparty_backing_principal` STOCK class and the `CloseCounterpartyCreditConsumed` / `ExplicitBackedLoss` TRANSIT classes are quote-atom value classes and DO appear in flow proofs and stock reconciliation. Backing realization therefore moves real quote value through declared value classes, while the encumbrance bookkeeping moves in lockstep through the separate reservation proof.
+
+The resolved-payout exclusion of `counterparty_backing_principal` from the junior pool is sound only because outstanding source-credit claims realize against their backing at terminal: at resolved close, BEFORE an account's positive claim face enters the resolved payout receipt pool, the engine MUST realize the account's source-credit claims against their domain backing at the current credit rate. The realization sequence is: (1) RELEASE the account's pre-existing liens (un-pledge `valid_liened -> fresh_unliened`, returning the backing to Fresh); (2) CREATE-AND-CONSUME a fresh lien against that now-unliened backing for the realizable face, atomically, crediting account capital. It does NOT consume a released lien (the lien state machine forbids consuming a Released lien); release and create-and-consume act on different liens. The un-pledge step exists only so the realizable estimate matches what fresh consumption can actually deliver (a still-pledged lien would over-estimate and dead-lock the close). The realization is conservation-exact (`counterparty_backing_principal -= X`, `C_tot += X`, `V` unchanged), so the payout snapshot does not depend on realization order, and only backing net of realizable claims is provider-recoverable. The insurance-backed branch balances symmetrically (`I -= X`, `C_tot += X`, transit `CloseInsuranceSpent`).
+
+Realization EXTENT and no-double-pay are exact. For a domain claim of face `F` backed at credit rate `r`, realization consumes the backed face and credits realizable value `floor(r·F)` to account capital; the consumed face is burned from the account's positive PnL in the SAME step, so it can never also enter the receipt pool. The unbacked shortfall `F − floor(r·F)` is NOT paid to this winner — the realizable-limited thesis holds that unbacked positive PnL is not the winner's value. It is NOT stranded either: the realized face is refined out of the junior bound (`refine_resolved_unreceipted_bound`), so the shortfall returns to `junior_residual_pool` and is redistributed to the remaining junior claimants through the higher post-refine haircut rate. Conservation is exact (verified across the full backing range, including the dust regime, by `backed_winner_close_conserves_across_all_backing_levels`): `total_paid(account) ≤ original_face(account)`, the vault never over-drains or strands, and the close always finalizes (no DoS). Realization is idempotent: a second realization finds the source claims consumed and the backing spent, so it credits zero.
+
+DISTRIBUTION CHARACTERIZATION (not a solvency property; a deliberate design choice): payout is realizable-limited, so it is NOT monotone in backing at the boundary. A claim with zero backing realizes nothing (rate 0 → realize is skipped) and its full face enters the receipt pool, drawing the junior haircut; a claim with dust backing realizes the dust and refines the rest back to the pool, so its OWN payout is ~dust while the rest of its face benefits the other junior claimants. This is the intended consequence of "usable PnL is limited to realizable source-domain backing" — it is conservation-safe and griefer-funded (raising a domain's backing requires the griefer to deposit real atoms via `deposit_fresh_counterparty_backing`, which fund the very payout), not a loss-of-funds or DoS. Order-independence holds for the SNAPSHOT (residual and bound at capture), not for the exact per-account payment, which can depend on whether a lazy receipt realizes before or after a bucket expiry; the snapshot invariance is what the conservation proofs assert. Stripping a claim that was realizable in Live by resolving the market is forbidden. If a deployment instead keeps backing principal inside `C_tot`, it MUST rewrite both the senior-stack relation and the realization steps as intra-`C_tot` transfers (loser `−X`, winner `+X`) and drop `counterparty_backing_principal` as a separate class — but it MUST NOT mix the two models. `settlement_rounding_residue_total` and `unallocated_protocol_surplus` are protocol-owned, non-user-claim value and MUST NOT be used as proof of account health, source-credit backing, insurance credit, hedge collateral, or payout entitlement unless explicitly moved through a balanced `TokenValueFlowProof` and all senior invariants remain true.
 
 Public instructions that do not touch quote-token stock classes MAY rely on a valid prior stock reconciliation plus a balanced zero-value flow proof. Recovery MUST perform direct stock reconciliation before clearing recovery state. A balanced flow proof alone is insufficient if stock classes are not already reconciled.
 
@@ -1300,30 +1356,30 @@ certified_equity_maint < certified_maintenance_req
 
 A liquidation instruction refreshes the full account and builds a deterministic plan from all active legs and source-credit liens. Plan order is deterministic: highest risk contribution, largest deficit, asset id ascending, Long before Short.
 
-Cross-close preemption priority is a strict total order:
+Cross-close contention is resolved by EXCLUSIVE serialization, not priority comparison (v16.9.0, matching the proven implementation):
 ```text
-ClosePriority = (
-    higher certified_liq_deficit first,
-    then higher total_abs_risk_notional,
-    then older drift_reference_slot or close_start_slot,
-    then lower immutable close_id
-)
+At most one active close per domain:
+    begin_close in an occupied domain (pending-domain-loss barrier != 0)
+    MUST reject with LockActive BEFORE any mutation.
+At most one active close per account.
+close_id is strictly monotone per account: a new close never reuses an id;
+    an instruction carrying the active close_id is a continuation, not a conflict.
+Liveness: an active close past its immutable max_close_slot MUST route to
+    recovery instead of holding its domain.
 ```
-Two different closes MUST NOT compare equal. If `close_id` is equal, the instruction is a continuation of the same close, not a conflict. Before mutation, reserve current-step domains. Lower-priority conflicts preempt/unwind; higher-priority conflicts mutate nothing. Equal-priority livelock is impossible by construction and MUST be covered by TDD.
+Each close holds exactly one domain barrier, so hold-and-wait cycles are impossible by construction. Contention rejects rather than compares, so equal-priority livelock cannot exist. (Proven: occupied-domain rejection-before-mutation, per-account exclusion, monotone identity stamping, and the bounded-lifetime expiry route.)
 
 Initial close sets immutable:
 
 ```text
 DriftReferenceSlot = snapshot_slot
 MaxCloseSlot = DriftReferenceSlot + cfg_max_bankrupt_close_lifetime_slots
-CloseDriftReserve >= max adverse close drift through MaxCloseSlot
-CloseDriftReserve is a reserved loss-capacity amount backed by one or more of:
-    eligible account support,
-    domain insurance capacity,
-    source-credit lien backing consumed by the close,
-    B-booking headroom with eligible weight,
-    or deterministic recovery capacity.
-If it cannot be backed, ordinary close continuation MUST route to recovery.
+drift_consumed = 0   # RESERVED partition category (v16.9.0): no engine path
+                     # funds a drift reserve; the column is carried so a future
+                     # drift-reserve mechanism can land without re-shaping the
+                     # ledger. Until then adverse drift is bounded by the
+                     # lifetime rule: continuation past MaxCloseSlot MUST route
+                     # to recovery.
 ```
 
 Before any account close, finalization, or weight reduction, `settle_pending_obligations(account)` handles all pending barriers by escrow, settlement, pulled-forward loss, or recovery.
@@ -1349,11 +1405,11 @@ CanceledIfCured
 `SupportPool` for residual curing may include only:
 - senior capital;
 - durable realized nonjunior gains;
-- settlement-quality counterparty-backed source-credit liens whose backing is consumed atomically;
+- settlement-quality source-credit liens (counterparty- or insurance-backed) whose backing is consumed atomically;
 - legs being closed/finalized with matching source-domain loss recognition;
 - finalized pending-obligation surplus.
 
-Insurance-backed source-credit liens are excluded from SupportPool and are handled only by `InsuranceAllocated`, `insurance_spent`, or resolved/recovery payout accounting.
+Every source-credit lien consumed through SupportPool reduces the residual partition exactly once, as `support_consumed`. An insurance-backed lien consumed this way additionally debits I and the domain insurance budget exactly once (`CloseInsuranceSpent`); direct insurance allocation (`InsuranceAllocated`) is the separate `insurance_spent` partition category and never overlaps with lien-funded support.
 
 Open non-candidate positive PnL and soft maintenance credit are excluded from residual curing.
 
@@ -1377,7 +1433,6 @@ remaining_residual =
   - b_loss_booked
   - explicit_loss_assigned
   - pending_obligation_credits
-  - consumed_counterparty_credit_lien_backing
 ```
 
 Every continuation first checks owner cure-and-cancel after any cancel escrow. New deposits intended for cancel MUST NOT be consumed as support before this check. Continuation must strictly reduce close progress after worst-case drift; otherwise route to recovery.
@@ -1514,9 +1569,9 @@ Wrappers MUST expose full refresh, hinted crank, bounded catchup, active close c
 19. `insurance_backed_lien_consume_release_impair_conserves_canonical_ledger`.
 20. `insurance_backed_lien_consumption_decrements_source_credit_reservation_and_total_available_once`.
 21. `impaired_insurance_lien_remains_reserved_and_unavailable_until_reconciled`.
-22. `insurance_backed_residual_cure_lien_counts_exactly_once_as_insurance_spent`.
+22. `source_credit_lien_cure_counts_once_as_support_consumed_with_one_funding_flow_class` (a residual cure by a source-credit lien — counterparty- OR insurance-backed — reduces the residual partition through exactly one category, `support_consumed`; the insurance-backed branch additionally debits `I`/domain budget through exactly one funding flow class, `CloseInsuranceSpent`, and MUST NOT also book direct `insurance_spent`; the counterparty branch's funding transit class is `CloseCounterpartyCreditConsumed`).
 23. `insurance_backed_lien_never_counts_as_both_support_and_insurance`.
-24. `close_residual_partition_classifies_counterparty_and_insurance_lien_consumption_disjointly`.
+24. `close_residual_partition_sum_equals_close_flow_class_sum_under_pinned_partition_to_class_map` (every cured atom lands in exactly one residual-partition category and exactly one close flow class under the fixed map: `support_consumed → {CloseSupportConsumed for non-lien support, CloseCounterpartyCreditConsumed for counterparty-lien cure, CloseInsuranceSpent for insurance-lien cure}`, direct `insurance_spent → CloseInsuranceSpent`, `b_loss_booked → BResidualBooked`, `explicit_loss_assigned → ExplicitBackedLoss`. The map is checked PER RESIDUAL-CURE TRANSITION by that transition's balanced `TokenValueFlowProof` — the close ledger persists only the partition category totals, and the transit flow classes net to zero at every reconciliation point, so proof 102's per-class O(1) reconciliation applies to persistent classes only and needs no persistent three-way sub-decomposition of `support_consumed`; `CloseCounterpartyCreditConsumed` is the pinned counterparty-cure/realization transit counterpart).
 25. `token_value_flow_proof_balances_internal_insurance_transfers`.
 26. `internal_insurance_transfer_requires_exactly_one_credit_entry`.
 27. `recovery_consumed_insurance_lien_decrements_v_on_external_payout`.
@@ -1541,7 +1596,7 @@ Wrappers MUST expose full refresh, hinted crank, bounded catchup, active close c
 46. `lien_creation_requires_required_backing_le_available_backing`.
 47. `locked_face_claim_excluded_from_soft_credit`.
 48. `withdrawal_uses_conservative_sum_negative_leg_pnl_not_aggregate_min`.
-49. `close_drift_reserve_has_backed_loss_capacity_or_recovers`.
+49. `close_past_max_close_slot_routes_to_recovery_and_drift_consumed_is_zero` *(v16.9.0: replaces the drift-reserve capacity item; the reserve mechanism is reserved/unimplemented)*.
 50. `pulled_forward_obligation_credit_not_socialized_again`.
 51. `claim_bound_bucket_formula_never_understates_source_domain_claims`.
 52. `claim_bound_bucket_out_of_range_fails_closed_or_rebuckets`.
@@ -1563,8 +1618,8 @@ Wrappers MUST expose full refresh, hinted crank, bounded catchup, active close c
 68. `aggregate_due_drift_credit_is_O_1_before_b_booking`.
 69. `participant_finalization_pulls_forward_pending_obligation`.
 70. `phantom_weight_without_backing_reverts`.
-71. `preemptive_close_priority_prevents_hold_and_wait_deadlock`.
-72. `preempted_close_restart_cannot_double_book_residual`.
+71. `close_begin_rejects_occupied_domain_and_second_account_close_before_mutation` *(v16.9.0: exclusion replaces preemption; proven)*.
+72. `close_id_monotone_and_canceled_ledger_with_partial_booking_rejected` *(v16.9.0: restart identity + dropped-residual rejection; proven)*.
 73. `close_id_and_drift_anchors_immutable`.
 74. `bankrupt_close_progress_decreases_net_of_close_drift`.
 75. `cure_and_cancel_checks_before_consuming_new_deposit`.
@@ -1593,7 +1648,7 @@ Wrappers MUST expose full refresh, hinted crank, bounded catchup, active close c
 98. `settlement_rounding_residue_credits_unallocated_surplus_and_flow_proof_balances`.
 99. `rounding_residue_never_used_for_health_backing_insurance_or_payout`.
 100. `stock_reconciliation_includes_settlement_rounding_residue_total`.
-101. `funded_close_drift_reserve_maps_to_one_stock_or_reservation_class`.
+101. `drift_consumed_partition_category_is_reserved_and_zero` *(v16.9.0)*.
 102. `per_class_stock_reconciliation_matches_o1_ledgers_where_available`.
 -------------------------------------------------------------------------------
 15. Audit summary and intended tradeoff

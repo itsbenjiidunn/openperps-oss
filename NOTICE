@@ -12,8 +12,8 @@ that project and remain under Apache-2.0. See LICENSE.
 
 The engine sources (src/v16.rs, src/lib.rs, src/wide_math.rs, spec.md,
 tests, kani-list.json) are vendored byte-for-byte from upstream commit
-051e268f5bda1e46fe0a03d006b05d0743a86618 (branch master, spec v16.8.5,
-synced 2026-06-04). They are not hand-modified. Only crates/program is
+91a46c0fbdee4fbecd178524e7759144ba336f62 (branch master, spec v16.9.0,
+synced 2026-06-24). They are not hand-modified. Only crates/program is
 OpenPerps's own wrapper, adapted to the engine's current API. Wrapper-specific
 adaptations are documented in docs/engine-upstream.md.
 
