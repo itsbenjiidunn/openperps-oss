@@ -451,8 +451,8 @@ pub fn house_cap_of(buf: &[u8]) -> Result<([u8; 32], u128), OpenPerpsError> {
     Ok((acc.market, u128::from_le_bytes(acc.max_base_position)))
 }
 
-/// Per-market risk config: a dynamic OI gate plus a per-wallet position cap, both
-/// layered on the static [`HouseCapAccount`] absolute ceiling.
+/// Per-market risk config: a dynamic OI gate, a per-wallet position cap, and a
+/// stale-pause, all layered on the static [`HouseCapAccount`] absolute ceiling.
 ///
 /// - `oi_multiplier_bps`: the House net open position per asset is also bounded by
 ///   `house_marked_equity * oi_multiplier_bps / 10_000` (converted to base units at
@@ -461,6 +461,10 @@ pub fn house_cap_of(buf: &[u8]) -> Result<([u8; 32], u128), OpenPerpsError> {
 /// - `max_base_position_per_wallet`: the maximum net position (base units) any single
 ///   portfolio may hold in one asset, so one concentrated winner cannot drain the
 ///   House even within the OI cap. 0 disables it.
+/// - `max_staleness_pause_slots`: once the mark has gone un-refreshed for more than
+///   this many slots, NEW risk-increasing trades are blocked (de-risking stays
+///   allowed), a per-market tightening of the engine's own freshness window. 0
+///   disables it (rely on the engine window only).
 ///
 /// Byte arrays keep it alignment-1 and padding-free (Pod-safe).
 #[repr(C)]
@@ -472,6 +476,9 @@ pub struct MarketRiskConfig {
     pub oi_multiplier_bps: [u8; 8],
     /// Max net position per wallet per asset, base units (LE u128). 0 = disabled.
     pub max_base_position_per_wallet: [u8; 16],
+    /// Stale-pause: max slots the mark may go un-refreshed before NEW risk-increasing
+    /// trades are blocked (de-risking stays allowed). LE u64. 0 = disabled.
+    pub max_staleness_pause_slots: [u8; 8],
 }
 
 impl MarketRiskConfig {
@@ -487,6 +494,7 @@ pub fn set_risk_config_buffer(
     market: [u8; 32],
     oi_multiplier_bps: u64,
     max_base_position_per_wallet: u128,
+    max_staleness_pause_slots: u64,
 ) -> Result<(), OpenPerpsError> {
     if buf.len() < MarketRiskConfig::LEN {
         return Err(OpenPerpsError::AccountDataTooSmall);
@@ -496,24 +504,26 @@ pub fn set_risk_config_buffer(
     acc.market = market;
     acc.oi_multiplier_bps = oi_multiplier_bps.to_le_bytes();
     acc.max_base_position_per_wallet = max_base_position_per_wallet.to_le_bytes();
+    acc.max_staleness_pause_slots = max_staleness_pause_slots.to_le_bytes();
     Ok(())
 }
 
-/// Read `(market, oi_multiplier_bps, max_base_position_per_wallet)` from a risk-config
-/// PDA; all zero if uninitialized.
-pub fn risk_config_of(buf: &[u8]) -> Result<([u8; 32], u64, u128), OpenPerpsError> {
+/// Read `(market, oi_multiplier_bps, max_base_position_per_wallet,
+/// max_staleness_pause_slots)` from a risk-config PDA; all zero if uninitialized.
+pub fn risk_config_of(buf: &[u8]) -> Result<([u8; 32], u64, u128, u64), OpenPerpsError> {
     if buf.len() < MarketRiskConfig::LEN {
         return Err(OpenPerpsError::AccountDataTooSmall);
     }
     let acc: &MarketRiskConfig = bytemuck::try_from_bytes(&buf[..MarketRiskConfig::LEN])
         .map_err(|_| OpenPerpsError::InvalidAccountData)?;
     if !acc.is_initialized() {
-        return Ok(([0u8; 32], 0, 0));
+        return Ok(([0u8; 32], 0, 0, 0));
     }
     Ok((
         acc.market,
         u64::from_le_bytes(acc.oi_multiplier_bps),
         u128::from_le_bytes(acc.max_base_position_per_wallet),
+        u64::from_le_bytes(acc.max_staleness_pause_slots),
     ))
 }
 
@@ -619,10 +629,10 @@ mod risk_config_tests {
     fn risk_config_buffer_roundtrip() {
         let market = [0x5A; 32];
         let mut buf = vec![0u8; MarketRiskConfig::LEN];
-        // Uninitialized reads as (zero, 0, 0).
-        assert_eq!(risk_config_of(&buf).unwrap(), ([0u8; 32], 0, 0));
-        set_risk_config_buffer(&mut buf, market, 100_000, 5_000_000).unwrap();
-        assert_eq!(risk_config_of(&buf).unwrap(), (market, 100_000, 5_000_000));
+        // Uninitialized reads as (zero, 0, 0, 0).
+        assert_eq!(risk_config_of(&buf).unwrap(), ([0u8; 32], 0, 0, 0));
+        set_risk_config_buffer(&mut buf, market, 100_000, 5_000_000, 150).unwrap();
+        assert_eq!(risk_config_of(&buf).unwrap(), (market, 100_000, 5_000_000, 150));
     }
 }
 
@@ -682,6 +692,18 @@ pub fn asset_effective_price(buf: &[u8], asset_index: u32) -> Result<u64, OpenPe
         .get(asset_index as usize)
         .ok_or(OpenPerpsError::InvalidAccountData)?;
     Ok(slot.engine.asset.effective_price.get())
+}
+
+/// The asset slot's last mark-update slot (`slot_last`), or 0 if unavailable. The
+/// wrapper's per-market stale-pause gate compares it against the current slot to
+/// block NEW risk-increasing trades once the mark has gone un-refreshed past the
+/// market's `max_staleness_pause_slots` budget (de-risking stays allowed).
+pub fn asset_slot_last(buf: &[u8], asset_index: u32) -> Result<u64, OpenPerpsError> {
+    let (_, markets) = market_engine_split(buf)?;
+    let slot = markets
+        .get(asset_index as usize)
+        .ok_or(OpenPerpsError::InvalidAccountData)?;
+    Ok(slot.engine.asset.slot_last.get())
 }
 
 /// Per-market insurance fund config. The insurance capital itself lives in the

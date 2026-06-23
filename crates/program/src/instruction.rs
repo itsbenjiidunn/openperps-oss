@@ -502,14 +502,16 @@ pub enum OpenPerpsInstruction {
         min_fee_bps: u64,
         bump: u8,
     },
-    /// Set (or update) the market's risk config: a dynamic OI multiplier and a
-    /// per-wallet position cap. The House net position per asset is bounded by
-    /// `house_equity * oi_multiplier_bps / 10_000` (base units at the live mark), and
-    /// any single wallet's net position per asset by `max_base_position_per_wallet`.
-    /// Both are layered on the static SetHouseCap ceiling (the tighter wins).
-    /// Market-authority-signed; a zero value disables that knob. The PDA is created
-    /// on first use, and the trade handlers verify its canonical address, so it
-    /// cannot be bypassed by omitting the trailing account.
+    /// Set (or update) the market's risk config: a dynamic OI multiplier, a
+    /// per-wallet position cap, and a stale-pause. The House net position per asset
+    /// is bounded by `house_equity * oi_multiplier_bps / 10_000` (base units at the
+    /// live mark), any single wallet's net position per asset by
+    /// `max_base_position_per_wallet`, and NEW risk-increasing trades are blocked once
+    /// the mark has gone un-refreshed past `max_staleness_pause_slots` (de-risking
+    /// stays allowed). The caps are layered on the static SetHouseCap ceiling (the
+    /// tighter wins). Market-authority-signed; a zero value disables that knob. The
+    /// PDA is created on first use, and the trade handlers verify its canonical
+    /// address, so it cannot be bypassed by omitting the trailing account.
     ///
     /// Accounts:
     ///   0. `[writable]` risk-config PDA (`[RISK_CFG_SEED, market]`)
@@ -519,6 +521,7 @@ pub enum OpenPerpsInstruction {
     SetRiskConfig {
         oi_multiplier_bps: u64,
         max_base_position_per_wallet: u128,
+        max_staleness_pause_slots: u64,
         bump: u8,
     },
     /// Set the market's `require_verifiable` flag. When enabled, `AccrueAsset`
@@ -941,7 +944,8 @@ impl OpenPerpsInstruction {
             tag::SET_RISK_CONFIG => Ok(Self::SetRiskConfig {
                 oi_multiplier_bps: read_u64(rest, 0)?,
                 max_base_position_per_wallet: read_u128(rest, 8)?,
-                bump: read_u8(rest, 24)?,
+                max_staleness_pause_slots: read_u64(rest, 24)?,
+                bump: read_u8(rest, 32)?,
             }),
             _ => Err(OpenPerpsError::InvalidInstruction),
         }

@@ -81,6 +81,10 @@ pub enum OpenPerpsError {
     /// market's configured per-wallet cap (`SetRiskConfig`). Reduce the size, or
     /// the wallet must de-risk first.
     WalletPositionCapExceeded = 26,
+    /// A NEW risk-increasing trade was attempted while the market's mark has gone
+    /// un-refreshed past its `max_staleness_pause_slots` budget (`SetRiskConfig`).
+    /// Wait for a fresh oracle update, or de-risk (always allowed).
+    OracleMarkStale = 27,
 }
 
 impl From<OpenPerpsError> for ProgramError {

@@ -1289,21 +1289,25 @@ export function riskConfigPda(
 export function encodeSetRiskConfig(
   oiMultiplierBps: bigint,
   maxBasePositionPerWallet: bigint,
+  maxStalenessPauseSlots: bigint,
   bump: number,
 ): Buffer {
-  const data = new Uint8Array(1 + 8 + 16 + 1);
+  const data = new Uint8Array(1 + 8 + 16 + 8 + 1);
   data[0] = Tag.SetRiskConfig;
   writeU64LE(data, 1, oiMultiplierBps);
   writeU128LE(data, 9, maxBasePositionPerWallet);
-  data[25] = bump;
+  writeU64LE(data, 25, maxStalenessPauseSlots);
+  data[33] = bump;
   return Buffer.from(data);
 }
 
 /// Set a market's risk config: a dynamic OI multiplier (House open interest per asset
 /// bounded by `house_equity * oiMultiplierBps / 10_000`, base units at the live mark,
-/// so it scales with the LP capital backing the House) and a per-wallet position cap
-/// (`maxBasePositionPerWallet`, base units, so one winner cannot drain the House).
-/// Both layered on the static SetHouseCap ceiling (the tighter wins). Market-authority-
+/// so it scales with the LP capital backing the House), a per-wallet position cap
+/// (`maxBasePositionPerWallet`, base units, so one winner cannot drain the House), and
+/// a stale-pause (`maxStalenessPauseSlots`: new risk-increasing trades are blocked once
+/// the mark has gone un-refreshed beyond N slots, de-risking always allowed). The caps
+/// are layered on the static SetHouseCap ceiling (the tighter wins). Market-authority-
 /// signed; a zero value disables that knob (oiMultiplierBps 100_000 = 10x). The PDA is
 /// created on first use, and the trade handlers verify its canonical address, so it
 /// cannot be bypassed by omitting the trailing account.
@@ -1318,6 +1322,9 @@ export function setRiskConfigIx(args: {
   oiMultiplierBps: bigint;
   /** Max net position per wallet per asset, base units (0 disables). */
   maxBasePositionPerWallet: bigint;
+  /** Max slots the mark may go un-refreshed before new risk-increasing trades are
+   * blocked (de-risking always allowed); 0 disables. */
+  maxStalenessPauseSlots: bigint;
   bump: number;
 }): TransactionInstruction {
   return new TransactionInstruction({
@@ -1331,6 +1338,7 @@ export function setRiskConfigIx(args: {
     data: encodeSetRiskConfig(
       args.oiMultiplierBps,
       args.maxBasePositionPerWallet,
+      args.maxStalenessPauseSlots,
       args.bump,
     ),
   });

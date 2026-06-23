@@ -31,7 +31,7 @@ use crate::{
         HouseCapAccount, HOUSE_CAP_SEED,
         risk_config_of, set_risk_config_buffer, effective_house_cap_base,
         MarketRiskConfig, RISK_CFG_SEED,
-        fee_config_of, set_fee_config_buffer, asset_effective_price,
+        fee_config_of, set_fee_config_buffer, asset_effective_price, asset_slot_last,
         FeeConfigAccount, FEE_SEED,
         InsuranceConfig, INSURANCE_CFG_SEED, set_insurance_params_buffer,
         insurance_params_of, set_insurance_pending_buffer, insurance_domain_index,
@@ -455,12 +455,14 @@ pub fn process_instruction(
         OpenPerpsInstruction::SetRiskConfig {
             oi_multiplier_bps,
             max_base_position_per_wallet,
+            max_staleness_pause_slots,
             bump,
         } => process_set_risk_config(
             program_id,
             accounts,
             oi_multiplier_bps,
             max_base_position_per_wallet,
+            max_staleness_pause_slots,
             bump,
         ),
     }
@@ -586,6 +588,8 @@ fn enforce_position_caps(
     user_abs_before: u128,
     user_data: &[u8],
     mark_price_e6: u64,
+    now_slot: u64,
+    mark_slot_last: u64,
 ) -> Result<(), OpenPerpsError> {
     // Static absolute House cap (base units) from the canonical [HOUSE_CAP_SEED,
     // market] PDA at cap_idx. The account is mandatory and verified canonical (via
@@ -625,19 +629,20 @@ fn enforce_position_caps(
     if *risk_acc.key() != canonical_risk {
         return Err(OpenPerpsError::InvalidAccountData);
     }
-    let (oi_multiplier_bps, max_wallet) = if unsafe { risk_acc.owner() } != program_id {
-        (0, 0)
-    } else {
-        let d = risk_acc
-            .try_borrow_data()
-            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
-        let (mkt, oi, wallet) = risk_config_of(&d)?;
-        if mkt != *market_key {
-            (0, 0)
+    let (oi_multiplier_bps, max_wallet, max_staleness_pause_slots) =
+        if unsafe { risk_acc.owner() } != program_id {
+            (0, 0, 0)
         } else {
-            (oi, wallet)
-        }
-    };
+            let d = risk_acc
+                .try_borrow_data()
+                .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+            let (mkt, oi, wallet, staleness) = risk_config_of(&d)?;
+            if mkt != *market_key {
+                (0, 0, 0)
+            } else {
+                (oi, wallet, staleness)
+            }
+        };
 
     // House exposure: combine the static ceiling with the capital-relative dynamic
     // cap (House marked equity * multiplier, converted to base units at the live
@@ -654,13 +659,25 @@ fn enforce_position_caps(
         }
     }
 
-    // Per-wallet cap: bound any single portfolio's net position per asset, so one
-    // concentrated winner cannot drain the House even within the OI cap. Exposure-
-    // increasing only (de-risking always allowed).
-    if max_wallet > 0 {
+    // The per-wallet cap and the stale-pause both key off the user's post-trade
+    // position; read it once if either is active. Both are exposure-INCREASING only,
+    // so de-risking (reducing / closing) is always allowed.
+    if max_wallet > 0 || max_staleness_pause_slots > 0 {
         let user_abs_after = portfolio_abs_position_for_asset(user_data, asset_index)?;
-        if user_abs_after > max_wallet && user_abs_after > user_abs_before {
+        let user_increasing = user_abs_after > user_abs_before;
+        // Per-wallet cap: one concentrated winner cannot drain the House even within
+        // the OI cap.
+        if max_wallet > 0 && user_abs_after > max_wallet && user_increasing {
             return Err(OpenPerpsError::WalletPositionCapExceeded);
+        }
+        // Stale-pause: block NEW risk-increasing exposure once the mark has gone
+        // un-refreshed past the market's budget (a per-market tightening of the
+        // engine's freshness window).
+        if max_staleness_pause_slots > 0
+            && user_increasing
+            && now_slot.saturating_sub(mark_slot_last) > max_staleness_pause_slots
+        {
+            return Err(OpenPerpsError::OracleMarkStale);
         }
     }
     Ok(())
@@ -1758,6 +1775,8 @@ fn process_place_order(
     // half (the static and per-wallet caps still apply).
     let risk_idx = cap_idx + 2;
     let mark_price_e6 = asset_effective_price(&*market_data, asset_index)?;
+    let mark_slot_last = asset_slot_last(&*market_data, asset_index)?;
+    let now_slot = Clock::get()?.slot;
     enforce_position_caps(
         program_id,
         accounts,
@@ -1770,6 +1789,8 @@ fn process_place_order(
         user_abs_before,
         &user_data,
         mark_price_e6,
+        now_slot,
+        mark_slot_last,
     )?;
     Ok(())
 }
@@ -1925,11 +1946,13 @@ fn process_place_batch_order(
     .map_v16()?;
 
     let risk_idx = cap_idx + 2;
+    let now_slot = Clock::get()?.slot;
     for (i, req) in requests.iter().enumerate().take(n) {
-        // Per-leg honest mark for the dynamic cap's base-unit conversion (0 = no
-        // mark, so the dynamic OI half is disabled for that asset; the static and
+        // Per-leg honest mark + last-update slot for the dynamic OI cap and the
+        // stale-pause (0 mark = dynamic OI half off for that asset; the static and
         // per-wallet caps and every other leg still apply).
         let mark_price_e6 = asset_effective_price(&*market_data, req.asset_index as u32)?;
+        let mark_slot_last = asset_slot_last(&*market_data, req.asset_index as u32)?;
         enforce_position_caps(
             program_id,
             accounts,
@@ -1942,6 +1965,8 @@ fn process_place_batch_order(
             user_abs_before[i],
             &user_data,
             mark_price_e6,
+            now_slot,
+            mark_slot_last,
         )?;
     }
     Ok(())
@@ -2828,6 +2853,7 @@ fn process_set_risk_config(
     accounts: &[AccountInfo],
     oi_multiplier_bps: u64,
     max_base_position_per_wallet: u128,
+    max_staleness_pause_slots: u64,
     bump: u8,
 ) -> ProgramResult {
     let [risk_pda, market, authority, _system_program, ..] = accounts else {
@@ -2896,6 +2922,7 @@ fn process_set_risk_config(
         market_key,
         oi_multiplier_bps,
         max_base_position_per_wallet,
+        max_staleness_pause_slots,
     )?;
     Ok(())
 }
