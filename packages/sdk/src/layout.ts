@@ -226,6 +226,16 @@ export const HLP_VAULT_SEED = new TextEncoder().encode("hlpvault");
  * seeds `[HLP_POSITION_SEED, market, owner]` (the LP's shares + pending redeem). */
 export const HLP_POSITION_SEED = new TextEncoder().encode("hlppos");
 
+/** InsLP (insurance LP) config PDA seed prefix; matches Rust `inslp::INSLP_SEED`.
+ * Full seeds `[INSLP_SEED, market]`. The config layout mirrors HLP (minus the NAV
+ * haircut), so `OFFSET_HLP_TOTAL_SHARES` reads its total_shares too. */
+export const INSLP_SEED = new TextEncoder().encode("inslp");
+
+/** Per-LP InsLP position PDA seed prefix; matches Rust `inslp::INSLP_POSITION_SEED`.
+ * Full seeds `[INSLP_POSITION_SEED, market, owner]`. The position layout is identical
+ * to HLP, so `OFFSET_HLP_POSITION_SHARES` / `_PENDING` read it too. */
+export const INSLP_POSITION_SEED = new TextEncoder().encode("inslppos");
+
 /** DelegateAccount size: discriminator(8) + portfolio(32) + delegate(32). */
 export const DELEGATE_ACCOUNT_SIZE = 72;
 

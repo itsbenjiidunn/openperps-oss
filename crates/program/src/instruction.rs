@@ -51,6 +51,10 @@ pub mod tag {
     pub const HARVEST_HLP: u8 = 39;
     pub const SET_MARKET_FEE: u8 = 40;
     pub const SET_RISK_CONFIG: u8 = 41;
+    pub const SET_INSLP_PARAMS: u8 = 42;
+    pub const DEPOSIT_INSLP: u8 = 43;
+    pub const REQUEST_REDEEM_INSLP: u8 = 44;
+    pub const EXECUTE_REDEEM_INSLP: u8 = 45;
 }
 
 /// Maximum legs in a single `PlaceBatchOrder`. The engine also rejects a batch
@@ -696,6 +700,72 @@ pub enum OpenPerpsInstruction {
     ExecuteRedeemHlp {
         position_bump: u8,
     },
+    /// Set the InsLP (insurance LP) config (delay, fee, min deposit). Market-
+    /// authority-signed; the `[INSLP_SEED, market]` PDA is created on first use. No
+    /// engine interaction.
+    ///
+    /// Accounts:
+    ///   0. `[writable]` InsLP config PDA `[INSLP_SEED, market]`
+    ///   1. `[]`         market account (read for authority)
+    ///   2. `[signer, writable]` market authority (pays rent)
+    ///   3. `[]`         system program
+    SetInsLpParams {
+        redeem_delay_slots: u64,
+        fee_bps: u64,
+        min_deposit: u128,
+        bump: u8,
+    },
+    /// Deposit `amount` quote tokens into the market's insurance fund and mint InsLP
+    /// shares priced at the pre-deposit NAV (= the engine's total insurance `I`).
+    /// Permissionless. The tokens land in the market vault and raise engine `I` on the
+    /// canonical domain; the fee stays in `I` (accrues to NAV), so a round-trip loses
+    /// it. `position_bump` is for the LP position PDA.
+    ///
+    /// Accounts:
+    ///   0. `[writable]` InsLP config PDA `[INSLP_SEED, market]` (total_shares updated)
+    ///   1. `[writable]` market account (engine `I` raised on the canonical domain)
+    ///   2. `[signer]`   depositor
+    ///   3. `[writable]` depositor's SPL TokenAccount (source)
+    ///   4. `[writable]` market vault SPL TokenAccount (`wrapper.vault`, destination)
+    ///   5. `[writable]` the LP's position PDA `[INSLP_POSITION_SEED, market, owner]`
+    ///   6. `[]`         system program
+    ///   7. `[]`         SPL Token program
+    DepositInsLp {
+        amount: u128,
+        position_bump: u8,
+    },
+    /// Request redemption of `shares` InsLP shares: records a pending (shares,
+    /// unlock = now + delay) on the LP's position. No funds move; pricing happens at
+    /// execute time so a redemption cannot snipe a momentary NAV.
+    ///
+    /// Accounts:
+    ///   0. `[]`         InsLP config PDA `[INSLP_SEED, market]`
+    ///   1. `[]`         market account
+    ///   2. `[signer]`   LP owner
+    ///   3. `[writable]` the LP's position PDA `[INSLP_POSITION_SEED, market, owner]`
+    RequestRedeemInsLp {
+        shares: u128,
+        position_bump: u8,
+    },
+    /// Execute a requested InsLP redemption once its timelock elapses: prices the
+    /// pending shares at the live NAV (engine `I`), pays out from the market vault
+    /// (bounded by the canonical domain's engine budget and the insurance floor, if
+    /// any), burns the shares, and clears the pending slot. The redeem fee stays in
+    /// `I`. `position_bump` is for the position PDA.
+    ///
+    /// Accounts:
+    ///   0. `[writable]` InsLP config PDA `[INSLP_SEED, market]` (total_shares updated)
+    ///   1. `[writable]` market account (engine `I` lowered on the canonical domain)
+    ///   2. `[signer]`   LP owner
+    ///   3. `[writable]` owner's SPL TokenAccount (destination)
+    ///   4. `[writable]` market vault SPL TokenAccount (`wrapper.vault`, source, PDA-signed)
+    ///   5. `[writable]` the LP's position PDA `[INSLP_POSITION_SEED, market, owner]`
+    ///   6. `[]`         insurance config PDA `[INSURANCE_CFG_SEED, market]` (canonical;
+    ///                   the redeem floor, uninitialized = no floor)
+    ///   7. `[]`         SPL Token program
+    ExecuteRedeemInsLp {
+        position_bump: u8,
+    },
     /// Harvest `amount` of House capital back into the HLP buffer, refilling
     /// redemption liquidity. Withdraws from the engine House (the `WithdrawHouseVault`
     /// path) into the buffer vault. The engine refuses while the House holds open
@@ -946,6 +1016,23 @@ impl OpenPerpsInstruction {
                 max_base_position_per_wallet: read_u128(rest, 8)?,
                 max_staleness_pause_slots: read_u64(rest, 24)?,
                 bump: read_u8(rest, 32)?,
+            }),
+            tag::SET_INSLP_PARAMS => Ok(Self::SetInsLpParams {
+                redeem_delay_slots: read_u64(rest, 0)?,
+                fee_bps: read_u64(rest, 8)?,
+                min_deposit: read_u128(rest, 16)?,
+                bump: read_u8(rest, 32)?,
+            }),
+            tag::DEPOSIT_INSLP => Ok(Self::DepositInsLp {
+                amount: read_u128(rest, 0)?,
+                position_bump: read_u8(rest, 16)?,
+            }),
+            tag::REQUEST_REDEEM_INSLP => Ok(Self::RequestRedeemInsLp {
+                shares: read_u128(rest, 0)?,
+                position_bump: read_u8(rest, 16)?,
+            }),
+            tag::EXECUTE_REDEEM_INSLP => Ok(Self::ExecuteRedeemInsLp {
+                position_bump: read_u8(rest, 0)?,
             }),
             _ => Err(OpenPerpsError::InvalidInstruction),
         }

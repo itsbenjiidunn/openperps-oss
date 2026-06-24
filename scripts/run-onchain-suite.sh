@@ -25,6 +25,7 @@ SCRIPTS=(
   "packages/sdk/scripts/integration.ts"
   "packages/sdk/scripts/core-integration.ts"
   "packages/sdk/scripts/hlp-integration.ts"
+  "packages/sdk/scripts/inslp-integration.ts"
 )
 
 log() { echo "[suite] $*"; }

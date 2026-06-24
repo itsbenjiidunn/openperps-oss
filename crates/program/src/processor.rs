@@ -43,6 +43,11 @@ use crate::{
         set_hlp_total_shares_buffer, HlpConfig, HlpPosition, HLP_POSITION_SEED, HLP_SEED,
         HLP_VAULT_SEED,
     },
+    inslp::{
+        inslp_params_of, inslp_position_of, set_inslp_params_buffer, set_inslp_position_buffer,
+        set_inslp_total_shares_buffer, InsLpConfig, InsLpPosition, INSLP_CANONICAL_DOMAIN,
+        INSLP_POSITION_SEED, INSLP_SEED,
+    },
 };
 
 // State helpers used only by the devnet-only mock-pool handlers (CreateMockPool,
@@ -465,6 +470,30 @@ pub fn process_instruction(
             max_staleness_pause_slots,
             bump,
         ),
+        OpenPerpsInstruction::SetInsLpParams {
+            redeem_delay_slots,
+            fee_bps,
+            min_deposit,
+            bump,
+        } => process_set_inslp_params(
+            program_id,
+            accounts,
+            redeem_delay_slots,
+            fee_bps,
+            min_deposit,
+            bump,
+        ),
+        OpenPerpsInstruction::DepositInsLp {
+            amount,
+            position_bump,
+        } => process_deposit_inslp(program_id, accounts, amount, position_bump),
+        OpenPerpsInstruction::RequestRedeemInsLp {
+            shares,
+            position_bump,
+        } => process_request_redeem_inslp(program_id, accounts, shares, position_bump),
+        OpenPerpsInstruction::ExecuteRedeemInsLp { position_bump } => {
+            process_execute_redeem_inslp(program_id, accounts, position_bump)
+        }
     }
 }
 
@@ -3931,6 +3960,473 @@ fn process_execute_redeem_hlp(
         ];
         let signer = Signer::from(seeds.as_ref());
         token_transfer_signed(hlp_vault, owner_token, hlp_vault, amount_u64, &[signer])?;
+    }
+    Ok(())
+}
+
+// ---------- Insurance LP (InsLP): second-loss, insurance-backed LP tier ----------
+
+/// Set the InsLP config. Only the market authority may call; the `[INSLP_SEED,
+/// market]` PDA is created on first use. No engine interaction.
+fn process_set_inslp_params(
+    program_id: &Pubkey,
+    accounts: &[AccountInfo],
+    redeem_delay_slots: u64,
+    fee_bps: u64,
+    min_deposit: u128,
+    bump: u8,
+) -> ProgramResult {
+    let [cfg_pda, market, authority, _system_program, ..] = accounts else {
+        return Err(OpenPerpsError::InvalidInstruction.into());
+    };
+    if !authority.is_signer() {
+        return Err(OpenPerpsError::MissingRequiredSignature.into());
+    }
+    if !cfg_pda.is_writable() {
+        return Err(OpenPerpsError::InvalidAccountData.into());
+    }
+    if unsafe { market.owner() } != program_id {
+        return Err(OpenPerpsError::InvalidAccountOwner.into());
+    }
+    let market_key = *market.key();
+    {
+        let data = market
+            .try_borrow_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        let wrapper = market_wrapper_header(&data)?;
+        if !wrapper.is_initialized() {
+            return Err(OpenPerpsError::UninitializedAccount.into());
+        }
+        if wrapper.authority != *authority.key() {
+            return Err(OpenPerpsError::MissingRequiredSignature.into());
+        }
+    }
+    let derived = create_program_address(&[INSLP_SEED, market_key.as_ref(), &[bump]], program_id)
+        .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    if *cfg_pda.key() != derived {
+        return Err(OpenPerpsError::InvalidAccountData.into());
+    }
+    if unsafe { cfg_pda.owner() } != program_id {
+        let rent = Rent::get()?;
+        let lamports = rent.minimum_balance(InsLpConfig::LEN);
+        let bump_arr = [bump];
+        let seeds = [
+            Seed::from(INSLP_SEED),
+            Seed::from(market_key.as_ref()),
+            Seed::from(bump_arr.as_ref()),
+        ];
+        let signer = Signer::from(seeds.as_ref());
+        system_create_account(
+            authority,
+            cfg_pda,
+            lamports,
+            InsLpConfig::LEN as u64,
+            program_id,
+            &[signer],
+        )?;
+    }
+    let mut data = cfg_pda
+        .try_borrow_mut_data()
+        .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    set_inslp_params_buffer(&mut data, market_key, redeem_delay_slots, fee_bps, min_deposit)?;
+    Ok(())
+}
+
+/// Deposit `amount` quote tokens into the market's insurance fund and mint InsLP
+/// shares priced at the pre-deposit NAV (= the engine's total insurance `I`).
+/// Permissionless. The tokens raise engine `I` on the canonical domain; the fee
+/// stays in `I` (accrues to NAV), so a round-trip is unprofitable.
+fn process_deposit_inslp(
+    program_id: &Pubkey,
+    accounts: &[AccountInfo],
+    amount: u128,
+    position_bump: u8,
+) -> ProgramResult {
+    let [cfg_pda, market, depositor, depositor_token, market_vault, position_pda, _system_program, _token_program, ..] =
+        accounts
+    else {
+        return Err(OpenPerpsError::InvalidInstruction.into());
+    };
+    if !depositor.is_signer() {
+        return Err(OpenPerpsError::MissingRequiredSignature.into());
+    }
+    if !cfg_pda.is_writable()
+        || !market.is_writable()
+        || !depositor_token.is_writable()
+        || !market_vault.is_writable()
+        || !position_pda.is_writable()
+    {
+        return Err(OpenPerpsError::InvalidAccountData.into());
+    }
+    if unsafe { market.owner() } != program_id || unsafe { cfg_pda.owner() } != program_id {
+        return Err(OpenPerpsError::InvalidAccountOwner.into());
+    }
+    let market_key = *market.key();
+    let depositor_key = *depositor.key();
+
+    {
+        let data = market
+            .try_borrow_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        let wrapper = market_wrapper_header(&data)?;
+        if !wrapper.is_initialized() {
+            return Err(OpenPerpsError::UninitializedAccount.into());
+        }
+        if *market_vault.key() != wrapper.vault {
+            return Err(OpenPerpsError::InvalidAccountData.into());
+        }
+    }
+    if unsafe { market_vault.owner() } != &TOKEN_PROGRAM_ID {
+        return Err(OpenPerpsError::InvalidAccountOwner.into());
+    }
+    let pos_derived = create_program_address(
+        &[
+            INSLP_POSITION_SEED,
+            market_key.as_ref(),
+            depositor_key.as_ref(),
+            &[position_bump],
+        ],
+        program_id,
+    )
+    .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    if *position_pda.key() != pos_derived {
+        return Err(OpenPerpsError::InvalidAccountData.into());
+    }
+
+    let params = {
+        let data = cfg_pda
+            .try_borrow_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        inslp_params_of(&data, &market_key)?
+    };
+    if amount < params.min_deposit {
+        return Err(OpenPerpsError::HlpBelowMinDeposit.into());
+    }
+    // Price at the PRE-deposit NAV (engine total insurance `I`).
+    let nav = {
+        let data = market
+            .try_borrow_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        engine_total_insurance(&data)?
+    };
+    // The deposit fee stays in `I` (accrues to NAV), so a round-trip loses it.
+    let fee = amount
+        .checked_mul(params.fee_bps as u128)
+        .ok_or(OpenPerpsError::ArithmeticOverflow)?
+        / 10_000;
+    let amount_net = amount.saturating_sub(fee);
+    let shares = assets_to_shares(amount_net, params.total_shares, nav);
+    if shares == 0 {
+        return Err(OpenPerpsError::HlpBelowMinDeposit.into());
+    }
+
+    let amount_u64: u64 = amount
+        .try_into()
+        .map_err(|_| OpenPerpsError::ArithmeticOverflow)?;
+    // Real tokens first (depositor -> market vault), then the engine insurance credit,
+    // so the engine vault counter and the real balance stay in sync.
+    token_transfer(depositor_token, market_vault, depositor, amount_u64)?;
+    {
+        let mut market_data = market
+            .try_borrow_mut_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        deposit_domain_insurance_buffer(&mut market_data, INSLP_CANONICAL_DOMAIN, amount)
+            .map_v16()?;
+    }
+
+    if unsafe { position_pda.owner() } != program_id {
+        let rent = Rent::get()?;
+        let lamports = rent.minimum_balance(InsLpPosition::LEN);
+        let bump_arr = [position_bump];
+        let seeds = [
+            Seed::from(INSLP_POSITION_SEED),
+            Seed::from(market_key.as_ref()),
+            Seed::from(depositor_key.as_ref()),
+            Seed::from(bump_arr.as_ref()),
+        ];
+        let signer = Signer::from(seeds.as_ref());
+        system_create_account(
+            depositor,
+            position_pda,
+            lamports,
+            InsLpPosition::LEN as u64,
+            program_id,
+            &[signer],
+        )?;
+    }
+    let existing = {
+        let pdata = position_pda
+            .try_borrow_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        inslp_position_of(&pdata, &market_key, &depositor_key)?
+    };
+    let new_shares = existing
+        .shares
+        .checked_add(shares)
+        .ok_or(OpenPerpsError::ArithmeticOverflow)?;
+    {
+        let mut pdata = position_pda
+            .try_borrow_mut_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        set_inslp_position_buffer(
+            &mut pdata,
+            market_key,
+            depositor_key,
+            new_shares,
+            existing.pending_redeem_shares,
+            existing.pending_unlock_slot,
+        )?;
+    }
+    let new_total = params
+        .total_shares
+        .checked_add(shares)
+        .ok_or(OpenPerpsError::ArithmeticOverflow)?;
+    {
+        let mut cdata = cfg_pda
+            .try_borrow_mut_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        set_inslp_total_shares_buffer(&mut cdata, &market_key, new_total)?;
+    }
+    Ok(())
+}
+
+/// Request redemption of `shares` InsLP shares: records a pending (shares, unlock =
+/// now + delay) on the LP's position. No funds move; pricing happens at execute time.
+fn process_request_redeem_inslp(
+    program_id: &Pubkey,
+    accounts: &[AccountInfo],
+    shares: u128,
+    position_bump: u8,
+) -> ProgramResult {
+    let [cfg_pda, market, owner, position_pda, ..] = accounts else {
+        return Err(OpenPerpsError::InvalidInstruction.into());
+    };
+    if !owner.is_signer() {
+        return Err(OpenPerpsError::MissingRequiredSignature.into());
+    }
+    if !position_pda.is_writable() {
+        return Err(OpenPerpsError::InvalidAccountData.into());
+    }
+    if unsafe { market.owner() } != program_id
+        || unsafe { cfg_pda.owner() } != program_id
+        || unsafe { position_pda.owner() } != program_id
+    {
+        return Err(OpenPerpsError::InvalidAccountOwner.into());
+    }
+    let market_key = *market.key();
+    let owner_key = *owner.key();
+    {
+        let data = market
+            .try_borrow_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        if !market_wrapper_header(&data)?.is_initialized() {
+            return Err(OpenPerpsError::UninitializedAccount.into());
+        }
+    }
+    let pos_derived = create_program_address(
+        &[
+            INSLP_POSITION_SEED,
+            market_key.as_ref(),
+            owner_key.as_ref(),
+            &[position_bump],
+        ],
+        program_id,
+    )
+    .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    if *position_pda.key() != pos_derived {
+        return Err(OpenPerpsError::InvalidAccountData.into());
+    }
+    let params = {
+        let data = cfg_pda
+            .try_borrow_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        inslp_params_of(&data, &market_key)?
+    };
+    let pos = {
+        let data = position_pda
+            .try_borrow_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        inslp_position_of(&data, &market_key, &owner_key)?
+    };
+    if shares == 0 || shares > pos.shares {
+        return Err(OpenPerpsError::HlpInsufficientShares.into());
+    }
+    let now_slot = Clock::get()?.slot;
+    let unlock = now_slot.saturating_add(params.redeem_delay_slots);
+    let mut data = position_pda
+        .try_borrow_mut_data()
+        .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    set_inslp_position_buffer(&mut data, market_key, owner_key, pos.shares, shares, unlock)?;
+    Ok(())
+}
+
+/// Execute a requested InsLP redemption once its timelock elapses: price the pending
+/// shares at the live NAV (engine `I`), pay out from the market vault (bounded by the
+/// canonical domain's engine budget AND the insurance floor, if any), burn the
+/// shares, and clear the pending slot. The redeem fee stays in `I`.
+fn process_execute_redeem_inslp(
+    program_id: &Pubkey,
+    accounts: &[AccountInfo],
+    position_bump: u8,
+) -> ProgramResult {
+    let [cfg_pda, market, owner, owner_token, market_vault, position_pda, insurance_cfg, _token_program, ..] =
+        accounts
+    else {
+        return Err(OpenPerpsError::InvalidInstruction.into());
+    };
+    if !owner.is_signer() {
+        return Err(OpenPerpsError::MissingRequiredSignature.into());
+    }
+    if !cfg_pda.is_writable()
+        || !market.is_writable()
+        || !owner_token.is_writable()
+        || !market_vault.is_writable()
+        || !position_pda.is_writable()
+    {
+        return Err(OpenPerpsError::InvalidAccountData.into());
+    }
+    if unsafe { market.owner() } != program_id
+        || unsafe { cfg_pda.owner() } != program_id
+        || unsafe { position_pda.owner() } != program_id
+    {
+        return Err(OpenPerpsError::InvalidAccountOwner.into());
+    }
+    let market_key = *market.key();
+    let owner_key = *owner.key();
+    let vault_bump = {
+        let data = market
+            .try_borrow_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        let wrapper = market_wrapper_header(&data)?;
+        if !wrapper.is_initialized() {
+            return Err(OpenPerpsError::UninitializedAccount.into());
+        }
+        if *market_vault.key() != wrapper.vault {
+            return Err(OpenPerpsError::InvalidAccountData.into());
+        }
+        wrapper.vault_bump
+    };
+    if unsafe { market_vault.owner() } != &TOKEN_PROGRAM_ID {
+        return Err(OpenPerpsError::InvalidAccountOwner.into());
+    }
+    let pos_derived = create_program_address(
+        &[
+            INSLP_POSITION_SEED,
+            market_key.as_ref(),
+            owner_key.as_ref(),
+            &[position_bump],
+        ],
+        program_id,
+    )
+    .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    if *position_pda.key() != pos_derived {
+        return Err(OpenPerpsError::InvalidAccountData.into());
+    }
+
+    let pos = {
+        let data = position_pda
+            .try_borrow_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        inslp_position_of(&data, &market_key, &owner_key)?
+    };
+    if pos.pending_redeem_shares == 0 {
+        return Err(OpenPerpsError::HlpRedeemLocked.into());
+    }
+    let now_slot = Clock::get()?.slot;
+    if now_slot < pos.pending_unlock_slot {
+        return Err(OpenPerpsError::HlpRedeemLocked.into());
+    }
+    if pos.pending_redeem_shares > pos.shares {
+        return Err(OpenPerpsError::HlpInsufficientShares.into());
+    }
+
+    let params = {
+        let data = cfg_pda
+            .try_borrow_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        inslp_params_of(&data, &market_key)?
+    };
+    let nav = {
+        let data = market
+            .try_borrow_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        engine_total_insurance(&data)?
+    };
+    let assets_gross = shares_to_assets(pos.pending_redeem_shares, params.total_shares, nav);
+    let fee = assets_gross
+        .checked_mul(params.fee_bps as u128)
+        .ok_or(OpenPerpsError::ArithmeticOverflow)?
+        / 10_000;
+    let assets_out = assets_gross.saturating_sub(fee);
+
+    // Respect the insurance withdrawal floor if one is set: the canonical
+    // [INSURANCE_CFG_SEED, market] PDA caps how far `I` may fall. Verified canonical
+    // (so it cannot be substituted); uninitialized = no floor (the engine still bounds
+    // the withdraw by the canonical domain's budget).
+    let floor = {
+        let (canonical, _) =
+            find_program_address(&[INSURANCE_CFG_SEED, market_key.as_ref()], program_id);
+        if *insurance_cfg.key() != canonical {
+            return Err(OpenPerpsError::InvalidAccountData.into());
+        }
+        if unsafe { insurance_cfg.owner() } != program_id {
+            0u128
+        } else {
+            let data = insurance_cfg
+                .try_borrow_data()
+                .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+            insurance_params_of(&data, &market_key)
+                .map(|p| p.min_balance)
+                .unwrap_or(0)
+        }
+    };
+    let available = nav.saturating_sub(floor);
+    if assets_out > available {
+        return Err(OpenPerpsError::InsuranceFloorBreach.into());
+    }
+    let amount_u64: u64 = assets_out
+        .try_into()
+        .map_err(|_| OpenPerpsError::ArithmeticOverflow)?;
+
+    // Effects: burn the shares and clear the pending slot before paying out.
+    let new_shares = pos
+        .shares
+        .checked_sub(pos.pending_redeem_shares)
+        .ok_or(OpenPerpsError::ArithmeticOverflow)?;
+    let new_total = params
+        .total_shares
+        .saturating_sub(pos.pending_redeem_shares);
+    {
+        let mut pdata = position_pda
+            .try_borrow_mut_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        set_inslp_position_buffer(&mut pdata, market_key, owner_key, new_shares, 0, 0)?;
+    }
+    {
+        let mut cdata = cfg_pda
+            .try_borrow_mut_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        set_inslp_total_shares_buffer(&mut cdata, &market_key, new_total)?;
+    }
+
+    if amount_u64 > 0 {
+        // Engine first (lowers vault counter + `I` + the canonical domain budget, and
+        // refuses below the domain's available insurance), then the real tokens out.
+        {
+            let mut market_data = market
+                .try_borrow_mut_data()
+                .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+            withdraw_domain_insurance_buffer(&mut market_data, INSLP_CANONICAL_DOMAIN, assets_out)
+                .map_v16()?;
+        }
+        let bump_arr = [vault_bump];
+        let seeds = [
+            Seed::from(VAULT_SEED),
+            Seed::from(market_key.as_ref()),
+            Seed::from(bump_arr.as_ref()),
+        ];
+        let signer = Signer::from(seeds.as_ref());
+        token_transfer_signed(market_vault, owner_token, market_vault, amount_u64, &[signer])?;
     }
     Ok(())
 }

@@ -15,6 +15,8 @@ import {
   HLP_POSITION_SEED,
   HLP_SEED,
   HLP_VAULT_SEED,
+  INSLP_POSITION_SEED,
+  INSLP_SEED,
   HOUSE_CAP_SEED,
   HOUSE_SEED,
   RISK_CFG_SEED,
@@ -70,6 +72,10 @@ export const Tag = {
   HarvestHlp: 39,
   SetMarketFee: 40,
   SetRiskConfig: 41,
+  SetInsLpParams: 42,
+  DepositInsLp: 43,
+  RequestRedeemInsLp: 44,
+  ExecuteRedeemInsLp: 45,
 } as const;
 
 /// Side encoding for `PlaceOrder`.
@@ -1856,6 +1862,184 @@ export function executeRedeemHlpIx(args: {
       { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
     ],
     data: encodeExecuteRedeemHlp(args.positionBump),
+  });
+}
+
+// ---------- Insurance LP (InsLP): second-loss, insurance-backed LP tier ----------
+
+/** The per-market InsLP config PDA; matches Rust `[INSLP_SEED, market]`. */
+export function insLpConfigPda(
+  programId: PublicKey,
+  market: PublicKey,
+): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync([INSLP_SEED, market.toBuffer()], programId);
+}
+
+/** The per-LP InsLP position PDA; matches Rust `[INSLP_POSITION_SEED, market, owner]`. */
+export function insLpPositionPda(
+  programId: PublicKey,
+  market: PublicKey,
+  owner: PublicKey,
+): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync(
+    [INSLP_POSITION_SEED, market.toBuffer(), owner.toBuffer()],
+    programId,
+  );
+}
+
+export function encodeSetInsLpParams(
+  redeemDelaySlots: bigint,
+  feeBps: bigint,
+  minDeposit: bigint,
+  bump: number,
+): Buffer {
+  const data = new Uint8Array(1 + 8 + 8 + 16 + 1);
+  data[0] = Tag.SetInsLpParams;
+  writeU64LE(data, 1, redeemDelaySlots);
+  writeU64LE(data, 9, feeBps);
+  writeU128LE(data, 17, minDeposit);
+  data[33] = bump;
+  return Buffer.from(data);
+}
+
+/// Set the InsLP config (redeem timelock, deposit/redeem fee, min deposit). Market-
+/// authority-signed; the config PDA is created on first use. `cfgPda` is
+/// `insLpConfigPda(...)`.
+export function setInsLpParamsIx(args: {
+  programId: PublicKey;
+  cfgPda: PublicKey;
+  market: PublicKey;
+  authority: PublicKey;
+  redeemDelaySlots: bigint;
+  feeBps: bigint;
+  minDeposit: bigint;
+  bump: number;
+}): TransactionInstruction {
+  return new TransactionInstruction({
+    programId: args.programId,
+    keys: [
+      { pubkey: args.cfgPda, isSigner: false, isWritable: true },
+      { pubkey: args.market, isSigner: false, isWritable: false },
+      { pubkey: args.authority, isSigner: true, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    data: encodeSetInsLpParams(
+      args.redeemDelaySlots,
+      args.feeBps,
+      args.minDeposit,
+      args.bump,
+    ),
+  });
+}
+
+export function encodeDepositInsLp(amount: bigint, positionBump: number): Buffer {
+  const data = new Uint8Array(1 + 16 + 1);
+  data[0] = Tag.DepositInsLp;
+  writeU128LE(data, 1, amount);
+  data[17] = positionBump;
+  return Buffer.from(data);
+}
+
+/// Deposit quote tokens into the market's insurance fund and mint InsLP shares priced
+/// at the pre-deposit NAV (= the engine's total insurance `I`). Permissionless.
+/// `position` is `insLpPositionPda(programId, market, depositor)`, `marketVault` is
+/// the market's `wrapper.vault`. The market account is written (engine `I` raised).
+export function depositInsLpIx(args: {
+  programId: PublicKey;
+  cfgPda: PublicKey;
+  market: PublicKey;
+  depositor: PublicKey;
+  depositorToken: PublicKey;
+  marketVault: PublicKey;
+  position: PublicKey;
+  amount: bigint;
+  positionBump: number;
+}): TransactionInstruction {
+  return new TransactionInstruction({
+    programId: args.programId,
+    keys: [
+      { pubkey: args.cfgPda, isSigner: false, isWritable: true },
+      { pubkey: args.market, isSigner: false, isWritable: true },
+      { pubkey: args.depositor, isSigner: true, isWritable: true },
+      { pubkey: args.depositorToken, isSigner: false, isWritable: true },
+      { pubkey: args.marketVault, isSigner: false, isWritable: true },
+      { pubkey: args.position, isSigner: false, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+    ],
+    data: encodeDepositInsLp(args.amount, args.positionBump),
+  });
+}
+
+export function encodeRequestRedeemInsLp(
+  shares: bigint,
+  positionBump: number,
+): Buffer {
+  const data = new Uint8Array(1 + 16 + 1);
+  data[0] = Tag.RequestRedeemInsLp;
+  writeU128LE(data, 1, shares);
+  data[17] = positionBump;
+  return Buffer.from(data);
+}
+
+/// Request redemption of `shares` InsLP shares: records a pending (shares, unlock =
+/// now + delay). No funds move; pricing is at execute time. `position` is
+/// `insLpPositionPda(programId, market, owner)`.
+export function requestRedeemInsLpIx(args: {
+  programId: PublicKey;
+  cfgPda: PublicKey;
+  market: PublicKey;
+  owner: PublicKey;
+  position: PublicKey;
+  shares: bigint;
+  positionBump: number;
+}): TransactionInstruction {
+  return new TransactionInstruction({
+    programId: args.programId,
+    keys: [
+      { pubkey: args.cfgPda, isSigner: false, isWritable: false },
+      { pubkey: args.market, isSigner: false, isWritable: false },
+      { pubkey: args.owner, isSigner: true, isWritable: false },
+      { pubkey: args.position, isSigner: false, isWritable: true },
+    ],
+    data: encodeRequestRedeemInsLp(args.shares, args.positionBump),
+  });
+}
+
+export function encodeExecuteRedeemInsLp(positionBump: number): Buffer {
+  return Buffer.from([Tag.ExecuteRedeemInsLp, positionBump]);
+}
+
+/// Execute a requested InsLP redemption once its timelock elapses: prices the pending
+/// shares at the live NAV (engine `I`), pays out from the market vault (bounded by the
+/// canonical domain's engine budget and the insurance floor, if any), burns the
+/// shares. `marketVault` is the market's `wrapper.vault`; `insuranceCfg` is the
+/// canonical `[INSURANCE_CFG_SEED, market]` PDA (the redeem floor; pass it even when
+/// unset, it reads as no floor). The market account is written (engine `I` lowered).
+export function executeRedeemInsLpIx(args: {
+  programId: PublicKey;
+  cfgPda: PublicKey;
+  market: PublicKey;
+  owner: PublicKey;
+  ownerToken: PublicKey;
+  marketVault: PublicKey;
+  position: PublicKey;
+  insuranceCfg: PublicKey;
+  positionBump: number;
+}): TransactionInstruction {
+  return new TransactionInstruction({
+    programId: args.programId,
+    keys: [
+      { pubkey: args.cfgPda, isSigner: false, isWritable: true },
+      { pubkey: args.market, isSigner: false, isWritable: true },
+      { pubkey: args.owner, isSigner: true, isWritable: false },
+      { pubkey: args.ownerToken, isSigner: false, isWritable: true },
+      { pubkey: args.marketVault, isSigner: false, isWritable: true },
+      { pubkey: args.position, isSigner: false, isWritable: true },
+      { pubkey: args.insuranceCfg, isSigner: false, isWritable: false },
+      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+    ],
+    data: encodeExecuteRedeemInsLp(args.positionBump),
   });
 }
 
