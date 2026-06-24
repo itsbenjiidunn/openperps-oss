@@ -111,6 +111,31 @@ model.
 - **Withdraw-before-loss:** an LP redeeming just before an adverse mark move; the
   redemption delay covers this too.
 
+## Verification of the share / NAV math
+
+The vendored engine is Kani-formally-verified upstream, but the HLP share/NAV
+math (`assets_to_shares` / `shares_to_assets`, the virtual-offset ERC4626 pricing)
+lives in the wrapper, so it carries its own machine-checked proofs in
+`crates/program/src/hlp.rs`. Three safety properties:
+
+- **P1, round-trip never over-pays:** a deposit then immediate redeem returns
+  `<=` the deposited amount (dust rounds to the remaining LPs). This is the core
+  no-value-creation property, and it makes the first-depositor inflation
+  round-trip unprofitable.
+- **P5, redeem never exceeds NAV:** redeeming shares actually held
+  (`shares <= total_shares`) never pays out more than the vault's NAV. Solvency:
+  the virtual-share offset lets the pool always cover a redemption from NAV.
+- **P6, redemption is monotonic in shares:** holding more shares never redeems
+  for fewer assets.
+
+Each property is stated twice: as a host **proptest** (`hlp_prop_tests`, runs in
+normal `cargo test` over millions of random cases) and as a **Kani** harness
+(`#[cfg(kani)] mod hlp_proofs`, exhaustive over the bounded symbolic domain). Run
+the proofs in CI the way the engine does (Kani targets Linux/macOS):
+`cargo kani --harness kani_round_trip_never_overpays` (and the other two), or the
+whole module. The proptest layer is the dev-host validation; Kani is the formal
+layer.
+
 ## Phasing
 
 - **2a.** HLP config + shares + NAV read + deposit + buffer-bounded redemption

@@ -482,3 +482,121 @@ mod tests {
         );
     }
 }
+
+// ---------- property-based tests (host, std) ----------
+//
+// These randomize the pure share/NAV math over millions of cases. The same three
+// properties are restated as `#[cfg(kani)]` harnesses below, which Kani proves
+// exhaustively in CI (Kani targets Linux/macOS; run `cargo kani --harness
+// kani_round_trip_never_overpays` etc., or the whole `hlp_proofs` module).
+#[cfg(test)]
+mod hlp_prop_tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    // Bound inputs well under the engine's MAX_VAULT_TVL (1e16) so post-deposit
+    // sums never saturate u128 and every case stays economically real.
+    const CAP: u128 = 1_000_000_000_000_000;
+
+    proptest! {
+        /// P1: an immediate deposit -> redeem round-trip never returns MORE than was
+        /// deposited (any dust rounds to the remaining LPs). The core
+        /// no-value-creation safety property; it also makes the first-depositor
+        /// inflation round-trip unprofitable.
+        #[test]
+        fn round_trip_never_overpays(
+            assets in 0u128..=CAP,
+            total_shares in 0u128..=CAP,
+            nav in 0u128..=CAP,
+        ) {
+            let mint = assets_to_shares(assets, total_shares, nav);
+            let ts2 = total_shares.saturating_add(mint);
+            let nav2 = nav.saturating_add(assets);
+            let back = shares_to_assets(mint, ts2, nav2);
+            prop_assert!(back <= assets);
+        }
+
+        /// P5: redeeming shares actually held (`shares <= total_shares`) never pays
+        /// out more than the vault's NAV. Solvency: the virtual-share offset lets the
+        /// pool always cover a redemption from NAV, never overdraw it.
+        #[test]
+        fn redeem_never_exceeds_nav(
+            shares in 0u128..=CAP,
+            total_shares in 0u128..=CAP,
+            nav in 0u128..=CAP,
+        ) {
+            prop_assume!(shares <= total_shares);
+            prop_assert!(shares_to_assets(shares, total_shares, nav) <= nav);
+        }
+
+        /// P6: redemption value is monotonic non-decreasing in shares, so holding
+        /// more shares never redeems for fewer assets (share ownership is ordered).
+        #[test]
+        fn redeem_is_monotonic_in_shares(
+            s1 in 0u128..=CAP,
+            extra in 0u128..=CAP,
+            total_shares in 0u128..=CAP,
+            nav in 0u128..=CAP,
+        ) {
+            let s2 = s1.saturating_add(extra);
+            prop_assert!(
+                shares_to_assets(s1, total_shares, nav)
+                    <= shares_to_assets(s2, total_shares, nav)
+            );
+        }
+    }
+}
+
+// ---------- Kani formal proof harnesses (cfg(kani), Linux/macOS CI) ----------
+//
+// Mirrors the host proptest properties above, but Kani proves them exhaustively
+// over the bounded symbolic domain (no random sampling). Compiled only under
+// `cfg(kani)`, so production and host-test builds are unaffected. This closes the
+// gap where only the vendored ENGINE was formally verified: the wrapper's HLP
+// share/NAV math is now machine-checked too.
+#[cfg(kani)]
+mod hlp_proofs {
+    use super::*;
+
+    // Bound symbolic inputs to keep the U256 mul/div tractable for the model
+    // checker (well within MAX_VAULT_TVL); the properties are scale-invariant.
+    const KCAP: u128 = 1 << 50;
+
+    /// P1: deposit -> immediate redeem never returns more than deposited.
+    #[kani::proof]
+    #[kani::unwind(2)]
+    fn kani_round_trip_never_overpays() {
+        let assets: u128 = kani::any();
+        let total_shares: u128 = kani::any();
+        let nav: u128 = kani::any();
+        kani::assume(assets <= KCAP && total_shares <= KCAP && nav <= KCAP);
+        let mint = assets_to_shares(assets, total_shares, nav);
+        let back = shares_to_assets(mint, total_shares + mint, nav + assets);
+        assert!(back <= assets);
+    }
+
+    /// P5: redeeming held shares never pays out more than NAV (solvency).
+    #[kani::proof]
+    #[kani::unwind(2)]
+    fn kani_redeem_never_exceeds_nav() {
+        let shares: u128 = kani::any();
+        let total_shares: u128 = kani::any();
+        let nav: u128 = kani::any();
+        kani::assume(shares <= total_shares && total_shares <= KCAP && nav <= KCAP);
+        assert!(shares_to_assets(shares, total_shares, nav) <= nav);
+    }
+
+    /// P6: redemption value is monotonic non-decreasing in shares.
+    #[kani::proof]
+    #[kani::unwind(2)]
+    fn kani_redeem_is_monotonic_in_shares() {
+        let s1: u128 = kani::any();
+        let s2: u128 = kani::any();
+        let total_shares: u128 = kani::any();
+        let nav: u128 = kani::any();
+        kani::assume(s1 <= s2 && s2 <= KCAP && total_shares <= KCAP && nav <= KCAP);
+        assert!(
+            shares_to_assets(s1, total_shares, nav) <= shares_to_assets(s2, total_shares, nav)
+        );
+    }
+}

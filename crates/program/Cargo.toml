@@ -14,6 +14,12 @@ percolator = { path = "../engine" }
 pinocchio = "0.8"
 bytemuck = { version = "1.23", default-features = false, features = ["derive"] }
 
+[dev-dependencies]
+# Property-based testing for the pure HLP share/NAV math (host tests, std).
+# Mirrors the engine's proptest version; the same properties are also stated as
+# #[cfg(kani)] harnesses in hlp.rs for the formal (Linux-CI) proof.
+proptest = "1.4"
+
 [features]
 # Production is the DEFAULT: a plain `cargo build-sbf` excludes every devnet-only
 # handler, so a mainnet deploy cannot accidentally ship the price toy. Build the
@@ -31,4 +37,4 @@ no-entrypoint = []
 devnet = []
 
 [lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))', 'cfg(kani)'] }

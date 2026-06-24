@@ -12,6 +12,11 @@
 //! signer authorization, and persisting state back to account data.
 #![cfg_attr(target_os = "solana", no_std)]
 
+// The pure HLP share/NAV math in `hlp` carries `#[cfg(kani)]` proof harnesses
+// (run in Linux CI, like the engine). Kani provides the `kani` crate.
+#[cfg(kani)]
+extern crate kani;
+
 pub mod cpi;
 pub mod dexamm;
 pub mod error;
