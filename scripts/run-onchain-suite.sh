@@ -26,6 +26,8 @@ SCRIPTS=(
   "packages/sdk/scripts/core-integration.ts"
   "packages/sdk/scripts/hlp-integration.ts"
   "packages/sdk/scripts/inslp-integration.ts"
+  "packages/sdk/scripts/spread-integration.ts"
+  "packages/sdk/scripts/coin-margin-integration.ts"
 )
 
 log() { echo "[suite] $*"; }

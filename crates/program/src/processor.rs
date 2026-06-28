@@ -28,9 +28,10 @@ use crate::{
         OracleAuthorityAccount, ORACLE_SEED, HOUSE_SEED, PORTFOLIO_SEED, VAULT_SEED,
         twap_observe_buffer, TwapState, TWAP_SEED,
         house_cap_of, set_house_cap_buffer, portfolio_abs_position_for_asset,
+        signed_position_for_asset,
         HouseCapAccount, HOUSE_CAP_SEED,
-        risk_config_of, set_risk_config_buffer, effective_house_cap_base,
-        MarketRiskConfig, RISK_CFG_SEED,
+        risk_config_of, set_risk_config_buffer, effective_house_cap_base, dynamic_spread_bps,
+        MarketRiskConfig, RISK_CFG_SEED, MAX_TRADING_FEE_BPS,
         fee_config_of, set_fee_config_buffer, asset_effective_price, asset_slot_last,
         FeeConfigAccount, FEE_SEED,
         InsuranceConfig, INSURANCE_CFG_SEED, set_insurance_params_buffer,
@@ -461,6 +462,9 @@ pub fn process_instruction(
             oi_multiplier_bps,
             max_base_position_per_wallet,
             max_staleness_pause_slots,
+            impact_k_bps,
+            skew_k_bps,
+            max_spread_bps,
             bump,
         } => process_set_risk_config(
             program_id,
@@ -468,6 +472,9 @@ pub fn process_instruction(
             oi_multiplier_bps,
             max_base_position_per_wallet,
             max_staleness_pause_slots,
+            impact_k_bps,
+            skew_k_bps,
+            max_spread_bps,
             bump,
         ),
         OpenPerpsInstruction::SetInsLpParams {
@@ -605,6 +612,39 @@ fn process_set_market_fee(
 /// Only trades that INCREASE the House's |position| past the cap are rejected, so
 /// de-risking (reducing/closing) is always allowed even if already over the cap.
 #[allow(clippy::too_many_arguments)]
+/// Read a market's risk config from the canonical `[RISK_CFG_SEED, market]` PDA at
+/// `risk_idx`, verifying the address so it cannot be omitted or substituted. Returns
+/// `(oi_multiplier_bps, max_base_position_per_wallet, max_staleness_pause_slots,
+/// impact_k_bps, skew_k_bps, max_spread_bps)`, all zero when the account is
+/// uninitialized or bound to another market (every knob disabled).
+#[allow(clippy::type_complexity)]
+fn read_risk_config_verified(
+    program_id: &Pubkey,
+    accounts: &[AccountInfo],
+    risk_idx: usize,
+    market_key: &Pubkey,
+) -> Result<(u64, u128, u64, u64, u64, u64), OpenPerpsError> {
+    let risk_acc = accounts
+        .get(risk_idx)
+        .ok_or(OpenPerpsError::InvalidInstruction)?;
+    let (canonical_risk, _) =
+        find_program_address(&[RISK_CFG_SEED, market_key.as_ref()], program_id);
+    if *risk_acc.key() != canonical_risk {
+        return Err(OpenPerpsError::InvalidAccountData);
+    }
+    if unsafe { risk_acc.owner() } != program_id {
+        return Ok((0, 0, 0, 0, 0, 0));
+    }
+    let d = risk_acc
+        .try_borrow_data()
+        .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    let (mkt, oi, wallet, staleness, impact_k, skew_k, max_spread) = risk_config_of(&d)?;
+    if mkt != *market_key {
+        return Ok((0, 0, 0, 0, 0, 0));
+    }
+    Ok((oi, wallet, staleness, impact_k, skew_k, max_spread))
+}
+
 fn enforce_position_caps(
     program_id: &Pubkey,
     accounts: &[AccountInfo],
@@ -647,31 +687,12 @@ fn enforce_position_caps(
         }
     };
 
-    // Risk config (OI multiplier + per-wallet cap) from the canonical [RISK_CFG_SEED,
-    // market] PDA at risk_idx. Same mandatory-canonical contract as the static cap;
-    // uninitialized or wrong market means both knobs are disabled (0).
-    let risk_acc = accounts
-        .get(risk_idx)
-        .ok_or(OpenPerpsError::InvalidInstruction)?;
-    let (canonical_risk, _) =
-        find_program_address(&[RISK_CFG_SEED, market_key.as_ref()], program_id);
-    if *risk_acc.key() != canonical_risk {
-        return Err(OpenPerpsError::InvalidAccountData);
-    }
-    let (oi_multiplier_bps, max_wallet, max_staleness_pause_slots) =
-        if unsafe { risk_acc.owner() } != program_id {
-            (0, 0, 0)
-        } else {
-            let d = risk_acc
-                .try_borrow_data()
-                .map_err(|_| OpenPerpsError::InvalidAccountData)?;
-            let (mkt, oi, wallet, staleness) = risk_config_of(&d)?;
-            if mkt != *market_key {
-                (0, 0, 0)
-            } else {
-                (oi, wallet, staleness)
-            }
-        };
+    // Risk config (OI multiplier + per-wallet cap + stale-pause) from the canonical
+    // [RISK_CFG_SEED, market] PDA at risk_idx, same mandatory-canonical contract as the
+    // static cap. The dynamic-spread factors live in the same PDA but are consumed
+    // pre-trade (in the trade handlers), so the cap path ignores them here.
+    let (oi_multiplier_bps, max_wallet, max_staleness_pause_slots, _, _, _) =
+        read_risk_config_verified(program_id, accounts, risk_idx, market_key)?;
 
     // House exposure: combine the static ceiling with the capital-relative dynamic
     // cap (House marked equity * multiplier, converted to base units at the live
@@ -1769,6 +1790,32 @@ fn process_place_order(
         if eff != 0 { eff } else { exec_price }
     };
 
+    // Optional dynamic spread (price impact vs House depth + inventory skew), added to
+    // the fee BEFORE the engine charges it. Off unless the market authority set non-zero
+    // factors; the risk-config PDA read here is the same canonical account the
+    // post-trade caps verify. Priced off the House's PRE-trade depth and net inventory,
+    // so flow that increases the House's directional risk pays more (and that surcharge
+    // lands in insurance, the backstop that would cover it). Mark-to-PnL is untouched.
+    let fee_bps = {
+        let (oi_mult, _, _, impact_k, skew_k, max_spread) =
+            read_risk_config_verified(program_id, accounts, cap_idx + 2, &market_key)?;
+        if max_spread == 0 || (impact_k == 0 && skew_k == 0) {
+            fee_bps
+        } else {
+            let mark = asset_effective_price(&*market_data, asset_index)?;
+            let equity = house_marked_equity_haircut(&house_data, 0)?;
+            let net = signed_position_for_asset(&house_data, asset_index)?;
+            let ref_oi = effective_house_cap_base(0, oi_mult, equity, mark).unwrap_or(0);
+            // Clamp to the engine's per-trade fee cap so the surcharge never trips its
+            // `fee_bps <= max_trading_fee_bps` certification (which would revert the trade).
+            fee_bps
+                .saturating_add(dynamic_spread_bps(
+                    size_q, mark, net, equity, ref_oi, side == 0, impact_k, skew_k, max_spread,
+                ))
+                .min(MAX_TRADING_FEE_BPS)
+        }
+    };
+
     // side = 0 → user is long, house is short. side = 1 → swap.
     match side {
         0 => {
@@ -1908,6 +1955,13 @@ fn process_place_batch_order(
     // and applied to every leg below.
     let min_fee_bps = resolve_fee_floor(program_id, accounts, cap_idx + 1, &market_key)?;
 
+    // Dynamic-spread factors for this market (same canonical risk-config PDA the caps
+    // verify), read once and applied per leg against the pre-batch House state. Off
+    // unless the market authority set them, so default batches are unchanged.
+    let (spread_oi_mult, _, _, spread_impact_k, spread_skew_k, spread_max) =
+        read_risk_config_verified(program_id, accounts, cap_idx + 2, &market_key)?;
+    let spread_on = spread_max != 0 && (spread_impact_k != 0 || spread_skew_k != 0);
+
     // Decode the legs. The user is the engine's first (long) account, so a leg's
     // signed size is positive for `side == 0` (user long) and negative otherwise.
     let n = count as usize; // validated <= MAX_BATCH_LEGS by unpack
@@ -1938,6 +1992,21 @@ fn process_place_batch_order(
         }
         let eff = asset_effective_price(&*market_data, asset_index as u32)?;
         let fee_price = if eff != 0 { eff } else { exec_price };
+        // Same optional dynamic spread as PlaceOrder, per leg, priced off the pre-batch
+        // House depth and net inventory (so risk-increasing legs pay more).
+        let fee_bps = if spread_on {
+            let equity = house_marked_equity_haircut(&house_data, 0)?;
+            let net = signed_position_for_asset(&house_data, asset_index as u32)?;
+            let ref_oi = effective_house_cap_base(0, spread_oi_mult, equity, eff).unwrap_or(0);
+            fee_bps
+                .saturating_add(dynamic_spread_bps(
+                    size, eff, net, equity, ref_oi, side == 0, spread_impact_k, spread_skew_k,
+                    spread_max,
+                ))
+                .min(MAX_TRADING_FEE_BPS)
+        } else {
+            fee_bps
+        };
         let signed = i128::try_from(size).map_err(|_| OpenPerpsError::ArithmeticOverflow)?;
         let size_q = match side {
             0 => signed,
@@ -2877,12 +2946,16 @@ fn process_set_house_cap(
 /// on first use; a zero value disables that knob. The trade handlers verify this
 /// PDA's canonical address, so it cannot be bypassed by omitting or substituting the
 /// account.
+#[allow(clippy::too_many_arguments)]
 fn process_set_risk_config(
     program_id: &Pubkey,
     accounts: &[AccountInfo],
     oi_multiplier_bps: u64,
     max_base_position_per_wallet: u128,
     max_staleness_pause_slots: u64,
+    impact_k_bps: u64,
+    skew_k_bps: u64,
+    max_spread_bps: u64,
     bump: u8,
 ) -> ProgramResult {
     let [risk_pda, market, authority, _system_program, ..] = accounts else {
@@ -2952,6 +3025,9 @@ fn process_set_risk_config(
         oi_multiplier_bps,
         max_base_position_per_wallet,
         max_staleness_pause_slots,
+        impact_k_bps,
+        skew_k_bps,
+        max_spread_bps,
     )?;
     Ok(())
 }

@@ -1296,14 +1296,20 @@ export function encodeSetRiskConfig(
   oiMultiplierBps: bigint,
   maxBasePositionPerWallet: bigint,
   maxStalenessPauseSlots: bigint,
+  impactKBps: bigint,
+  skewKBps: bigint,
+  maxSpreadBps: bigint,
   bump: number,
 ): Buffer {
-  const data = new Uint8Array(1 + 8 + 16 + 8 + 1);
+  const data = new Uint8Array(1 + 8 + 16 + 8 + 8 + 8 + 8 + 1);
   data[0] = Tag.SetRiskConfig;
   writeU64LE(data, 1, oiMultiplierBps);
   writeU128LE(data, 9, maxBasePositionPerWallet);
   writeU64LE(data, 25, maxStalenessPauseSlots);
-  data[33] = bump;
+  writeU64LE(data, 33, impactKBps);
+  writeU64LE(data, 41, skewKBps);
+  writeU64LE(data, 49, maxSpreadBps);
+  data[57] = bump;
   return Buffer.from(data);
 }
 
@@ -1317,6 +1323,13 @@ export function encodeSetRiskConfig(
 /// signed; a zero value disables that knob (oiMultiplierBps 100_000 = 10x). The PDA is
 /// created on first use, and the trade handlers verify its canonical address, so it
 /// cannot be bypassed by omitting the trailing account.
+///
+/// The same PDA also carries the optional dynamic-spread factors (`impactKBps`,
+/// `skewKBps`, `maxSpreadBps`): when `maxSpreadBps > 0` the trade handlers add a fee
+/// surcharge equal to `notional * impactKBps / houseEquity` (price impact vs depth)
+/// plus `skewKBps * |houseNet| / oiCap` on flow that increases the House's net
+/// inventory (capped at `maxSpreadBps`). The surcharge routes to insurance and the PnL
+/// is still marked at the oracle. All three default to 0 (the spread is off).
 export function setRiskConfigIx(args: {
   programId: PublicKey;
   /** The PDA from `riskConfigPda(programId, market)`. */
@@ -1331,6 +1344,12 @@ export function setRiskConfigIx(args: {
   /** Max slots the mark may go un-refreshed before new risk-increasing trades are
    * blocked (de-risking always allowed); 0 disables. */
   maxStalenessPauseSlots: bigint;
+  /** Dynamic price-impact spread factor (bps at notional == House depth); 0 disables. */
+  impactKBps?: bigint;
+  /** Dynamic inventory-skew spread factor (bps at |House net| == OI cap); 0 disables. */
+  skewKBps?: bigint;
+  /** Hard ceiling (bps) on the total dynamic spread; 0 turns the whole spread off. */
+  maxSpreadBps?: bigint;
   bump: number;
 }): TransactionInstruction {
   return new TransactionInstruction({
@@ -1345,6 +1364,9 @@ export function setRiskConfigIx(args: {
       args.oiMultiplierBps,
       args.maxBasePositionPerWallet,
       args.maxStalenessPauseSlots,
+      args.impactKBps ?? 0n,
+      args.skewKBps ?? 0n,
+      args.maxSpreadBps ?? 0n,
       args.bump,
     ),
   });

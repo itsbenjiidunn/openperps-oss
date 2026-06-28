@@ -479,6 +479,20 @@ pub struct MarketRiskConfig {
     /// Stale-pause: max slots the mark may go un-refreshed before NEW risk-increasing
     /// trades are blocked (de-risking stays allowed). LE u64. 0 = disabled.
     pub max_staleness_pause_slots: [u8; 8],
+    /// Dynamic price-impact spread factor (LE u64, bps). The impact surcharge added to
+    /// the fee is `notional_quote * impact_k_bps / house_equity_quote`, so a trade equal
+    /// to the full House backing pays `impact_k_bps`, smaller trades proportionally less.
+    /// 0 = disabled. See [`dynamic_spread_bps`].
+    pub impact_k_bps: [u8; 8],
+    /// Dynamic inventory-skew spread factor (LE u64, bps). Charged ONLY to trades that
+    /// increase the House's net inventory (flow piling onto the already-crowded side);
+    /// `skew_k_bps * |house_net| / ref_oi`, saturating at `skew_k_bps` when the House
+    /// net hits the OI cap. De-risking pays nothing. 0 = disabled.
+    pub skew_k_bps: [u8; 8],
+    /// Hard ceiling (LE u64, bps) on the total dynamic spread. The impact + skew sum is
+    /// clamped to this (and to [`MAX_DYNAMIC_SPREAD_BPS`]). 0 = the whole dynamic spread
+    /// is off regardless of the factors (the opt-in master switch).
+    pub max_spread_bps: [u8; 8],
 }
 
 impl MarketRiskConfig {
@@ -489,12 +503,16 @@ impl MarketRiskConfig {
 }
 
 /// Write/overwrite a market's risk config (market-authority-authorized).
+#[allow(clippy::too_many_arguments)]
 pub fn set_risk_config_buffer(
     buf: &mut [u8],
     market: [u8; 32],
     oi_multiplier_bps: u64,
     max_base_position_per_wallet: u128,
     max_staleness_pause_slots: u64,
+    impact_k_bps: u64,
+    skew_k_bps: u64,
+    max_spread_bps: u64,
 ) -> Result<(), OpenPerpsError> {
     if buf.len() < MarketRiskConfig::LEN {
         return Err(OpenPerpsError::AccountDataTooSmall);
@@ -505,25 +523,35 @@ pub fn set_risk_config_buffer(
     acc.oi_multiplier_bps = oi_multiplier_bps.to_le_bytes();
     acc.max_base_position_per_wallet = max_base_position_per_wallet.to_le_bytes();
     acc.max_staleness_pause_slots = max_staleness_pause_slots.to_le_bytes();
+    acc.impact_k_bps = impact_k_bps.to_le_bytes();
+    acc.skew_k_bps = skew_k_bps.to_le_bytes();
+    acc.max_spread_bps = max_spread_bps.to_le_bytes();
     Ok(())
 }
 
 /// Read `(market, oi_multiplier_bps, max_base_position_per_wallet,
-/// max_staleness_pause_slots)` from a risk-config PDA; all zero if uninitialized.
-pub fn risk_config_of(buf: &[u8]) -> Result<([u8; 32], u64, u128, u64), OpenPerpsError> {
+/// max_staleness_pause_slots, impact_k_bps, skew_k_bps, max_spread_bps)` from a
+/// risk-config PDA; all zero if uninitialized.
+#[allow(clippy::type_complexity)]
+pub fn risk_config_of(
+    buf: &[u8],
+) -> Result<([u8; 32], u64, u128, u64, u64, u64, u64), OpenPerpsError> {
     if buf.len() < MarketRiskConfig::LEN {
         return Err(OpenPerpsError::AccountDataTooSmall);
     }
     let acc: &MarketRiskConfig = bytemuck::try_from_bytes(&buf[..MarketRiskConfig::LEN])
         .map_err(|_| OpenPerpsError::InvalidAccountData)?;
     if !acc.is_initialized() {
-        return Ok(([0u8; 32], 0, 0, 0));
+        return Ok(([0u8; 32], 0, 0, 0, 0, 0, 0));
     }
     Ok((
         acc.market,
         u64::from_le_bytes(acc.oi_multiplier_bps),
         u128::from_le_bytes(acc.max_base_position_per_wallet),
         u64::from_le_bytes(acc.max_staleness_pause_slots),
+        u64::from_le_bytes(acc.impact_k_bps),
+        u64::from_le_bytes(acc.skew_k_bps),
+        u64::from_le_bytes(acc.max_spread_bps),
     ))
 }
 
@@ -562,6 +590,82 @@ pub fn effective_house_cap_base(
         (s, None) => Some(s),
         (s, Some(d)) => Some(s.min(d)),
     }
+}
+
+/// Absolute ceiling on the dynamic spread regardless of config: a defensive backstop
+/// so a mis-set `max_spread_bps` cannot make trades absurdly expensive. 1000 bps = 10%.
+pub const MAX_DYNAMIC_SPREAD_BPS: u64 = 1_000;
+
+/// The engine's per-trade fee cap (`max_trading_fee_bps`): a trade reverts (engine
+/// `InvalidConfig`) if its `fee_bps` exceeds this. It must contain the base fee PLUS
+/// the dynamic spread, so it is set to the same 10% ceiling as [`MAX_DYNAMIC_SPREAD_BPS`];
+/// the trade handlers clamp the spread-augmented fee to this value. The trading-fee
+/// FLOOR (the per-market fee-config PDA) still enforces the minimum, so raising this cap
+/// only widens the headroom a market can use, never the fee a quiet market charges.
+pub const MAX_TRADING_FEE_BPS: u64 = 1_000;
+
+/// The dynamic spread (bps) added to a trade's fee: a price-impact term that scales
+/// with trade size against House depth, plus an inventory-skew surcharge on flow that
+/// increases the House's directional risk. Both terms are opt-in (0 factor = off) and
+/// the sum is clamped to `max_spread_bps` and [`MAX_DYNAMIC_SPREAD_BPS`]. Returns 0
+/// when disabled, when there is no mark or depth, or when the trade DE-RISKS the House.
+///
+/// The result is added to the engine trading fee (which routes to insurance), so the
+/// House never marks at anything but the oracle price: the spread is captured as fee,
+/// it strengthens the backstop, and it makes risk-increasing one-sided flow (the exact
+/// pattern that endangers an oracle-marked B-book) pay more. No engine change needed.
+///
+/// - `size_q`: trade size, base units.
+/// - `mark_price_e6`: the honest mark, [`PRICE_SCALE`]-scaled (0 = no mark -> 0 spread).
+/// - `house_net`: the House signed net position for the asset BEFORE this trade
+///   (long +, short -), from [`signed_position_for_asset`].
+/// - `house_equity_quote`: House marked equity (quote atoms) = the impact denominator.
+/// - `ref_oi_base`: the House OI saturation reference (base units, e.g. the dynamic
+///   cap); 0 disables the skew term (no saturation reference).
+/// - `user_is_long`: the user's side; the House takes the opposite.
+#[allow(clippy::too_many_arguments)]
+pub fn dynamic_spread_bps(
+    size_q: u128,
+    mark_price_e6: u64,
+    house_net: i128,
+    house_equity_quote: u128,
+    ref_oi_base: u128,
+    user_is_long: bool,
+    impact_k_bps: u64,
+    skew_k_bps: u64,
+    max_spread_bps: u64,
+) -> u64 {
+    // `max_spread_bps == 0` is the opt-in master switch (off by default).
+    if max_spread_bps == 0 || mark_price_e6 == 0 {
+        return 0;
+    }
+    // Impact: notional vs House depth. notional_quote = size * mark / PRICE_SCALE,
+    // in the same quote atoms as the equity, so the ratio is unit-clean.
+    let impact_bps: u128 = if impact_k_bps == 0 || house_equity_quote == 0 {
+        0
+    } else {
+        let notional_quote = mul_div_floor_u128(size_q, mark_price_e6 as u128, PRICE_SCALE);
+        mul_div_floor_u128(notional_quote, impact_k_bps as u128, house_equity_quote)
+    };
+    // Skew: only when this trade pushes the House further from flat. The House is short
+    // when users are net long (house_net <= 0), so a new user LONG increases its risk;
+    // symmetrically a user SHORT increases a net-long House's risk. De-risking pays 0.
+    let skew_bps: u128 = if skew_k_bps == 0 || ref_oi_base == 0 {
+        0
+    } else {
+        let risk_increasing = if user_is_long {
+            house_net <= 0
+        } else {
+            house_net >= 0
+        };
+        if risk_increasing {
+            mul_div_floor_u128(house_net.unsigned_abs(), skew_k_bps as u128, ref_oi_base)
+        } else {
+            0
+        }
+    };
+    let ceiling = (max_spread_bps as u128).min(MAX_DYNAMIC_SPREAD_BPS as u128);
+    impact_bps.saturating_add(skew_bps).min(ceiling) as u64
 }
 
 #[cfg(test)]
@@ -629,10 +733,90 @@ mod risk_config_tests {
     fn risk_config_buffer_roundtrip() {
         let market = [0x5A; 32];
         let mut buf = vec![0u8; MarketRiskConfig::LEN];
-        // Uninitialized reads as (zero, 0, 0, 0).
-        assert_eq!(risk_config_of(&buf).unwrap(), ([0u8; 32], 0, 0, 0));
-        set_risk_config_buffer(&mut buf, market, 100_000, 5_000_000, 150).unwrap();
-        assert_eq!(risk_config_of(&buf).unwrap(), (market, 100_000, 5_000_000, 150));
+        // Uninitialized reads as all-zero.
+        assert_eq!(risk_config_of(&buf).unwrap(), ([0u8; 32], 0, 0, 0, 0, 0, 0));
+        set_risk_config_buffer(&mut buf, market, 100_000, 5_000_000, 150, 40, 25, 200).unwrap();
+        assert_eq!(
+            risk_config_of(&buf).unwrap(),
+            (market, 100_000, 5_000_000, 150, 40, 25, 200)
+        );
+    }
+
+    #[test]
+    fn spread_off_by_default() {
+        // max_spread_bps == 0 is the master switch: always 0 regardless of factors.
+        assert_eq!(
+            dynamic_spread_bps(1_000_000, PRICE_SCALE as u64, -500, 1_000_000, 1_000, true, 100, 100, 0),
+            0
+        );
+        // Both factors 0 -> 0 even with a ceiling set.
+        assert_eq!(
+            dynamic_spread_bps(1_000_000, PRICE_SCALE as u64, -500, 1_000_000, 1_000, true, 0, 0, 500),
+            0
+        );
+    }
+
+    #[test]
+    fn impact_scales_with_size_over_depth() {
+        // Notional == depth -> impact == impact_k_bps. size 1_000_000 base at mark 1.0
+        // gives notional 1_000_000 quote; equity 1_000_000 => ratio 1 => 50 bps.
+        assert_eq!(
+            dynamic_spread_bps(1_000_000, PRICE_SCALE as u64, 0, 1_000_000, 0, true, 50, 0, 1_000),
+            50
+        );
+        // Half the size -> half the impact.
+        assert_eq!(
+            dynamic_spread_bps(500_000, PRICE_SCALE as u64, 0, 1_000_000, 0, true, 50, 0, 1_000),
+            25
+        );
+        // Twice the depth -> half the impact.
+        assert_eq!(
+            dynamic_spread_bps(1_000_000, PRICE_SCALE as u64, 0, 2_000_000, 0, true, 50, 0, 1_000),
+            25
+        );
+    }
+
+    #[test]
+    fn skew_only_on_risk_increasing_side() {
+        // House net short (-1_000), ref_oi 1_000 => |net|/ref == 1 => skew == skew_k.
+        // A user LONG increases the House's short risk -> charged the full skew_k.
+        assert_eq!(
+            dynamic_spread_bps(1, PRICE_SCALE as u64, -1_000, 1_000_000_000, 1_000, true, 0, 80, 1_000),
+            80
+        );
+        // A user SHORT de-risks that same short House -> 0 skew.
+        assert_eq!(
+            dynamic_spread_bps(1, PRICE_SCALE as u64, -1_000, 1_000_000_000, 1_000, false, 0, 80, 1_000),
+            0
+        );
+        // Half the skew distance -> half the surcharge.
+        assert_eq!(
+            dynamic_spread_bps(1, PRICE_SCALE as u64, -500, 1_000_000_000, 1_000, true, 0, 80, 1_000),
+            40
+        );
+    }
+
+    #[test]
+    fn spread_is_clamped_to_ceiling() {
+        // Huge impact (size >> depth) clamps to max_spread_bps (200), not the raw value.
+        assert_eq!(
+            dynamic_spread_bps(1_000_000_000, PRICE_SCALE as u64, 0, 1_000, 0, true, 100, 0, 200),
+            200
+        );
+        // And never above MAX_DYNAMIC_SPREAD_BPS even if max_spread_bps is set huge.
+        assert_eq!(
+            dynamic_spread_bps(1_000_000_000, PRICE_SCALE as u64, 0, 1_000, 0, true, 100, 0, 100_000),
+            MAX_DYNAMIC_SPREAD_BPS
+        );
+    }
+
+    #[test]
+    fn no_mark_no_spread() {
+        // mark == 0 -> impact cannot be priced -> 0 even with factors and ceiling set.
+        assert_eq!(
+            dynamic_spread_bps(1_000_000, 0, -1_000, 1_000_000, 1_000, true, 100, 100, 500),
+            0
+        );
     }
 }
 
@@ -1199,6 +1383,18 @@ impl OpenPerpsMarketHeader {
     pub fn is_initialized(&self) -> bool {
         self.discriminator == MARKET_DISCRIMINATOR && self.version == MARKET_HEADER_VERSION
     }
+
+    /// True when this is a coin-margined (inverse) market: the collateral mint
+    /// (`quote_mint`) and the underlying mint (`base_mint`) are the SAME token, so
+    /// collateral, liquidity, PnL, and settlement are all denominated in the traded
+    /// asset. The collateral is then reflexive (a token dump hits both the position and
+    /// the margin), which is why `InitMarket` forces such a market to at least the
+    /// VOLATILE risk tier. `quote_mint` is always a real (non-zero) SPL mint, so a
+    /// synthetic market with `base_mint == [0; 32]` never reads as coin-margin. Derived,
+    /// not stored, so the header layout and `MARKET_HEADER_VERSION` are unchanged.
+    pub fn is_coin_margin(&self) -> bool {
+        self.quote_mint == self.base_mint
+    }
 }
 
 // ---------- Mock DEX pool (devnet DEX-EWMA price source) ----------
@@ -1659,7 +1855,7 @@ pub fn default_market_config(asset_slot_capacity: u32, risk_tier: u8) -> V16Conf
     c.min_nonzero_im_req = V16PodU128::new(2);
     c.maintenance_margin_bps = V16PodU64::new(maintenance_bps);
     c.initial_margin_bps = V16PodU64::new(initial_bps);
-    c.max_trading_fee_bps = V16PodU64::new(10);
+    c.max_trading_fee_bps = V16PodU64::new(MAX_TRADING_FEE_BPS);
     c.liquidation_fee_bps = V16PodU64::new(50);
     c.liquidation_fee_cap = V16PodU128::new(1_000_000_000);
     c.min_liquidation_abs = V16PodU128::new(1);
@@ -1778,7 +1974,17 @@ pub fn init_market_buffer(
 
     // --- Engine header ---
     engine.market_group_id = market_group_id;
-    engine.config = default_market_config(asset_slot_capacity, risk_tier);
+    // Coin-margin (collateral mint == underlying mint) is reflexive: a token dump hits
+    // BOTH the position and the collateral. Force at least the VOLATILE tier (5x, with a
+    // wide per-slot clamp over a short window) so leverage is lower and the mark tracks a
+    // violent move before it becomes bad debt. A quote != base market keeps its requested
+    // tier (USDC-margined markets are unaffected).
+    let effective_risk_tier = if quote_mint == base_mint {
+        risk_tier.max(self::risk_tier::VOLATILE)
+    } else {
+        risk_tier
+    };
+    engine.config = default_market_config(asset_slot_capacity, effective_risk_tier);
     engine.asset_slot_capacity = V16PodU32::new(asset_slot_capacity);
     // Slots stay at their zero / Disabled defaults, see ActivateMarket.
     let _ = markets;
@@ -2213,6 +2419,39 @@ mod tests {
         assert!(set_slot_oracle_pool(&mut buf, 1, [8u8; 32]).is_err());
         // Out-of-range slot fails.
         assert!(set_slot_oracle_pool(&mut buf, 9, [1u8; 32]).is_err());
+    }
+
+    #[test]
+    fn coin_margin_forces_volatile_tier() {
+        let token = [0x11u8; 32];
+        let usdc = [0x22u8; 32];
+        // quote == base (coin-margin): STABLE is requested but forced to VOLATILE, so
+        // the market gets mm 1000 (10%) / im 2000 (20%) = 5x, not the 10x STABLE tier.
+        let mut cm = vec![0u8; market_account_size(2).unwrap()];
+        init_market_buffer(
+            &mut cm, [9u8; 32], 2, [1u8; 32], token, [3u8; 32], 0, token, 0, [0u8; 32],
+            [0u8; 32], risk_tier::STABLE,
+        )
+        .unwrap();
+        {
+            let (wrapper, engine, _) = market_split_mut(&mut cm).unwrap();
+            assert!(wrapper.is_coin_margin());
+            assert_eq!(engine.config.maintenance_margin_bps.get(), 1_000);
+            assert_eq!(engine.config.initial_margin_bps.get(), 2_000);
+        }
+        // quote != base (USDC-margin): STABLE stays STABLE (mm 500 / im 1000 = 10x).
+        let mut lin = vec![0u8; market_account_size(2).unwrap()];
+        init_market_buffer(
+            &mut lin, [9u8; 32], 2, [1u8; 32], usdc, [3u8; 32], 0, token, 0, [0u8; 32],
+            [0u8; 32], risk_tier::STABLE,
+        )
+        .unwrap();
+        {
+            let (wrapper, engine, _) = market_split_mut(&mut lin).unwrap();
+            assert!(!wrapper.is_coin_margin());
+            assert_eq!(engine.config.maintenance_margin_bps.get(), 500);
+            assert_eq!(engine.config.initial_margin_bps.get(), 1_000);
+        }
     }
 
     #[test]

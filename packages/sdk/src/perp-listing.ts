@@ -233,6 +233,15 @@ export type BuildPerpMarketListingInput = ResolvePerpListingInput & {
   /// gone un-refreshed beyond this many slots (de-risking always allowed). 0 / omit
   /// = off (rely on the engine freshness window).
   maxStalenessPauseSlots?: bigint;
+  /// SetRiskConfig dynamic price-impact spread factor (bps at notional == House depth);
+  /// the trade fee gains `notional * impactKBps / houseEquity`. 0 / omit = off.
+  impactKBps?: bigint;
+  /// SetRiskConfig dynamic inventory-skew spread factor (bps at |House net| == OI cap),
+  /// charged only to flow that increases the House's net inventory. 0 / omit = off.
+  skewKBps?: bigint;
+  /// SetRiskConfig hard ceiling (bps) on the total dynamic spread; 0 / omit turns the
+  /// whole spread off (the opt-in master switch). Requires oiMultiplierBps for skew.
+  maxSpreadBps?: bigint;
   /// Carried into the returned config for the registry.
   poolAddress?: string;
   dex?: string;
@@ -338,12 +347,27 @@ export function buildPerpMarketListing(input: BuildPerpMarketListingInput): Perp
       }),
     );
   }
-  // SetRiskConfig (dynamic OI cap + per-wallet cap + stale-pause). Appended when any
-  // knob is requested; each knob is independently disabled by a 0 value.
+  // SetRiskConfig (dynamic OI cap + per-wallet cap + stale-pause + dynamic spread).
+  // A coin-margin market (quote_mint == base_mint) is reflexive, so it gets a SAFE
+  // default profile on top of the program's forced VOLATILE tier: a House OI cap of 5x
+  // its equity, a ~1-minute stale-pause, and a small impact+skew spread that makes a
+  // pile-on into the crowded side pay more. Every default is overridable, and a
+  // quote != base market is unaffected (knobs append only if the caller sets them).
+  const coinMargin = input.quoteMint === input.baseMint;
+  const oiMultiplierBps =
+    input.oiMultiplierBps ?? (coinMargin ? 50_000n : undefined);
+  const maxStalenessPauseSlots =
+    input.maxStalenessPauseSlots ?? (coinMargin ? 150n : undefined);
+  const impactKBps = input.impactKBps ?? (coinMargin ? 100n : undefined);
+  const skewKBps = input.skewKBps ?? (coinMargin ? 300n : undefined);
+  const maxSpreadBps = input.maxSpreadBps ?? (coinMargin ? 300n : undefined);
   if (
-    input.oiMultiplierBps !== undefined ||
+    oiMultiplierBps !== undefined ||
     input.maxBasePositionPerWallet !== undefined ||
-    input.maxStalenessPauseSlots !== undefined
+    maxStalenessPauseSlots !== undefined ||
+    impactKBps !== undefined ||
+    skewKBps !== undefined ||
+    maxSpreadBps !== undefined
   ) {
     const [pda, bump] = riskConfigPda(input.programId, input.market);
     instructions.push(
@@ -352,9 +376,12 @@ export function buildPerpMarketListing(input: BuildPerpMarketListingInput): Perp
         riskConfigPda: pda,
         market: input.market,
         authority: input.authority,
-        oiMultiplierBps: input.oiMultiplierBps ?? 0n,
+        oiMultiplierBps: oiMultiplierBps ?? 0n,
         maxBasePositionPerWallet: input.maxBasePositionPerWallet ?? 0n,
-        maxStalenessPauseSlots: input.maxStalenessPauseSlots ?? 0n,
+        maxStalenessPauseSlots: maxStalenessPauseSlots ?? 0n,
+        impactKBps: impactKBps ?? 0n,
+        skewKBps: skewKBps ?? 0n,
+        maxSpreadBps: maxSpreadBps ?? 0n,
         bump,
       }),
     );
@@ -382,6 +409,17 @@ export function buildPerpMarketListing(input: BuildPerpMarketListingInput): Perp
   if (input.dex !== undefined) config.dex = input.dex;
 
   return { ...build, instructions, resolved, oracleKind, config };
+}
+
+/// True when a market is coin-margined (inverse): the collateral mint equals the
+/// underlying mint, so collateral, liquidity, PnL, and settlement are all the traded
+/// token (the program then forces a tighter VOLATILE risk tier). Accepts base58 strings
+/// or `PublicKey`s. Mirrors the on-chain `OpenPerpsMarketHeader::is_coin_margin`.
+export function isCoinMargin(
+  quoteMint: PublicKey | string,
+  baseMint: PublicKey | string,
+): boolean {
+  return quoteMint.toString() === baseMint.toString();
 }
 
 export type CreatePerpMarketInput = Omit<

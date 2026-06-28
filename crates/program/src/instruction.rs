@@ -526,6 +526,15 @@ pub enum OpenPerpsInstruction {
         oi_multiplier_bps: u64,
         max_base_position_per_wallet: u128,
         max_staleness_pause_slots: u64,
+        /// Dynamic price-impact spread factor (bps; 0 disables). The trade handlers add
+        /// `notional * impact_k_bps / house_equity` to the fee, so larger trades vs the
+        /// House depth pay more.
+        impact_k_bps: u64,
+        /// Dynamic inventory-skew spread factor (bps; 0 disables). Charged only to flow
+        /// that increases the House's net inventory (the crowded side).
+        skew_k_bps: u64,
+        /// Hard ceiling (bps) on the total dynamic spread; 0 turns the whole spread off.
+        max_spread_bps: u64,
         bump: u8,
     },
     /// Set the market's `require_verifiable` flag. When enabled, `AccrueAsset`
@@ -1015,7 +1024,10 @@ impl OpenPerpsInstruction {
                 oi_multiplier_bps: read_u64(rest, 0)?,
                 max_base_position_per_wallet: read_u128(rest, 8)?,
                 max_staleness_pause_slots: read_u64(rest, 24)?,
-                bump: read_u8(rest, 32)?,
+                impact_k_bps: read_u64(rest, 32)?,
+                skew_k_bps: read_u64(rest, 40)?,
+                max_spread_bps: read_u64(rest, 48)?,
+                bump: read_u8(rest, 56)?,
             }),
             tag::SET_INSLP_PARAMS => Ok(Self::SetInsLpParams {
                 redeem_delay_slots: read_u64(rest, 0)?,
