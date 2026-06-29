@@ -28,6 +28,7 @@ SCRIPTS=(
   "packages/sdk/scripts/inslp-integration.ts"
   "packages/sdk/scripts/spread-integration.ts"
   "packages/sdk/scripts/coin-margin-integration.ts"
+  "packages/sdk/scripts/launchpad-integration.ts"
 )
 
 log() { echo "[suite] $*"; }
