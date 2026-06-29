@@ -79,12 +79,30 @@ const launch = buildTokenLaunchWithPerp({
 It is a pure builder (no network, no sending). Send `tokenInstructions` first so the
 creator holds the allocation before the House seed pulls from it, then the launch.
 
+## Rug-proof timelock (optional)
+
+By default the House seed is a SOFT commitment (withdrawable once the market is flat). To
+make it rug-proof, commit it behind a slot timelock with `SetHouseLock` (`setHouseLockIx`):
+before `unlock_slot`, `WithdrawHouseVault` is refused even when the House is flat. The
+value is RAISE-ONLY, so a creator can extend a commitment but never shorten it. The web
+flow exposes this as `lockForSlots`.
+
+## Token metadata
+
+`buildTokenMetadataIx` builds a Metaplex `CreateMetadataAccountV3` instruction (name /
+symbol / image), or pass `metadata: { name, symbol, uri }` to `buildTokenLaunchWithPerp`
+and it is inserted right after the mint is initialized. NOTE: it needs the Metaplex
+program on-chain (devnet / mainnet, NOT a bare local validator), so it is not exercised by
+the hermetic suite. Verify against the live program on devnet before mainnet.
+
+## Web flow
+
+`apps/web` ships `src/lib/flows/launchpadFlow.ts` (wallet-driven, three approvals: mint,
+launch, optional commit) and a `LaunchpadPanel` component that wires the whole thing to a
+form.
+
 ## What it still leaves to the launchpad app
 
-- **Token metadata** (name / symbol / image). The token mints and trades fine without it,
-  but it shows up blank in wallets. Pass a Metaplex `CreateMetadataAccountV3` instruction
-  as `metadataInstruction` to include it. It is omitted by default because the Metaplex
-  program is not present on a bare local validator, so it is a caller-supplied hook.
 - **The spot pool** (for spot trading + the eventual DEX-EWMA oracle). Use your AMM /
   bonding curve, then `SetDexPool` to graduate the perp oracle.
 

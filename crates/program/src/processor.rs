@@ -29,7 +29,8 @@ use crate::{
         twap_observe_buffer, TwapState, TWAP_SEED,
         house_cap_of, set_house_cap_buffer, portfolio_abs_position_for_asset,
         signed_position_for_asset,
-        HouseCapAccount, HOUSE_CAP_SEED,
+        house_lock_of, set_house_lock_buffer,
+        HouseCapAccount, HOUSE_CAP_SEED, HouseLockAccount, HOUSE_LOCK_SEED,
         risk_config_of, set_risk_config_buffer, effective_house_cap_base, dynamic_spread_bps,
         MarketRiskConfig, RISK_CFG_SEED, MAX_TRADING_FEE_BPS,
         fee_config_of, set_fee_config_buffer, asset_effective_price, asset_slot_last,
@@ -392,6 +393,9 @@ pub fn process_instruction(
             max_base_position,
             bump,
         } => process_set_house_cap(program_id, accounts, max_base_position, bump),
+        OpenPerpsInstruction::SetHouseLock { unlock_slot, bump } => {
+            process_set_house_lock(program_id, accounts, unlock_slot, bump)
+        }
         OpenPerpsInstruction::SetRequireVerifiable { required } => {
             process_set_require_verifiable(program_id, accounts, required)
         }
@@ -1650,6 +1654,28 @@ fn process_withdraw_house_vault(
                 .map_err(|_| OpenPerpsError::InvalidAccountData)?;
             if hlp_params_of(&d, &market_key)?.total_shares > 0 {
                 return Err(OpenPerpsError::HlpLpClaimsOutstanding.into());
+            }
+        }
+    }
+
+    // Hard timelock: a market authority can commit the House seed until a slot
+    // (`SetHouseLock`); before it, withdrawal is refused even when the House is flat, on
+    // top of the engine's while-positioned refusal. Canonical `[HOUSE_LOCK_SEED, market]`
+    // PDA at account 7 (mandatory so it cannot be omitted to bypass); uninitialized
+    // (owner != program) means no lock.
+    {
+        let lock_acc = accounts.get(7).ok_or(OpenPerpsError::InvalidInstruction)?;
+        let (canonical, _) = find_program_address(&[HOUSE_LOCK_SEED, market_key.as_ref()], program_id);
+        if *lock_acc.key() != canonical {
+            return Err(OpenPerpsError::InvalidAccountData.into());
+        }
+        if unsafe { lock_acc.owner() } == program_id {
+            let d = lock_acc
+                .try_borrow_data()
+                .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+            let (mkt, unlock_slot) = house_lock_of(&d)?;
+            if mkt == market_key && Clock::get()?.slot < unlock_slot {
+                return Err(OpenPerpsError::HouseLocked.into());
             }
         }
     }
@@ -2937,6 +2963,83 @@ fn process_set_house_cap(
         .try_borrow_mut_data()
         .map_err(|_| OpenPerpsError::InvalidAccountData)?;
     set_house_cap_buffer(&mut data, market_key, max_base_position)?;
+    Ok(())
+}
+
+/// Set the market's House withdrawal timelock (market-authority-authorized). The
+/// `[HOUSE_LOCK_SEED, market]` PDA is created on first use; `unlock_slot` is RAISE-ONLY,
+/// so once committed it can only be pushed later, never shortened. `WithdrawHouseVault`
+/// verifies this PDA's canonical address (account 7), so the lock cannot be bypassed by
+/// omitting or substituting it.
+fn process_set_house_lock(
+    program_id: &Pubkey,
+    accounts: &[AccountInfo],
+    unlock_slot: u64,
+    bump: u8,
+) -> ProgramResult {
+    let [lock_pda, market, authority, _system_program, ..] = accounts else {
+        return Err(OpenPerpsError::InvalidInstruction.into());
+    };
+    if !authority.is_signer() {
+        return Err(OpenPerpsError::MissingRequiredSignature.into());
+    }
+    if !lock_pda.is_writable() {
+        return Err(OpenPerpsError::InvalidAccountData.into());
+    }
+    if unsafe { market.owner() } != program_id {
+        return Err(OpenPerpsError::InvalidAccountOwner.into());
+    }
+
+    let market_key = *market.key();
+    {
+        let data = market
+            .try_borrow_data()
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+        let wrapper = market_wrapper_header(&data)?;
+        if !wrapper.is_initialized() {
+            return Err(OpenPerpsError::UninitializedAccount.into());
+        }
+        if wrapper.authority != *authority.key() {
+            return Err(OpenPerpsError::MissingRequiredSignature.into());
+        }
+    }
+
+    let derived =
+        create_program_address(&[HOUSE_LOCK_SEED, market_key.as_ref(), &[bump]], program_id)
+            .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    if *lock_pda.key() != derived {
+        return Err(OpenPerpsError::InvalidAccountData.into());
+    }
+
+    if unsafe { lock_pda.owner() } != program_id {
+        let rent = Rent::get()?;
+        let lamports = rent.minimum_balance(HouseLockAccount::LEN);
+        let bump_arr = [bump];
+        let seeds = [
+            Seed::from(HOUSE_LOCK_SEED),
+            Seed::from(market_key.as_ref()),
+            Seed::from(bump_arr.as_ref()),
+        ];
+        let signer = Signer::from(seeds.as_ref());
+        system_create_account(
+            authority,
+            lock_pda,
+            lamports,
+            HouseLockAccount::LEN as u64,
+            program_id,
+            &[signer],
+        )?;
+    }
+
+    let mut data = lock_pda
+        .try_borrow_mut_data()
+        .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    // Raise-only ratchet: a commitment can be extended, never shortened.
+    let (_, current) = house_lock_of(&data)?;
+    if unlock_slot < current {
+        return Err(OpenPerpsError::InvalidInstructionData.into());
+    }
+    set_house_lock_buffer(&mut data, market_key, unlock_slot)?;
     Ok(())
 }
 

@@ -18,6 +18,7 @@ import {
   INSLP_POSITION_SEED,
   INSLP_SEED,
   HOUSE_CAP_SEED,
+  HOUSE_LOCK_SEED,
   HOUSE_SEED,
   RISK_CFG_SEED,
   INSURANCE_CFG_SEED,
@@ -76,6 +77,7 @@ export const Tag = {
   DepositInsLp: 43,
   RequestRedeemInsLp: 44,
   ExecuteRedeemInsLp: 45,
+  SetHouseLock: 46,
 } as const;
 
 /// Side encoding for `PlaceOrder`.
@@ -1031,6 +1033,10 @@ export function withdrawHouseVaultIx(args: {
   // outstanding, so the House cannot be drained out from under HLP depositors.
   // It need not exist on-chain (a market without HLP) - the address is enough.
   const [hlpConfig] = hlpConfigPda(args.programId, args.market);
+  // The canonical House-lock PDA is always passed (account 7); the program verifies its
+  // address and refuses the withdraw before its committed unlock_slot. It need not exist
+  // on-chain (a market with no timelock) - the address is enough.
+  const [houseLock] = houseLockPda(args.programId, args.market);
   return new TransactionInstruction({
     programId: args.programId,
     keys: [
@@ -1041,6 +1047,7 @@ export function withdrawHouseVaultIx(args: {
       { pubkey: args.authorityToken, isSigner: false, isWritable: true },
       { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
       { pubkey: hlpConfig, isSigner: false, isWritable: false },
+      { pubkey: houseLock, isSigner: false, isWritable: false },
     ],
     data: encodeWithdrawHouseVault(args.amount),
   });
@@ -1278,6 +1285,53 @@ export function setHouseCapIx(args: {
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
     ],
     data: encodeSetHouseCap(args.maxBasePosition, args.bump),
+  });
+}
+
+/** The per-market House-lock PDA; matches Rust `[HOUSE_LOCK_SEED, market]`. */
+export function houseLockPda(
+  programId: PublicKey,
+  market: PublicKey,
+): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync(
+    [HOUSE_LOCK_SEED, market.toBuffer()],
+    programId,
+  );
+}
+
+export function encodeSetHouseLock(unlockSlot: bigint, bump: number): Buffer {
+  const data = new Uint8Array(1 + 8 + 1);
+  data[0] = Tag.SetHouseLock;
+  writeU64LE(data, 1, unlockSlot);
+  data[9] = bump;
+  return Buffer.from(data);
+}
+
+/// Commit a market's House seed until `unlockSlot`: WithdrawHouseVault is then refused
+/// before that slot even when the House is flat (a rug-proof launch signal, on top of
+/// the engine's while-positioned refusal). Market-authority-signed. RAISE-ONLY: a later
+/// call can only push the slot further out, never shorten it. The PDA is created on first
+/// use, and WithdrawHouseVault verifies its canonical address, so it cannot be bypassed.
+export function setHouseLockIx(args: {
+  programId: PublicKey;
+  /** The PDA from `houseLockPda(programId, market)`. */
+  houseLockPda: PublicKey;
+  market: PublicKey;
+  /** The market authority (signer; pays PDA rent on first set). */
+  authority: PublicKey;
+  /** The slot until which the House seed is committed (raise-only). */
+  unlockSlot: bigint;
+  bump: number;
+}): TransactionInstruction {
+  return new TransactionInstruction({
+    programId: args.programId,
+    keys: [
+      { pubkey: args.houseLockPda, isSigner: false, isWritable: true },
+      { pubkey: args.market, isSigner: false, isWritable: false },
+      { pubkey: args.authority, isSigner: true, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    data: encodeSetHouseLock(args.unlockSlot, args.bump),
   });
 }
 

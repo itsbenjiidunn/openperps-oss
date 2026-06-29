@@ -197,6 +197,10 @@ export const TWAP_SEED = new TextEncoder().encode("twap");
  * full seeds are `[HOUSE_CAP_SEED, market]`. */
 export const HOUSE_CAP_SEED = new TextEncoder().encode("housecap");
 
+/** House timelock PDA seed prefix; matches Rust `state::HOUSE_LOCK_SEED`. Full seeds
+ * `[HOUSE_LOCK_SEED, market]`. */
+export const HOUSE_LOCK_SEED = new TextEncoder().encode("houselck");
+
 /** Risk-config PDA seed prefix; matches Rust `state::RISK_CFG_SEED`. The full seeds
  * are `[RISK_CFG_SEED, market]`. Holds a dynamic OI multiplier (House OI per asset
  * bounded by `equity * multiplier`) and a per-wallet position cap. */

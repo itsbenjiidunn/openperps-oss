@@ -85,6 +85,10 @@ pub enum OpenPerpsError {
     /// un-refreshed past its `max_staleness_pause_slots` budget (`SetRiskConfig`).
     /// Wait for a fresh oracle update, or de-risk (always allowed).
     OracleMarkStale = 27,
+    /// `WithdrawHouseVault` was attempted before the market's House timelock
+    /// (`SetHouseLock`) `unlock_slot`. The authority committed the House seed until
+    /// that slot, so it cannot be withdrawn yet even when the House is flat.
+    HouseLocked = 28,
 }
 
 impl From<OpenPerpsError> for ProgramError {

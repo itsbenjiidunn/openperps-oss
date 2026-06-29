@@ -29,6 +29,7 @@ SCRIPTS=(
   "packages/sdk/scripts/spread-integration.ts"
   "packages/sdk/scripts/coin-margin-integration.ts"
   "packages/sdk/scripts/launchpad-integration.ts"
+  "packages/sdk/scripts/timelock-integration.ts"
 )
 
 log() { echo "[suite] $*"; }

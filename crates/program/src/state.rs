@@ -451,6 +451,61 @@ pub fn house_cap_of(buf: &[u8]) -> Result<([u8; 32], u128), OpenPerpsError> {
     Ok((acc.market, u128::from_le_bytes(acc.max_base_position)))
 }
 
+/// Seed for the optional House withdrawal timelock PDA `[HOUSE_LOCK_SEED, market]`.
+pub const HOUSE_LOCK_SEED: &[u8] = b"houselck";
+pub const HOUSE_LOCK_DISCRIMINATOR: [u8; 8] = *b"OPHOUSEL";
+
+/// Per-market House withdrawal timelock: the market authority can COMMIT the House seed
+/// until `unlock_slot`, after which `WithdrawHouseVault` is blocked until that slot even
+/// when the House is flat (a rug-proof launch signal, on top of the engine's
+/// while-positioned refusal). The value is a one-way ratchet, raise-only (enforced by the
+/// handler), so a creator can never shorten their own commitment. Byte arrays keep it
+/// alignment-1 and padding-free (Pod-safe).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Pod, Zeroable)]
+pub struct HouseLockAccount {
+    pub discriminator: [u8; 8],
+    pub market: [u8; 32],
+    pub unlock_slot: [u8; 8],
+}
+
+impl HouseLockAccount {
+    pub const LEN: usize = core::mem::size_of::<Self>();
+    pub fn is_initialized(&self) -> bool {
+        self.discriminator == HOUSE_LOCK_DISCRIMINATOR
+    }
+}
+
+/// Write/overwrite a market's House timelock (market-authority-authorized; the handler
+/// enforces the raise-only ratchet).
+pub fn set_house_lock_buffer(
+    buf: &mut [u8],
+    market: [u8; 32],
+    unlock_slot: u64,
+) -> Result<(), OpenPerpsError> {
+    if buf.len() < HouseLockAccount::LEN {
+        return Err(OpenPerpsError::AccountDataTooSmall);
+    }
+    let acc: &mut HouseLockAccount = pod_from_bytes_mut(&mut buf[..HouseLockAccount::LEN])?;
+    acc.discriminator = HOUSE_LOCK_DISCRIMINATOR;
+    acc.market = market;
+    acc.unlock_slot = unlock_slot.to_le_bytes();
+    Ok(())
+}
+
+/// Read `(market, unlock_slot)` from a House-lock PDA; both zero if uninitialized.
+pub fn house_lock_of(buf: &[u8]) -> Result<([u8; 32], u64), OpenPerpsError> {
+    if buf.len() < HouseLockAccount::LEN {
+        return Err(OpenPerpsError::AccountDataTooSmall);
+    }
+    let acc: &HouseLockAccount = bytemuck::try_from_bytes(&buf[..HouseLockAccount::LEN])
+        .map_err(|_| OpenPerpsError::InvalidAccountData)?;
+    if !acc.is_initialized() {
+        return Ok(([0u8; 32], 0));
+    }
+    Ok((acc.market, u64::from_le_bytes(acc.unlock_slot)))
+}
+
 /// Per-market risk config: a dynamic OI gate, a per-wallet position cap, and a
 /// stale-pause, all layered on the static [`HouseCapAccount`] absolute ceiling.
 ///

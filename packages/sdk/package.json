@@ -1,6 +1,6 @@
 {
   "name": "@opp-oss/sdk",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "description": "TypeScript SDK for the OpenPerps on-chain program.",
   "license": "Apache-2.0",
   "author": "itsbenjiidunn",

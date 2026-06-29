@@ -55,6 +55,7 @@ pub mod tag {
     pub const DEPOSIT_INSLP: u8 = 43;
     pub const REQUEST_REDEEM_INSLP: u8 = 44;
     pub const EXECUTE_REDEEM_INSLP: u8 = 45;
+    pub const SET_HOUSE_LOCK: u8 = 46;
 }
 
 /// Maximum legs in a single `PlaceBatchOrder`. The engine also rejects a batch
@@ -490,6 +491,21 @@ pub enum OpenPerpsInstruction {
     ///   3. `[]`         system program
     SetHouseCap {
         max_base_position: u128,
+        bump: u8,
+    },
+    /// Set the market's House withdrawal timelock: commit the House seed until
+    /// `unlock_slot`, after which `WithdrawHouseVault` is blocked until that slot even
+    /// when the House is flat (a rug-proof launch signal). Only the market authority may
+    /// call. The `[HOUSE_LOCK_SEED, market]` PDA is created on first use; the value is
+    /// raise-only (a creator cannot shorten their own commitment).
+    ///
+    /// Accounts:
+    ///   0. `[writable]` House-lock PDA (`[HOUSE_LOCK_SEED, market]`)
+    ///   1. `[]`         market account (read for authority)
+    ///   2. `[signer, writable]` authority (must match the market authority; pays rent)
+    ///   3. `[]`         system program
+    SetHouseLock {
+        unlock_slot: u64,
         bump: u8,
     },
     /// Set the market's trading-fee floor: the minimum `fee_bps` every PlaceOrder
@@ -968,6 +984,10 @@ impl OpenPerpsInstruction {
             tag::SET_HOUSE_CAP => Ok(Self::SetHouseCap {
                 max_base_position: read_u128(rest, 0)?,
                 bump: read_u8(rest, 16)?,
+            }),
+            tag::SET_HOUSE_LOCK => Ok(Self::SetHouseLock {
+                unlock_slot: read_u64(rest, 0)?,
+                bump: read_u8(rest, 8)?,
             }),
             tag::SET_REQUIRE_VERIFIABLE => Ok(Self::SetRequireVerifiable {
                 required: read_u8(rest, 0)?,

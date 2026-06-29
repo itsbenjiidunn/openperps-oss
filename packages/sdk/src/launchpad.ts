@@ -22,7 +22,7 @@
 //     timelock (the creator can withdraw once the market is flat). A hard rug-proof
 //     lock would need a program-level timelock, which this preset does not add.
 
-import {PublicKey, SystemProgram, type TransactionInstruction} from "@solana/web3.js";
+import {PublicKey, SystemProgram, TransactionInstruction} from "@solana/web3.js";
 import {
   MINT_SIZE,
   TOKEN_PROGRAM_ID,
@@ -139,10 +139,18 @@ export interface TokenLaunchInput {
   oracleAuthority?: PublicKey;
   houseCapBase?: bigint;
   depositCapAtoms?: bigint;
-  /// Optional token metadata instruction (e.g. a Metaplex CreateMetadataAccountV3 the
-  /// caller built for [`metadata`, mpl_program, mint]). Inserted right after the mint is
-  /// initialized. Omitted by default: metadata needs the Metaplex program, which is not
-  /// present on a bare local validator, so this stays a caller-supplied hook.
+  /// Token name / symbol / image, via Metaplex (`buildTokenMetadataIx`). When set, the
+  /// metadata instruction is built and inserted right after the mint is initialized.
+  /// Needs the Metaplex program on-chain (devnet / mainnet, NOT a bare local validator).
+  metadata?: {
+    name: string;
+    symbol: string;
+    uri?: string;
+    sellerFeeBasisPoints?: number;
+    isMutable?: boolean;
+  };
+  /// Lower-level alternative to `metadata`: a pre-built metadata instruction (e.g. from
+  /// another Metaplex SDK). Ignored when `metadata` is set.
   metadataInstruction?: TransactionInstruction;
 }
 
@@ -186,8 +194,25 @@ export function buildTokenLaunchWithPerp(input: TokenLaunchInput): TokenLaunch {
     // No freeze authority: a launch token must not be freezable.
     createInitializeMint2Instruction(input.mint, input.decimals, input.authority, null),
   ];
-  if (input.metadataInstruction !== undefined) {
-    tokenInstructions.push(input.metadataInstruction);
+  // Metadata (name / symbol / image) right after the mint is initialized, while the
+  // creator is still the mint authority. `metadata` builds it; `metadataInstruction` is
+  // the lower-level escape hatch.
+  const metadataIx = input.metadata
+    ? buildTokenMetadataIx({
+        mint: input.mint,
+        mintAuthority: input.authority,
+        payer: input.authority,
+        name: input.metadata.name,
+        symbol: input.metadata.symbol,
+        ...(input.metadata.uri !== undefined ? { uri: input.metadata.uri } : {}),
+        ...(input.metadata.sellerFeeBasisPoints !== undefined
+          ? { sellerFeeBasisPoints: input.metadata.sellerFeeBasisPoints }
+          : {}),
+        ...(input.metadata.isMutable !== undefined ? { isMutable: input.metadata.isMutable } : {}),
+      })
+    : input.metadataInstruction;
+  if (metadataIx !== undefined) {
+    tokenInstructions.push(metadataIx);
   }
   tokenInstructions.push(
     createAssociatedTokenAccountInstruction(
@@ -229,4 +254,80 @@ export function buildTokenLaunchWithPerp(input: TokenLaunchInput): TokenLaunch {
     tokenInstructions,
     listing: buildLaunchpadPerp(launchInput),
   };
+}
+
+/// The Metaplex Token Metadata program (mainnet + devnet).
+export const TOKEN_METADATA_PROGRAM_ID = new PublicKey(
+  "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s",
+);
+
+/// The metadata PDA for a mint: `["metadata", token_metadata_program, mint]`.
+export function tokenMetadataPda(mint: PublicKey): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync(
+    [new TextEncoder().encode("metadata"), TOKEN_METADATA_PROGRAM_ID.toBuffer(), mint.toBuffer()],
+    TOKEN_METADATA_PROGRAM_ID,
+  );
+}
+
+function borshString(s: string): Uint8Array {
+  const bytes = new TextEncoder().encode(s);
+  const out = new Uint8Array(4 + bytes.length);
+  new DataView(out.buffer).setUint32(0, bytes.length, true);
+  out.set(bytes, 4);
+  return out;
+}
+
+export interface TokenMetadataInput {
+  mint: PublicKey;
+  /// The mint authority (signs).
+  mintAuthority: PublicKey;
+  /// Pays the metadata account rent (signs).
+  payer: PublicKey;
+  /// Recorded update authority; defaults to `mintAuthority`.
+  updateAuthority?: PublicKey;
+  name: string;
+  symbol: string;
+  /// Off-chain JSON URI (image, description). Default "".
+  uri?: string;
+  /// Royalty bps recorded in the metadata. Default 0.
+  sellerFeeBasisPoints?: number;
+  /// Whether the metadata can later be updated. Default true.
+  isMutable?: boolean;
+}
+
+/// Build a Metaplex `CreateMetadataAccountV3` instruction so a launched token shows up
+/// with a name / symbol / image in wallets and explorers. NOTE: this needs the Metaplex
+/// Token Metadata program on-chain (present on devnet / mainnet, NOT on a bare local
+/// validator), so it is a caller-supplied step, not part of the hermetic test suite.
+/// Verify against the live program on devnet before mainnet.
+export function buildTokenMetadataIx(input: TokenMetadataInput): TransactionInstruction {
+  const [metadata] = tokenMetadataPda(input.mint);
+  const name = borshString(input.name);
+  const symbol = borshString(input.symbol);
+  const uri = borshString(input.uri ?? "");
+  // DataV2 tail: sellerFeeBasisPoints (u16) + creators/collection/uses (all None = 0) +
+  // isMutable (bool) + collectionDetails (None = 0).
+  const tail = new Uint8Array(2 + 1 + 1 + 1 + 1 + 1);
+  new DataView(tail.buffer).setUint16(0, input.sellerFeeBasisPoints ?? 0, true);
+  tail[5] = input.isMutable === false ? 0 : 1;
+  // CreateMetadataAccountV3 discriminator (33) + DataV2 + isMutable + collectionDetails.
+  const data = new Uint8Array(1 + name.length + symbol.length + uri.length + tail.length);
+  data[0] = 33;
+  let o = 1;
+  for (const part of [name, symbol, uri, tail]) {
+    data.set(part, o);
+    o += part.length;
+  }
+  return new TransactionInstruction({
+    programId: TOKEN_METADATA_PROGRAM_ID,
+    keys: [
+      { pubkey: metadata, isSigner: false, isWritable: true },
+      { pubkey: input.mint, isSigner: false, isWritable: false },
+      { pubkey: input.mintAuthority, isSigner: true, isWritable: false },
+      { pubkey: input.payer, isSigner: true, isWritable: true },
+      { pubkey: input.updateAuthority ?? input.mintAuthority, isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    data: Buffer.from(data),
+  });
 }
