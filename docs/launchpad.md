@@ -49,12 +49,44 @@ const listing = buildLaunchpadPerp({
   and graduates to a verifiable DEX-EWMA crank once a pool is deep enough (`SetDexPool`
   flips `require_verifiable` 0 -> 1, a one-way ratchet).
 
-## What it does not do
+## One call: mint the token AND launch the perp
 
-It does not mint the token or create the spot pool. Those are the launchpad app's job
-(standard SPL token + your AMM / bonding curve). `buildLaunchpadPerp` is the OpenPerps
-side: turn an existing mint plus an allocation into a live, safe, seeded coin-margin
-perp.
+`buildLaunchpadPerp` takes an EXISTING mint. To mint the token and launch in one build,
+use `buildTokenLaunchWithPerp`: it adds the SPL mint creation, the supply, and an optional
+mint-authority revoke (fixed supply), then chains into `buildLaunchpadPerp`.
+
+```ts
+import { buildTokenLaunchWithPerp } from "@opp-oss/sdk";
+import { MINT_SIZE } from "@solana/spl-token";
+
+const launch = buildTokenLaunchWithPerp({
+  programId, authority: creator,
+  mint: mintKeypair.publicKey,
+  mintRentLamports: await conn.getMinimumBalanceForRentExemption(MINT_SIZE),
+  decimals: 6,
+  totalSupply: 1_000_000_000_000n,   // minted to the creator
+  revokeMintAuthority: true,         // fixed supply (a launch trust signal)
+  market: marketKeypair.publicKey,
+  marketRentLamports: rent,
+  allocationAtoms: 100_000_000_000n, // the slice that seeds the House
+  launchPriceUsd: 0.0001,
+  symbol: "MYTOKEN",
+});
+// launch.tokenInstructions  -> sign with [creator, mintKeypair],   send first.
+// launch.listing.instructions -> sign with [creator, marketKeypair], send next.
+```
+
+It is a pure builder (no network, no sending). Send `tokenInstructions` first so the
+creator holds the allocation before the House seed pulls from it, then the launch.
+
+## What it still leaves to the launchpad app
+
+- **Token metadata** (name / symbol / image). The token mints and trades fine without it,
+  but it shows up blank in wallets. Pass a Metaplex `CreateMetadataAccountV3` instruction
+  as `metadataInstruction` to include it. It is omitted by default because the Metaplex
+  program is not present on a bare local validator, so it is a caller-supplied hook.
+- **The spot pool** (for spot trading + the eventual DEX-EWMA oracle). Use your AMM /
+  bonding curve, then `SetDexPool` to graduate the perp oracle.
 
 ## Reflexivity reminder
 

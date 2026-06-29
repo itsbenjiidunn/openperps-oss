@@ -1,10 +1,11 @@
-// On-chain integration test for the OPP Launchpad primitive (buildLaunchpadPerp),
-// against a deployed program. Part of the on-chain suite.
+// On-chain integration test for the OPP Launchpad (buildTokenLaunchWithPerp, which wraps
+// buildLaunchpadPerp), against a deployed program. Part of the on-chain suite.
 //
-// Proves on real accounts that launching a perp on a freshly created token, seeded by
-// the creator allocation, yields a safe coin-margin market:
-//   - one buildLaunchpadPerp call creates the market, vault, House, funds the House with
-//     the allocation, activates at the launch price, and sets the safe risk profile,
+// Proves on real accounts that ONE build mints a token AND launches a perp on it, seeded
+// by the creator allocation, yielding a safe coin-margin market:
+//   - buildTokenLaunchWithPerp mints the SPL token + supply (fixed, mint authority
+//     revoked), then creates the market, vault, House, funds the House with the
+//     allocation, activates at the launch price, and sets the safe risk profile,
 //   - the market is coin-margin (quote == base) and the House holds the allocation,
 //   - the program forced the VOLATILE 5x tier: a >5x trade is REJECTED, a <=5x trade is
 //     ACCEPTED, so the freshly launched, reflexive market is capped at 5x out of the box.
@@ -19,13 +20,9 @@ import {
   Transaction,
   sendAndConfirmTransaction,
 } from "@solana/web3.js";
+import { MINT_SIZE } from "@solana/spl-token";
 import {
-  createMint,
-  createAssociatedTokenAccount,
-  mintTo,
-} from "@solana/spl-token";
-import {
-  buildLaunchpadPerp,
+  buildTokenLaunchWithPerp,
   isCoinMargin,
   initPortfolioIx,
   depositIx,
@@ -101,17 +98,28 @@ async function main(): Promise<void> {
   const programInfo = await conn.getAccountInfo(PROGRAM_ID);
   if (!programInfo?.executable) throw new Error("program not deployed/executable");
 
-  // The "freshly launched" token. The payer is the creator: it holds the whole supply.
-  section("mint the launched token");
-  const token = await createMint(conn, payer, payer.publicKey, null, 6);
-  const tokenAta = await createAssociatedTokenAccount(conn, payer, token, payer.publicKey);
-  await mintTo(conn, payer, token, tokenAta, payer, 1_000n * UNIT);
-
-  // One launch: coin-margin perp on the token, seeded by the allocation.
-  section("launch: buildLaunchpadPerp (token + perp, seeded by allocation)");
-  check(isCoinMargin(token, token), "SDK isCoinMargin true for the launched token");
+  // One call: mint a fresh token AND launch a coin-margin perp on it, seeded by the
+  // allocation. The creator (payer) is the mint + market authority and holds the supply.
+  section("buildTokenLaunchWithPerp: token + perp in one build");
+  const mint = Keypair.generate();
   const market = Keypair.generate();
-  const rent = await conn.getMinimumBalanceForRentExemption(marketAccountSize(CAP));
+  const mintRent = await conn.getMinimumBalanceForRentExemption(MINT_SIZE);
+  const marketRent = await conn.getMinimumBalanceForRentExemption(marketAccountSize(CAP));
+  const launch = buildTokenLaunchWithPerp({
+    programId: PROGRAM_ID,
+    authority: payer.publicKey,
+    mint: mint.publicKey,
+    mintRentLamports: mintRent,
+    decimals: 6,
+    totalSupply: 1_000n * UNIT,
+    revokeMintAuthority: true, // fixed supply
+    market: market.publicKey,
+    marketRentLamports: marketRent,
+    allocationAtoms: ALLOCATION,
+    launchPriceUsd: LAUNCH_PRICE_USD,
+    symbol: "LAUNCH",
+  });
+  const tokenAta = launch.creatorTokenAccount;
   const [vaultPda] = PublicKey.findProgramAddressSync(
     [VAULT_SEED, market.publicKey.toBuffer()],
     PROGRAM_ID,
@@ -120,26 +128,24 @@ async function main(): Promise<void> {
     [HOUSE_SEED, market.publicKey.toBuffer()],
     PROGRAM_ID,
   );
-  const listing = buildLaunchpadPerp({
-    programId: PROGRAM_ID,
-    authority: payer.publicKey,
-    market: market.publicKey,
-    marketRentLamports: rent,
-    token,
-    symbol: "LAUNCH",
-    launchPriceUsd: LAUNCH_PRICE_USD,
-    allocationAtoms: ALLOCATION,
-    authorityTokenAccount: tokenAta,
-  });
-  // The build is one ordered instruction list. Account creation (the only step that
-  // needs the market keypair signature) is first; send it with the market signer, then
-  // the rest in small chunks under the tx size limit.
-  const ix = listing.instructions;
+  check(isCoinMargin(launch.mint, launch.mint), "the launched token is coin-margin (quote == base)");
+
+  // 1) Mint the token + supply (the mint keypair signs its own account creation).
+  await send(conn, new Transaction().add(...launch.tokenInstructions), [payer, mint], "mint token + supply (1000) + revoke mint authority");
+  check((await tokenBal(conn, tokenAta)) === 1_000n * UNIT, "creator holds the full supply");
+
+  // 2) The perp launch (the market keypair signs the market account creation). Account
+  // creation is first; send it with the market signer, then the rest in small chunks.
+  const ix = launch.listing.instructions;
   await send(conn, new Transaction().add(...ix.slice(0, 2)), [payer, market], "create market + init");
   for (let i = 2; i < ix.length; i += 3) {
     await send(conn, new Transaction().add(...ix.slice(i, i + 3)), [payer], `launch setup [${i}]`);
   }
-  check((await tokenBal(conn, vaultPda)) === ALLOCATION, "House seeded with the full allocation");
+  check((await tokenBal(conn, vaultPda)) === ALLOCATION, "House seeded with the allocation");
+  check(
+    (await tokenBal(conn, tokenAta)) === 1_000n * UNIT - ALLOCATION,
+    "creator keeps supply minus the allocation",
+  );
 
   // The launched market enforces the coin-margin 5x tier.
   section("the launched market is capped at 5x");
