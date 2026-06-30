@@ -97,14 +97,18 @@ the hermetic suite. Verify against the live program on devnet before mainnet.
 
 ## Web flow
 
-`apps/web` ships `src/lib/flows/launchpadFlow.ts` (wallet-driven, three approvals: mint,
-launch, optional commit) and a `LaunchpadPanel` component that wires the whole thing to a
-form.
+`apps/web` wires this into a launch **aggregator**: the dev picks a token origin (native
+mint / Pump.fun / LetsBonk), and the same wallet flow adds the coin-margin perp (and, for
+native, an optional real spot pool at a venue the dev chooses). See
+[launch-aggregator.md](./launch-aggregator.md); the UI is `LaunchpadPanel` at `/launchpad`.
 
-## What it still leaves to the launchpad app
+## The spot pool
 
-- **The spot pool** (for spot trading + the eventual DEX-EWMA oracle). Use your AMM /
-  bonding curve, then `SetDexPool` to graduate the perp oracle.
+The native path can now create a real spot pool (Raydium CPMM wired; Meteora / Orca
+scaffolded) so the token is spot-tradeable from launch. A token/SOL pool is for spot +
+routing only; it is not auto-bound as the perp oracle (it would price in SOL, not USD), so
+the perp stays MANUAL. Graduating the perp oracle via `SetDexPool` needs a USDC-quote pool
+for a USD mark. See [launch-aggregator.md](./launch-aggregator.md).
 
 ## Reflexivity reminder
 

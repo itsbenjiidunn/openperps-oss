@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as VaultRouteImport } from './routes/vault'
 import { Route as PortfolioRouteImport } from './routes/portfolio'
+import { Route as LaunchpadRouteImport } from './routes/launchpad'
 import { Route as LaunchRouteImport } from './routes/launch'
 import { Route as CrankRouteImport } from './routes/crank'
 import { Route as AppRouteImport } from './routes/app'
@@ -25,6 +26,11 @@ const VaultRoute = VaultRouteImport.update({
 const PortfolioRoute = PortfolioRouteImport.update({
   id: '/portfolio',
   path: '/portfolio',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LaunchpadRoute = LaunchpadRouteImport.update({
+  id: '/launchpad',
+  path: '/launchpad',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LaunchRoute = LaunchRouteImport.update({
@@ -59,6 +65,7 @@ export interface FileRoutesByFullPath {
   '/app': typeof AppRoute
   '/crank': typeof CrankRoute
   '/launch': typeof LaunchRoute
+  '/launchpad': typeof LaunchpadRoute
   '/portfolio': typeof PortfolioRoute
   '/vault': typeof VaultRoute
 }
@@ -68,6 +75,7 @@ export interface FileRoutesByTo {
   '/app': typeof AppRoute
   '/crank': typeof CrankRoute
   '/launch': typeof LaunchRoute
+  '/launchpad': typeof LaunchpadRoute
   '/portfolio': typeof PortfolioRoute
   '/vault': typeof VaultRoute
 }
@@ -78,6 +86,7 @@ export interface FileRoutesById {
   '/app': typeof AppRoute
   '/crank': typeof CrankRoute
   '/launch': typeof LaunchRoute
+  '/launchpad': typeof LaunchpadRoute
   '/portfolio': typeof PortfolioRoute
   '/vault': typeof VaultRoute
 }
@@ -89,10 +98,19 @@ export interface FileRouteTypes {
     | '/app'
     | '/crank'
     | '/launch'
+    | '/launchpad'
     | '/portfolio'
     | '/vault'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/about' | '/app' | '/crank' | '/launch' | '/portfolio' | '/vault'
+  to:
+    | '/'
+    | '/about'
+    | '/app'
+    | '/crank'
+    | '/launch'
+    | '/launchpad'
+    | '/portfolio'
+    | '/vault'
   id:
     | '__root__'
     | '/'
@@ -100,6 +118,7 @@ export interface FileRouteTypes {
     | '/app'
     | '/crank'
     | '/launch'
+    | '/launchpad'
     | '/portfolio'
     | '/vault'
   fileRoutesById: FileRoutesById
@@ -110,6 +129,7 @@ export interface RootRouteChildren {
   AppRoute: typeof AppRoute
   CrankRoute: typeof CrankRoute
   LaunchRoute: typeof LaunchRoute
+  LaunchpadRoute: typeof LaunchpadRoute
   PortfolioRoute: typeof PortfolioRoute
   VaultRoute: typeof VaultRoute
 }
@@ -128,6 +148,13 @@ declare module '@tanstack/react-router' {
       path: '/portfolio'
       fullPath: '/portfolio'
       preLoaderRoute: typeof PortfolioRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/launchpad': {
+      id: '/launchpad'
+      path: '/launchpad'
+      fullPath: '/launchpad'
+      preLoaderRoute: typeof LaunchpadRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/launch': {
@@ -174,6 +201,7 @@ const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRoute,
   CrankRoute: CrankRoute,
   LaunchRoute: LaunchRoute,
+  LaunchpadRoute: LaunchpadRoute,
   PortfolioRoute: PortfolioRoute,
   VaultRoute: VaultRoute,
 }
